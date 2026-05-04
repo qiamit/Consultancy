@@ -1,102 +1,114 @@
-import Link from "next/link";
+import { Suspense } from "react";
+import { BisProjectsMaster } from "@/components/modules/bis-projects";
+import { loadClientMasterDropdownOptions } from "@/lib/data/client-master-dropdowns";
+import { loadIsCodeFormDropdownOptions } from "@/lib/data/is-code-form-dropdowns";
+import type { BisProjectMasterRow } from "@/lib/types/bis-project-master";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function BisProjectsPage() {
+function MasterFallback() {
+  return (
+    <div className="mx-auto max-w-[1400px] animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+      Loading BIS Projects…
+    </div>
+  );
+}
+
+function firstSearchParam(
+  sp: Record<string, string | string[] | undefined>,
+  key: string,
+): string | undefined {
+  const v = sp[key];
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export default async function BisProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
   const supabase = await createClient();
-  const { data: rows, error } = await supabase
-    .from("bis_projects")
-    .select(
-      "id,title,project_kind,status,license_number,target_date,clients(name,company_name)",
-    )
-    .order("created_at", { ascending: false });
+
+  const [
+    { data: bisRaw, error: bisError },
+    { data: clientsRaw },
+    { data: codesRaw },
+  ] = await Promise.all([
+    supabase
+      .from("bis_projects")
+      .select(
+        `id, client_id, project_kind, title, status, license_number, start_date, target_date, notes,
+        is_code_id, cm_l_digits, license_validity_date, case_handled_by, case_referred_by,
+        billing_amount, billing_frequency, portal_user_id, portal_password,
+        created_at, updated_at,
+        clients(name, company_name)`,
+      )
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("clients")
+      .select("id,name,company_name")
+      .order("name", { ascending: true }),
+    supabase
+      .from("is_codes")
+      .select("id,is_number,is_code_title,revision_year")
+      .order("is_number", { ascending: true }),
+  ]);
+
+  type BisRowDb = Omit<BisProjectMasterRow, "is_codes">;
+  const bisRows = (bisRaw ?? []) as unknown as BisRowDb[];
+
+  const isCodeRows =
+    (codesRaw ?? []) as unknown as {
+      id: string;
+      is_number: string;
+      is_code_title: string;
+      revision_year: number;
+    }[];
+
+  const isCodeById = new Map(
+    isCodeRows.map((c) => [
+      c.id,
+      {
+        is_number: c.is_number,
+        is_code_title: c.is_code_title,
+        revision_year: c.revision_year,
+      },
+    ]),
+  );
+
+  const rows: BisProjectMasterRow[] = bisRows.map((r) => ({
+    ...r,
+    is_codes: r.is_code_id
+      ? (isCodeById.get(r.is_code_id) ?? null)
+      : null,
+  }));
+
+  const clientRows =
+    (clientsRaw ?? []) as unknown as {
+      id: string;
+      name: string;
+      company_name: string | null;
+    }[];
+
+  const [clientMasterDropdowns, isCodeFormDropdowns] = await Promise.all([
+    loadClientMasterDropdownOptions(supabase),
+    loadIsCodeFormDropdownOptions(supabase),
+  ]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-            BIS license projects
-          </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            New licenses, renewals, inclusions, and maintenance tracked per client.
-          </p>
-        </div>
-        <Link
-          href="/dashboard/bis-projects/new"
-          className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
-        >
-          New project
-        </Link>
-      </div>
-
-      {error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-          {error.message}
-        </p>
-      )}
-
-      <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-          <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:bg-zinc-900/50 dark:text-zinc-400">
-            <tr>
-              <th className="px-4 py-3">Title</th>
-              <th className="px-4 py-3">Type</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Client</th>
-              <th className="px-4 py-3">Target</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {(rows ?? []).length === 0 ? (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-zinc-500">
-                  No BIS projects yet.
-                </td>
-              </tr>
-            ) : (
-              rows!.map((r) => {
-                const raw = r.clients as unknown;
-                const client = Array.isArray(raw)
-                  ? (raw[0] as { name: string; company_name: string | null } | undefined)
-                  : (raw as { name: string; company_name: string | null } | null);
-                const clientLabel = client
-                  ? client.company_name
-                    ? `${client.name} (${client.company_name})`
-                    : client.name
-                  : "—";
-                return (
-                  <tr key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                    <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
-                      {r.title}
-                    </td>
-                    <td className="px-4 py-3 capitalize text-zinc-600 dark:text-zinc-300">
-                      {String(r.project_kind).replace(/_/g, " ")}
-                    </td>
-                    <td className="px-4 py-3 capitalize text-zinc-600 dark:text-zinc-300">
-                      {String(r.status).replace(/_/g, " ")}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                      {clientLabel}
-                    </td>
-                    <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                      {r.target_date ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Link
-                        href={`/dashboard/bis-projects/${r.id}`}
-                        className="font-medium text-sky-600 hover:underline dark:text-sky-400"
-                      >
-                        Open
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <Suspense fallback={<MasterFallback />}>
+      <BisProjectsMaster
+        initialRows={rows}
+        fetchError={bisError?.message ?? null}
+        queryError={firstSearchParam(sp, "error")}
+        dbErrorCode={firstSearchParam(sp, "db_code")}
+        dbErrorHint={firstSearchParam(sp, "db_hint")}
+        clientRows={clientRows}
+        isCodeRows={isCodeRows}
+        clientMasterDropdowns={clientMasterDropdowns}
+        isCodeFormDropdowns={isCodeFormDropdowns}
+      />
+    </Suspense>
   );
 }

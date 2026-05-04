@@ -56,7 +56,7 @@ export default async function IsoProjectDetailPage({
           href="/dashboard/iso-projects"
           className="text-sm font-medium text-sky-600 hover:underline dark:text-sky-400"
         >
-          ← ISO projects
+          ← ISO Projects
         </Link>
         <h1 className="mt-4 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           {row.title}
@@ -200,7 +200,6 @@ export default async function IsoProjectDetailPage({
         </h2>
         <form
           action={uploadIsoDocument.bind(null, id)}
-          encType="multipart/form-data"
           className="mt-4 flex flex-wrap items-end gap-3"
         >
           <div className="min-w-[200px] flex-1 space-y-1">

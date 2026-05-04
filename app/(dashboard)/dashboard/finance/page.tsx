@@ -16,7 +16,7 @@ export default async function FinancePage() {
     <div className="mx-auto max-w-6xl space-y-10">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Finance
+          Finance Management
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Record fees and payments linked to clients (expand later for invoicing

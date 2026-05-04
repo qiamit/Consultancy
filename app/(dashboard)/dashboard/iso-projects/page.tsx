@@ -52,7 +52,7 @@ export default async function IsoProjectsPage() {
             {(rows ?? []).length === 0 ? (
               <tr>
                 <td colSpan={7} className="px-4 py-8 text-center text-zinc-500">
-                  No ISO projects yet.
+                  No ISO Projects yet.
                 </td>
               </tr>
             ) : (

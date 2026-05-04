@@ -1,4 +1,5 @@
-@import "tailwindcss";
+/* Scan from repo root so `app/` + `components/` classes are always detected (avoids empty CSS in some setups). */
+@import "tailwindcss" source("..");
 
 :root {
   --background: #ffffff;

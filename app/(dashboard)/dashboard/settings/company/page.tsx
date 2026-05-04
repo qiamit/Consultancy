@@ -13,7 +13,7 @@ export default async function CompanySettingsPage() {
     <div className="mx-auto max-w-2xl space-y-8">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Company settings
+          Company Settings
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
           Letterhead details used across PDFs and proposals (extend as needed).
@@ -93,7 +93,7 @@ export default async function CompanySettingsPage() {
           type="submit"
           className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
         >
-          Save company settings
+          Save Company Settings
         </button>
       </form>
     </div>

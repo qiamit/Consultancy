@@ -17,7 +17,7 @@ export default async function DashboardLayout({
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
       <Sidebar />
       <div className="lg:pl-64">
-        <main className="px-4 py-8 sm:px-6 lg:px-10">{children}</main>
+        <main className="px-4 py-8 text-left sm:px-6 lg:px-10">{children}</main>
       </div>
     </div>
   );

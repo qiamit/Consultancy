@@ -1,90 +1,195 @@
-import Link from "next/link";
+import { Suspense } from "react";
+import {
+  COMPANY_TYPES,
+  DEFAULT_PHONE_COUNTRY_CODES,
+  DEFAULT_CITY,
+  DEFAULT_PIN_CODE,
+  DEFAULT_STATE,
+  DEFAULT_COUNTRY,
+  PAYMENT_TERMS,
+  SCALES,
+  STATUSES,
+} from "@/components/modules/client-master/constants";
+import { ClientMaster } from "@/components/modules/client-master";
+import { fetchAppDropdownOptions } from "@/lib/data/app-dropdown-options";
+import {
+  DROPDOWN_KEY_CLIENT_CITY,
+  DROPDOWN_KEY_CLIENT_COMPANY_SCALE,
+  DROPDOWN_KEY_CLIENT_COMPANY_STATUS,
+  DROPDOWN_KEY_CLIENT_COMPANY_TYPE,
+  DROPDOWN_KEY_CLIENT_COUNTRY,
+  DROPDOWN_KEY_CLIENT_PAYMENT_TERM,
+  DROPDOWN_KEY_CLIENT_PHONE_COUNTRY_CODE,
+  DROPDOWN_KEY_CLIENT_PIN_CODE,
+  DROPDOWN_KEY_CLIENT_STATE,
+} from "@/lib/dropdown-keys";
 import { createClient } from "@/lib/supabase/server";
+import type { ClientMasterRow } from "@/lib/types/client-master";
+import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
 
-export default async function ClientsPage() {
+function MasterFallback() {
+  return (
+    <div className="mx-auto max-w-[1400px] animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+      Loading Client Master…
+    </div>
+  );
+}
+
+function firstSearchParam(
+  sp: Record<string, string | string[] | undefined>,
+  key: string,
+): string | undefined {
+  const v = sp[key];
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export default async function ClientsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = await searchParams;
   const supabase = await createClient();
   const { data: clients, error } = await supabase
     .from("clients")
-    .select("id,name,company_name,email,phone,created_at")
+    .select("*")
     .order("created_at", { ascending: false });
 
+  const rows = (clients ?? []) as unknown as ClientMasterRow[];
+
+  let companyTypeOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_TYPE);
+  if (companyTypeOptions.length === 0) {
+    companyTypeOptions = COMPANY_TYPES.map((value, i) => ({
+      id: `__static__${i}`,
+      value,
+      label: null,
+      canDelete: false,
+    }));
+  }
+
+  let companyScaleOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_SCALE);
+  if (companyScaleOptions.length === 0) {
+    companyScaleOptions = SCALES.map((value, i) => ({
+      id: `__static_scale__${i}`,
+      value,
+      label: null,
+      canDelete: false,
+    }));
+  }
+
+  let companyStatusOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_STATUS);
+  if (companyStatusOptions.length === 0) {
+    companyStatusOptions = STATUSES.map((value, i) => ({
+      id: `__static_status__${i}`,
+      value,
+      label: null,
+      canDelete: false,
+    }));
+  }
+
+  let pinCodeOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_PIN_CODE);
+  if (!pinCodeOptions.some((o) => o.value === DEFAULT_PIN_CODE)) {
+    pinCodeOptions = [
+      {
+        id: `__static_pin__${DEFAULT_PIN_CODE}`,
+        value: DEFAULT_PIN_CODE,
+        label: null,
+        canDelete: false,
+      },
+      ...pinCodeOptions,
+    ];
+  }
+
+  let cityOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_CITY);
+  if (!cityOptions.some((o) => o.value === DEFAULT_CITY)) {
+    cityOptions = [
+      {
+        id: `__static_city__${DEFAULT_CITY}`,
+        value: DEFAULT_CITY,
+        label: null,
+        canDelete: false,
+      },
+      ...cityOptions,
+    ];
+  }
+
+  let stateOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_STATE);
+  if (!stateOptions.some((o) => o.value === DEFAULT_STATE)) {
+    stateOptions = [
+      {
+        id: `__static_state__${DEFAULT_STATE}`,
+        value: DEFAULT_STATE,
+        label: null,
+        canDelete: false,
+      },
+      ...stateOptions,
+    ];
+  }
+
+  let countryOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COUNTRY);
+  if (!countryOptions.some((o) => o.value === DEFAULT_COUNTRY)) {
+    countryOptions = [
+      {
+        id: `__static_country__${DEFAULT_COUNTRY}`,
+        value: DEFAULT_COUNTRY,
+        label: null,
+        canDelete: false,
+      },
+      ...countryOptions,
+    ];
+  }
+
+  let paymentTermOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_PAYMENT_TERM);
+  if (paymentTermOptions.length === 0) {
+    paymentTermOptions = PAYMENT_TERMS.map((t, i) => ({
+      id: `__static_payment__${i}`,
+      value: t.value,
+      label: t.label,
+      canDelete: false,
+    }));
+  }
+
+  let phoneCountryCodeOptions: AppDropdownOptionRow[] =
+    await fetchAppDropdownOptions(
+      supabase,
+      DROPDOWN_KEY_CLIENT_PHONE_COUNTRY_CODE,
+    );
+  if (phoneCountryCodeOptions.length === 0) {
+    phoneCountryCodeOptions = DEFAULT_PHONE_COUNTRY_CODES.map((value, i) => ({
+      id: `__static_phone_cc__${i}`,
+      value,
+      label: null,
+      canDelete: false,
+    }));
+  }
+
   return (
-    <div className="mx-auto max-w-6xl space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-            Clients
-          </h1>
-          <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            Organizations and contacts approaching you for licenses, ISO work,
-            testing, or calibration.
-          </p>
-        </div>
-        <Link
-          href="/dashboard/clients/new"
-          className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
-        >
-          Add client
-        </Link>
-      </div>
-
-      {error && (
-        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-          {error.message}
-        </p>
-      )}
-
-      <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
-          <thead className="bg-zinc-50 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:bg-zinc-900/50 dark:text-zinc-400">
-            <tr>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Company</th>
-              <th className="px-4 py-3">Email</th>
-              <th className="px-4 py-3">Phone</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-            {(clients ?? []).length === 0 ? (
-              <tr>
-                <td
-                  colSpan={5}
-                  className="px-4 py-8 text-center text-zinc-500"
-                >
-                  No clients yet. Add your first client to start tracking
-                  projects.
-                </td>
-              </tr>
-            ) : (
-              clients!.map((c) => (
-                <tr key={c.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                  <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
-                    {c.name}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                    {c.company_name ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                    {c.email ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-zinc-600 dark:text-zinc-300">
-                    {c.phone ?? "—"}
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <Link
-                      href={`/dashboard/clients/${c.id}`}
-                      className="font-medium text-sky-600 hover:underline dark:text-sky-400"
-                    >
-                      Open
-                    </Link>
-                  </td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <Suspense fallback={<MasterFallback />}>
+      <ClientMaster
+        initialClients={rows}
+        fetchError={error?.message ?? null}
+        queryError={firstSearchParam(sp, "error")}
+        dbErrorCode={firstSearchParam(sp, "db_code")}
+        dbErrorHint={firstSearchParam(sp, "db_hint")}
+        companyTypeOptions={companyTypeOptions}
+        companyScaleOptions={companyScaleOptions}
+        companyStatusOptions={companyStatusOptions}
+        pinCodeOptions={pinCodeOptions}
+        cityOptions={cityOptions}
+        stateOptions={stateOptions}
+        countryOptions={countryOptions}
+        paymentTermOptions={paymentTermOptions}
+        phoneCountryCodeOptions={phoneCountryCodeOptions}
+      />
+    </Suspense>
   );
 }

@@ -24,7 +24,7 @@ export default function NewIsoProjectPage() {
           href="/dashboard/iso-projects"
           className="text-sm font-medium text-sky-600 hover:underline dark:text-sky-400"
         >
-          ← ISO projects
+          ← ISO Projects
         </Link>
         <h1 className="mt-4 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           New ISO / accreditation project

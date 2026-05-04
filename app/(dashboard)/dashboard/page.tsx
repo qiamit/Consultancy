@@ -12,10 +12,10 @@ export default async function DashboardHomePage() {
   ]);
 
   const stats = [
-    { label: "Clients", count: clients.count ?? 0, href: "/dashboard/clients" },
-    { label: "BIS projects", count: bis.count ?? 0, href: "/dashboard/bis-projects" },
-    { label: "ISO projects", count: iso.count ?? 0, href: "/dashboard/iso-projects" },
-    { label: "Finance entries", count: txns.count ?? 0, href: "/dashboard/finance" },
+    { label: "Client Master", count: clients.count ?? 0, href: "/dashboard/clients" },
+    { label: "BIS Projects", count: bis.count ?? 0, href: "/dashboard/bis-projects" },
+    { label: "ISO Projects", count: iso.count ?? 0, href: "/dashboard/iso-projects" },
+    { label: "Finance Management", count: txns.count ?? 0, href: "/dashboard/finance" },
   ];
 
   return (
