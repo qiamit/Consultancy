@@ -169,6 +169,7 @@ export function ClientMasterForm({
   phoneCountryCodeOptions,
   embeddedInBis,
   onEmbeddedSaveSuccess,
+  returnToAfterSave,
 }: {
   visible: boolean;
   overlay?: boolean;
@@ -190,6 +191,8 @@ export function ClientMasterForm({
   /** When set, submit uses `executeSaveClientMaster` and does not redirect (e.g. BIS overlay). */
   embeddedInBis?: boolean;
   onEmbeddedSaveSuccess?: (clientId: string) => void;
+  /** Passed through save — successful redirect goes back to this path with `client_id`. */
+  returnToAfterSave?: string | null;
 }) {
   if (!visible) return null;
 
@@ -223,6 +226,9 @@ export function ClientMasterForm({
           : { action: saveClientMaster })}
       >
         <input type="hidden" name="id" value={form.id} />
+        {returnToAfterSave ? (
+          <input type="hidden" name="return_to" value={returnToAfterSave} />
+        ) : null}
         <input
           type="hidden"
           name="opening_balance"

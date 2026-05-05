@@ -1,7 +1,5 @@
 "use client";
 
-import { createPortal } from "react-dom";
-import { useEffect, useId, useMemo, useState } from "react";
 import { saveBisProjectMaster } from "@/lib/actions/bis-projects";
 import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
 import { DialogCloseXButton } from "@/components/modules/client-master/dialog-close-x";
@@ -15,12 +13,7 @@ import {
   computeLicenseDisplayStatus,
   cmPrefixForProjectKind,
 } from "@/lib/bis-project-license-status";
-import {
-  BILLING_FREQUENCIES,
-  BIS_FIELD_LABEL_CLASS,
-  DEFAULT_BILLING_FREQUENCY,
-  PROJECT_KIND_OPTIONS,
-} from "./constants";
+import { BIS_FIELD_LABEL_CLASS, DEFAULT_BILLING_FREQUENCY } from "./constants";
 import { manakOnlineEbisLoginHref } from "@/lib/manak-online-portal";
 import { IsCodeCombobox, type IsCodeComboboxOption } from "./is-code-combobox";
 
@@ -29,52 +22,6 @@ const fieldInputRowShellClass =
 
 const fieldInputInnerClass =
   "min-w-0 flex-1 border-0 bg-transparent py-2 pl-3 pr-2 text-sm text-zinc-900 outline-none ring-0 focus:ring-0 dark:bg-transparent dark:text-zinc-100";
-
-const PROJECT_KIND_HELP_LINES: { value: string; hint: string }[] = [
-  {
-    value: "new_license",
-    hint: "New licence matter; add CM/L and licence end date when you have them (both optional until known).",
-  },
-  {
-    value: "application",
-    hint: "Manak application — CM/A prefix. Leave licence validity blank.",
-  },
-  {
-    value: "inclusion",
-    hint: "Inclusion on an existing licence; CM/L and licence end date when known (optional if pending).",
-  },
-  {
-    value: "renewal",
-    hint: "Renewal-style case (legacy label); CM/L and licence end date when known (optional if pending).",
-  },
-  {
-    value: "maintenance",
-    hint: "Maintenance-style case (legacy label); CM/L and licence end date when known (optional if pending).",
-  },
-];
-
-const BILLING_FREQUENCY_HELP_LINES: { value: string; hint: string }[] = [
-  {
-    value: "Monthly",
-    hint: "Bill or accrue consultancy fees every month for this project.",
-  },
-  {
-    value: "Quarterly",
-    hint: "Every three months (four cycles per year).",
-  },
-  {
-    value: "Half Yearly",
-    hint: "Twice per year (six-month cycles).",
-  },
-  {
-    value: "Yearly",
-    hint: "Once per year; common for annual retainers or licence-year alignment.",
-  },
-  {
-    value: "Based on Work",
-    hint: "Invoice when agreed milestones, deliverables, or effort units are completed.",
-  },
-];
 
 function ManakOnlineSearchLink({ userId }: { userId: string }) {
   const suffixClass =
@@ -120,6 +67,9 @@ function sanitizeCurrency(raw: string): string {
   return s;
 }
 
+const fieldInputClassBase =
+  "block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:disabled:bg-zinc-900";
+
 function Field({
   label,
   name,
@@ -132,6 +82,7 @@ function Field({
   maxLength,
   inputMode,
   autoComplete,
+  hideLabel = false,
 }: {
   label: string;
   name: string;
@@ -144,28 +95,35 @@ function Field({
   maxLength?: number;
   inputMode?: React.HTMLAttributes<HTMLInputElement>["inputMode"];
   autoComplete?: string;
+  /** Label is rendered outside (e.g. `lg` grid label row). */
+  hideLabel?: boolean;
 }) {
   const id = `${name}_bis_field`;
+  const inputClass = hideLabel ? fieldInputClassBase : `mt-1 ${fieldInputClassBase}`;
+  const inputEl = (
+    <input
+      id={id}
+      name={name}
+      type={type}
+      required={required}
+      disabled={disabled}
+      placeholder={placeholder}
+      maxLength={maxLength}
+      inputMode={inputMode}
+      autoComplete={autoComplete}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={inputClass}
+    />
+  );
+  if (hideLabel) return inputEl;
   return (
     <div className="space-y-1">
       <label htmlFor={id} className={BIS_FIELD_LABEL_CLASS}>
         {label}
         {required ? <span className="text-red-500"> *</span> : null}
       </label>
-      <input
-        id={id}
-        name={name}
-        type={type}
-        required={required}
-        disabled={disabled}
-        placeholder={placeholder}
-        maxLength={maxLength}
-        inputMode={inputMode}
-        autoComplete={autoComplete}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 disabled:cursor-not-allowed disabled:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:disabled:bg-zinc-900"
-      />
+      {inputEl}
     </div>
   );
 }
@@ -178,6 +136,8 @@ export function BisProjectsMasterForm({
   idParam,
   clientOptions,
   isCodeOptions,
+  projectKindOptions,
+  billingFrequencyOptions,
   onClose,
   onAddNew,
   onUpdateField,
@@ -191,55 +151,18 @@ export function BisProjectsMasterForm({
   idParam: string | null;
   clientOptions: AppDropdownOptionRow[];
   isCodeOptions: IsCodeComboboxOption[];
+  projectKindOptions: AppDropdownOptionRow[];
+  billingFrequencyOptions: AppDropdownOptionRow[];
   onClose: () => void;
   onAddNew: () => void;
   onUpdateField: (key: string, value: string) => void;
   onRequestQuickAddClient?: () => void;
   onRequestQuickAddIsCode?: () => void;
 }) {
-  const [projectKindHelpOpen, setProjectKindHelpOpen] = useState(false);
-  const [billingFreqHelpOpen, setBillingFreqHelpOpen] = useState(false);
-  const projectKindHelpTitleId = useId();
-  const billingFreqHelpTitleId = useId();
   const isApplication = formValues.project_kind === "application";
   const licenseStatus = computeLicenseDisplayStatus(
     formValues.project_kind,
     formValues.license_validity_date,
-  );
-
-  useEffect(() => {
-    if (!projectKindHelpOpen && !billingFreqHelpOpen) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setProjectKindHelpOpen(false);
-        setBillingFreqHelpOpen(false);
-      }
-    }
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [projectKindHelpOpen, billingFreqHelpOpen]);
-
-  const projectKindComboboxOptions = useMemo(
-    (): AppDropdownOptionRow[] =>
-      PROJECT_KIND_OPTIONS.map((o) => ({
-        id: `__bis_kind__${o.value}`,
-        value: o.value,
-        label: o.label,
-        canDelete: false,
-        filterText: `${o.label} ${o.value.replace(/_/g, " ")}`,
-      })),
-    [],
-  );
-
-  const billingFrequencyComboboxOptions = useMemo(
-    (): AppDropdownOptionRow[] =>
-      BILLING_FREQUENCIES.map((f) => ({
-        id: `__bis_billfreq__${f}`,
-        value: f,
-        label: f,
-        canDelete: false,
-      })),
-    [],
   );
 
   if (!visible) return null;
@@ -255,7 +178,7 @@ export function BisProjectsMasterForm({
           id="bis-projects-master-form-title"
           className="inline-flex items-center rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
         >
-          {isNewParam ? "New BIS Project" : idParam ? "Edit BIS Project" : "BIS Project"}
+          {isNewParam ? "New BIS License" : idParam ? "Edit BIS License" : "BIS License"}
         </h2>
         <DialogCloseXButton onClick={onClose} />
       </div>
@@ -273,12 +196,15 @@ export function BisProjectsMasterForm({
         <input type="hidden" name="target_date" value={formValues.target_date} />
 
         <div className="min-w-0 sm:col-span-2 lg:col-span-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5">
-            <div className="min-w-0">
-              <label htmlFor="project_kind_input" className={BIS_FIELD_LABEL_CLASS}>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 lg:grid-rows-[auto_auto] lg:gap-x-4 lg:gap-y-2">
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="project_kind_input"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-1 lg:row-start-1`}
+              >
                 Project Type<span className="text-red-500"> *</span>
               </label>
-              <div className="mt-1">
+              <div className="min-w-0 w-full lg:col-start-1 lg:row-start-2">
                 <ClientDropdownField
                   hideLabel
                   inputRowShellClassName={fieldInputRowShellClass}
@@ -286,92 +212,54 @@ export function BisProjectsMasterForm({
                   name="project_kind"
                   label="Project Type"
                   dialogTitle="Project types"
-                  addPlaceholder=""
-                  manageAriaLabel="Project type help"
+                  addPlaceholder="Stored value (e.g. new_license, application)"
+                  manageAriaLabel="Add or remove project types"
                   value={formValues.project_kind}
                   onChange={(v) => {
                     onUpdateField("project_kind", v);
                     if (v === "application") onUpdateField("license_validity_date", "");
                   }}
-                  options={projectKindComboboxOptions}
+                  options={projectKindOptions}
                   selectedValue={formValues.project_kind}
                   onClearSelection={() => onUpdateField("project_kind", "new_license")}
                   includeEmptyOption={false}
                   searchPlaceholder="Search project type…"
                   overlayZIndexClass="z-[119]"
                   listZIndexClass="z-[119]"
-                  onSuffixButtonClick={() => {
-                    setBillingFreqHelpOpen(false);
-                    setProjectKindHelpOpen(true);
-                  }}
                 />
               </div>
-              {projectKindHelpOpen
-                ? createPortal(
-                    <div
-                      className="fixed inset-0 z-[119] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55"
-                      role="presentation"
-                      onClick={(e) => {
-                        if (e.target === e.currentTarget) setProjectKindHelpOpen(false);
-                      }}
-                    >
-                      <div
-                        id="bis-project-kind-help-dialog"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby={projectKindHelpTitleId}
-                        className="mb-10 w-full max-w-md rounded-xl border-2 border-zinc-300 bg-zinc-50 shadow-2xl dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-black/40"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-                          <h2
-                            id={projectKindHelpTitleId}
-                            className="text-sm font-semibold text-zinc-800 dark:text-zinc-200"
-                          >
-                            Project types
-                          </h2>
-                          <DialogCloseXButton onClick={() => setProjectKindHelpOpen(false)} />
-                        </div>
-                        <div className="space-y-3 px-4 py-4 text-sm text-zinc-700 dark:text-zinc-300">
-                          <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                            These values are fixed in the database for BIS workflows. Pick the
-                            closest match; use Application when the Manak number is CM/A.
-                          </p>
-                          <ul className="divide-y divide-zinc-200 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:divide-zinc-700 dark:border-zinc-600 dark:bg-zinc-950/60">
-                            {PROJECT_KIND_OPTIONS.map((o) => {
-                              const hint =
-                                PROJECT_KIND_HELP_LINES.find((h) => h.value === o.value)
-                                  ?.hint ?? "";
-                              return (
-                                <li
-                                  key={o.value}
-                                  className="px-3 py-2.5 text-left text-zinc-800 dark:text-zinc-100"
-                                >
-                                  <div className="font-medium text-zinc-900 dark:text-zinc-50">
-                                    {o.label}
-                                  </div>
-                                  {hint ? (
-                                    <p className="mt-0.5 text-xs leading-snug text-zinc-600 dark:text-zinc-400">
-                                      {hint}
-                                    </p>
-                                  ) : null}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>,
-                    document.body,
-                  )
-                : null}
             </div>
 
-            <div className="min-w-0">
-              <label htmlFor="bis_cm_digits" className={BIS_FIELD_LABEL_CLASS}>
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="bis_is_code_input"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-2 lg:row-start-1`}
+              >
+                IS Code
+              </label>
+              <div className="min-w-0 w-full lg:col-start-2 lg:row-start-2">
+                <IsCodeCombobox
+                  name="is_code_id"
+                  label="IS Code"
+                  hideLabel
+                  inputId="bis_is_code_input"
+                  value={formValues.is_code_id}
+                  onChange={(id) => onUpdateField("is_code_id", id)}
+                  options={isCodeOptions}
+                  listZIndexClass="z-[119]"
+                  onAddClick={onRequestQuickAddIsCode}
+                />
+              </div>
+            </div>
+
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="bis_cm_digits"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-3 lg:row-start-1`}
+              >
                 CM/L Number
               </label>
-              <div className={fieldInputRowShellClass}>
+              <div className={`min-w-0 w-full lg:col-start-3 lg:row-start-2 ${fieldInputRowShellClass}`}>
                 <span
                   className="flex shrink-0 items-center border-r border-zinc-200 bg-zinc-50 px-3 text-sm font-semibold tabular-nums text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200"
                   aria-hidden
@@ -393,94 +281,103 @@ export function BisProjectsMasterForm({
                     )
                   }
                   className={`${fieldInputInnerClass} font-mono tabular-nums`}
-                  placeholder="Optional — 10 digits"
+                  placeholder="0000000000"
                 />
               </div>
             </div>
 
-            <div className="min-w-0">
-              <label htmlFor="bis_validity" className={BIS_FIELD_LABEL_CLASS}>
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="bis_validity"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-4 lg:row-start-1`}
+              >
                 Licence Validity
               </label>
-              {isApplication ? (
-                <>
-                  <input type="hidden" name="license_validity_date" value="" />
+              <div className="min-w-0 w-full lg:col-start-4 lg:row-start-2">
+                {isApplication ? (
+                  <>
+                    <input type="hidden" name="license_validity_date" value="" />
+                    <input
+                      id="bis_validity"
+                      type="date"
+                      disabled
+                      readOnly
+                      value=""
+                      className="block w-full cursor-not-allowed rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
+                      title="Not applicable for Application (CM/A) type"
+                    />
+                  </>
+                ) : (
                   <input
                     id="bis_validity"
+                    name="license_validity_date"
                     type="date"
-                    disabled
-                    readOnly
-                    value=""
-                    className="mt-1 block w-full cursor-not-allowed rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-                    title="Not applicable for Application (CM/A) type"
+                    value={formValues.license_validity_date}
+                    onChange={(e) =>
+                      onUpdateField("license_validity_date", e.target.value)
+                    }
+                    title="Optional — end date of licence validity when known"
+                    className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
                   />
-                </>
-              ) : (
-                <input
-                  id="bis_validity"
-                  name="license_validity_date"
-                  type="date"
-                  value={formValues.license_validity_date}
-                  onChange={(e) =>
-                    onUpdateField("license_validity_date", e.target.value)
-                  }
-                  title="Optional — end date of licence validity when known"
-                  className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                />
-              )}
-            </div>
-
-            <div className="min-w-0">
-              <span className={BIS_FIELD_LABEL_CLASS}>License Status</span>
-              <div className="mt-1 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-100">
-                {licenseStatus}
+                )}
               </div>
             </div>
 
-            <div className="min-w-0 sm:col-span-2 md:col-span-1 lg:col-span-1">
-              <IsCodeCombobox
-                name="is_code_id"
-                label="IS Code"
-                value={formValues.is_code_id}
-                onChange={(id) => onUpdateField("is_code_id", id)}
-                options={isCodeOptions}
-                listZIndexClass="z-[119]"
-                onAddClick={onRequestQuickAddIsCode}
-              />
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <span className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-5 lg:row-start-1`}>
+                License Status
+              </span>
+              <div className="min-w-0 w-full lg:col-start-5 lg:row-start-2">
+                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-100">
+                  {licenseStatus}
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
         <div className="min-w-0 sm:col-span-2 lg:col-span-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <div className="min-w-0 sm:col-span-2 lg:col-span-1">
-              <ClientDropdownField
-                optionKey={DROPDOWN_KEY_BIS_PROJECT_CLIENT}
-                name="client_id"
-                label="Name of Client"
-                dialogTitle="Clients"
-                addPlaceholder="New client label"
-                manageAriaLabel={
-                  onRequestQuickAddClient
-                    ? "Add new client"
-                    : "Add or remove client picker labels"
-                }
-                value={formValues.client_id}
-                onChange={(v) => onUpdateField("client_id", v)}
-                options={clientOptions}
-                selectedValue={formValues.client_id}
-                onClearSelection={() => onUpdateField("client_id", "")}
-                includeEmptyOption={false}
-                searchPlaceholder="Search Client Name…"
-                overlayZIndexClass="z-[119]"
-                onSuffixButtonClick={onRequestQuickAddClient}
-              />
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 lg:grid-rows-[auto_auto] lg:gap-x-4 lg:gap-y-2">
+            <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-1 lg:contents">
+              <label
+                htmlFor="client_id_input"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-1 lg:row-start-1`}
+              >
+                Name of Client
+              </label>
+              <div className="min-w-0 w-full sm:col-span-2 lg:col-span-1 lg:col-start-1 lg:row-start-2">
+                <ClientDropdownField
+                  hideLabel
+                  optionKey={DROPDOWN_KEY_BIS_PROJECT_CLIENT}
+                  name="client_id"
+                  label="Name of Client"
+                  dialogTitle="Clients"
+                  addPlaceholder="New client label"
+                  manageAriaLabel={
+                    onRequestQuickAddClient
+                      ? "Add new client"
+                      : "Add or remove client picker labels"
+                  }
+                  value={formValues.client_id}
+                  onChange={(v) => onUpdateField("client_id", v)}
+                  options={clientOptions}
+                  selectedValue={formValues.client_id}
+                  onClearSelection={() => onUpdateField("client_id", "")}
+                  includeEmptyOption={false}
+                  searchPlaceholder="Search Client Name…"
+                  overlayZIndexClass="z-[119]"
+                  onSuffixButtonClick={onRequestQuickAddClient}
+                />
+              </div>
             </div>
-            <div className="min-w-0">
-              <div className="space-y-1">
-                <label htmlFor="portal_user_id_bis_field" className={BIS_FIELD_LABEL_CLASS}>
-                  User ID
-                </label>
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="portal_user_id_bis_field"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-2 lg:row-start-1`}
+              >
+                User ID
+              </label>
+              <div className="min-w-0 w-full lg:col-start-2 lg:row-start-2">
                 <div className={fieldInputRowShellClass}>
                   <input
                     id="portal_user_id_bis_field"
@@ -495,72 +392,103 @@ export function BisProjectsMasterForm({
                 </div>
               </div>
             </div>
-            <div className="min-w-0">
-              <label htmlFor="bis_portal_password" className={BIS_FIELD_LABEL_CLASS}>
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="bis_portal_password"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-3 lg:row-start-1`}
+              >
                 Password
               </label>
-              <input
-                id="bis_portal_password"
-                name="portal_password"
-                type="password"
-                autoComplete="new-password"
-                value={formValues.portal_password}
-                onChange={(e) => onUpdateField("portal_password", e.target.value)}
-                className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-              />
+              <div className="min-w-0 w-full lg:col-start-3 lg:row-start-2">
+                <input
+                  id="bis_portal_password"
+                  name="portal_password"
+                  type="password"
+                  autoComplete="new-password"
+                  value={formValues.portal_password}
+                  onChange={(e) => onUpdateField("portal_password", e.target.value)}
+                  className={fieldInputClassBase}
+                />
+              </div>
             </div>
           </div>
         </div>
 
         <div className="min-w-0 sm:col-span-2 lg:col-span-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="min-w-0">
-              <Field
-                label="Case Handled By"
-                name="case_handled_by"
-                value={formValues.case_handled_by}
-                onChange={(v) => onUpdateField("case_handled_by", v)}
-              />
-            </div>
-            <div className="min-w-0">
-              <Field
-                label="Case Referred By"
-                name="case_referred_by"
-                value={formValues.case_referred_by}
-                onChange={(v) => onUpdateField("case_referred_by", v)}
-              />
-            </div>
-            <div className="min-w-0">
-              <label htmlFor="bis_billing_amount" className={BIS_FIELD_LABEL_CLASS}>
-                Billing Amount
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:grid-rows-[auto_auto] lg:gap-x-4 lg:gap-y-2">
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="case_handled_by_bis_field"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-1 lg:row-start-1`}
+              >
+                Case Handled By
               </label>
-              <div className={fieldInputRowShellClass}>
-                <span
-                  className="flex shrink-0 items-center border-r border-zinc-200 bg-zinc-50 px-3 text-sm font-semibold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200"
-                  aria-hidden
-                >
-                  ₹
-                </span>
-                <input
-                  id="bis_billing_amount"
-                  name="billing_amount"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  value={formValues.billing_amount}
-                  onChange={(e) =>
-                    onUpdateField("billing_amount", sanitizeCurrency(e.target.value))
-                  }
-                  className={`${fieldInputInnerClass} tabular-nums`}
-                  title="Optional — leave blank to save as ₹0"
-                  placeholder="Optional"
+              <div className="min-w-0 w-full lg:col-start-1 lg:row-start-2">
+                <Field
+                  hideLabel
+                  label="Case Handled By"
+                  name="case_handled_by"
+                  value={formValues.case_handled_by}
+                  onChange={(v) => onUpdateField("case_handled_by", v)}
                 />
               </div>
             </div>
-            <div className="min-w-0">
-              <label htmlFor="billing_frequency_input" className={BIS_FIELD_LABEL_CLASS}>
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="case_referred_by_bis_field"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-2 lg:row-start-1`}
+              >
+                Case Referred By
+              </label>
+              <div className="min-w-0 w-full lg:col-start-2 lg:row-start-2">
+                <Field
+                  hideLabel
+                  label="Case Referred By"
+                  name="case_referred_by"
+                  value={formValues.case_referred_by}
+                  onChange={(v) => onUpdateField("case_referred_by", v)}
+                />
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="bis_billing_amount"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-3 lg:row-start-1`}
+              >
+                Billing Amount
+              </label>
+              <div className="min-w-0 w-full lg:col-start-3 lg:row-start-2">
+                <div className={fieldInputRowShellClass}>
+                  <span
+                    className="flex shrink-0 items-center border-r border-zinc-200 bg-zinc-50 px-3 text-sm font-semibold text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200"
+                    aria-hidden
+                  >
+                    ₹
+                  </span>
+                  <input
+                    id="bis_billing_amount"
+                    name="billing_amount"
+                    inputMode="decimal"
+                    autoComplete="off"
+                    value={formValues.billing_amount}
+                    onChange={(e) =>
+                      onUpdateField("billing_amount", sanitizeCurrency(e.target.value))
+                    }
+                    className={`${fieldInputInnerClass} tabular-nums`}
+                    title="Optional — leave blank to save as ₹0"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="billing_frequency_input"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-4 lg:row-start-1`}
+              >
                 Billing Frequency
               </label>
-              <div className="mt-1">
+              <div className="min-w-0 w-full lg:col-start-4 lg:row-start-2">
                 <ClientDropdownField
                   hideLabel
                   inputRowShellClassName={fieldInputRowShellClass}
@@ -568,11 +496,11 @@ export function BisProjectsMasterForm({
                   name="billing_frequency"
                   label="Billing Frequency"
                   dialogTitle="Billing frequency"
-                  addPlaceholder=""
-                  manageAriaLabel="Billing frequency help"
+                  addPlaceholder="Label as stored (e.g. Monthly, Yearly)"
+                  manageAriaLabel="Add or remove billing frequencies"
                   value={formValues.billing_frequency}
                   onChange={(v) => onUpdateField("billing_frequency", v)}
-                  options={billingFrequencyComboboxOptions}
+                  options={billingFrequencyOptions}
                   selectedValue={formValues.billing_frequency}
                   onClearSelection={() =>
                     onUpdateField("billing_frequency", DEFAULT_BILLING_FREQUENCY)
@@ -581,71 +509,8 @@ export function BisProjectsMasterForm({
                   searchPlaceholder="Search billing frequency…"
                   overlayZIndexClass="z-[119]"
                   listZIndexClass="z-[119]"
-                  onSuffixButtonClick={() => {
-                    setProjectKindHelpOpen(false);
-                    setBillingFreqHelpOpen(true);
-                  }}
                 />
               </div>
-              {billingFreqHelpOpen
-                ? createPortal(
-                    <div
-                      className="fixed inset-0 z-[119] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55"
-                      role="presentation"
-                      onClick={(e) => {
-                        if (e.target === e.currentTarget) setBillingFreqHelpOpen(false);
-                      }}
-                    >
-                      <div
-                        id="bis-billing-frequency-help-dialog"
-                        role="dialog"
-                        aria-modal="true"
-                        aria-labelledby={billingFreqHelpTitleId}
-                        className="mb-10 w-full max-w-md rounded-xl border-2 border-zinc-300 bg-zinc-50 shadow-2xl dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-black/40"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-700">
-                          <h2
-                            id={billingFreqHelpTitleId}
-                            className="text-sm font-semibold text-zinc-800 dark:text-zinc-200"
-                          >
-                            Billing frequency
-                          </h2>
-                          <DialogCloseXButton onClick={() => setBillingFreqHelpOpen(false)} />
-                        </div>
-                        <div className="space-y-3 px-4 py-4 text-sm text-zinc-700 dark:text-zinc-300">
-                          <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
-                            These options are fixed for reporting and exports. Choose the cycle
-                            that matches your agreement with the client.
-                          </p>
-                          <ul className="divide-y divide-zinc-200 overflow-hidden rounded-lg border border-zinc-200 bg-white dark:divide-zinc-700 dark:border-zinc-600 dark:bg-zinc-950/60">
-                            {BILLING_FREQUENCIES.map((f) => {
-                              const hint =
-                                BILLING_FREQUENCY_HELP_LINES.find((h) => h.value === f)
-                                  ?.hint ?? "";
-                              return (
-                                <li
-                                  key={f}
-                                  className="px-3 py-2.5 text-left text-zinc-800 dark:text-zinc-100"
-                                >
-                                  <div className="font-medium text-zinc-900 dark:text-zinc-50">
-                                    {f}
-                                  </div>
-                                  {hint ? (
-                                    <p className="mt-0.5 text-xs leading-snug text-zinc-600 dark:text-zinc-400">
-                                      {hint}
-                                    </p>
-                                  ) : null}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        </div>
-                      </div>
-                    </div>,
-                    document.body,
-                  )
-                : null}
             </div>
           </div>
         </div>

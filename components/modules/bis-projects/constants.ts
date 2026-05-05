@@ -17,7 +17,7 @@ export const BILLING_FREQUENCIES = [
 ] as const;
 
 export const PROJECT_KIND_OPTIONS: { value: string; label: string }[] = [
-  { value: "new_license", label: "New License" },
+  { value: "new_license", label: "License" },
   { value: "application", label: "Application" },
   { value: "inclusion", label: "Inclusion" },
   { value: "renewal", label: "Renewal (legacy)" },

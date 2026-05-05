@@ -35,7 +35,177 @@ function validityCell(r: BisProjectMasterRow): string {
   return d == null || d === "" ? "—" : d;
 }
 
+/**
+ * Print preview in an in-page iframe (same pattern as client / product / IS code
+ * masters). Avoids `window.open(..., "noopener")`, which returns `null` per HTML.
+ */
+function openPrintWindow(html: string): void {
+  const existing = document.getElementById("bis-projects-print-root");
+  existing?.remove();
+
+  const root = document.createElement("div");
+  root.id = "bis-projects-print-root";
+  root.setAttribute(
+    "style",
+    [
+      "position:fixed",
+      "inset:0",
+      "z-index:2147483646",
+      "background:rgba(15,23,42,.45)",
+      "display:flex",
+      "align-items:flex-start",
+      "justify-content:center",
+      "padding:16px",
+      "overflow:auto",
+    ].join(";"),
+  );
+
+  const panel = document.createElement("div");
+  panel.setAttribute(
+    "style",
+    [
+      "width:min(1100px,calc(100vw - 32px))",
+      "height:min(92vh,calc(100vh - 32px))",
+      "margin-top:8px",
+      "background:#fff",
+      "border-radius:12px",
+      "box-shadow:0 25px 50px -12px rgba(0,0,0,.35)",
+      "display:flex",
+      "flex-direction:column",
+      "overflow:hidden",
+    ].join(";"),
+  );
+
+  const bar = document.createElement("div");
+  bar.setAttribute(
+    "style",
+    [
+      "flex-shrink:0",
+      "display:flex",
+      "gap:8px",
+      "align-items:center",
+      "padding:10px 12px",
+      "border-bottom:1px solid #e2e8f0",
+      "background:linear-gradient(180deg,#f8fafc,#fff)",
+    ].join(";"),
+  );
+  const left = document.createElement("div");
+  left.setAttribute(
+    "style",
+    "flex:1;display:flex;flex-direction:column;gap:2px;min-width:0;",
+  );
+  const title = document.createElement("span");
+  title.textContent = "Print preview";
+  title.setAttribute(
+    "style",
+    "font:600 14px system-ui,-apple-system,sans-serif;color:#0f172a;",
+  );
+  const hint = document.createElement("span");
+  hint.textContent =
+    "BIS existing licenses list. Use Print… if the dialog does not open automatically.";
+  hint.setAttribute("style", "font:12px system-ui,sans-serif;color:#64748b;");
+  left.appendChild(title);
+  left.appendChild(hint);
+
+  const btnPrint = document.createElement("button");
+  btnPrint.type = "button";
+  btnPrint.textContent = "Print…";
+  btnPrint.setAttribute(
+    "style",
+    [
+      "cursor:pointer",
+      "border-radius:8px",
+      "border:none",
+      "background:linear-gradient(180deg,#0ea5e9,#0284c7)",
+      "color:#fff",
+      "padding:8px 16px",
+      "font:600 13px system-ui,sans-serif",
+    ].join(";"),
+  );
+
+  const btnClose = document.createElement("button");
+  btnClose.type = "button";
+  btnClose.textContent = "Close";
+  btnClose.setAttribute(
+    "style",
+    [
+      "cursor:pointer",
+      "border-radius:8px",
+      "border:1px solid #cbd5e1",
+      "background:#fff",
+      "color:#334155",
+      "padding:8px 14px",
+      "font:500 13px system-ui,sans-serif",
+    ].join(";"),
+  );
+
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("title", "BIS existing licenses print preview");
+  iframe.setAttribute(
+    "style",
+    "flex:1;width:100%;border:0;min-height:0;background:#f1f5f9;",
+  );
+
+  const cleanup = () => {
+    document.removeEventListener("keydown", onKey);
+    if (root.isConnected) root.remove();
+  };
+
+  const onKey = (e: KeyboardEvent) => {
+    if (e.key === "Escape") cleanup();
+  };
+  document.addEventListener("keydown", onKey);
+
+  btnClose.addEventListener("click", cleanup);
+
+  const runPrint = () => {
+    const cw = iframe.contentWindow;
+    if (!cw) return;
+    try {
+      cw.focus();
+      cw.print();
+    } catch {
+      /* ignore */
+    }
+  };
+
+  btnPrint.addEventListener("click", runPrint);
+
+  bar.appendChild(left);
+  bar.appendChild(btnPrint);
+  bar.appendChild(btnClose);
+  panel.appendChild(bar);
+  panel.appendChild(iframe);
+  root.appendChild(panel);
+  document.body.appendChild(root);
+
+  root.addEventListener("click", (e) => {
+    if (e.target === root) cleanup();
+  });
+
+  const doc = iframe.contentDocument;
+  if (!doc) {
+    cleanup();
+    window.alert(
+      "Could not prepare print preview. Try again or use another browser.",
+    );
+    return;
+  }
+  doc.open();
+  doc.write(html);
+  doc.close();
+
+  const cw = iframe.contentWindow;
+  if (cw) {
+    cw.addEventListener("afterprint", cleanup);
+  }
+
+  window.setTimeout(runPrint, 450);
+}
+
 export function printBisProjectsMasterList(rows: BisProjectMasterRow[]) {
+  if (rows.length === 0) return;
+
   const rowsHtml = rows
     .map((r) => {
       const lic = computeLicenseDisplayStatus(
@@ -54,7 +224,7 @@ export function printBisProjectsMasterList(rows: BisProjectMasterRow[]) {
     .join("");
 
   const html = `<!DOCTYPE html>
-<html><head><meta charset="utf-8"/><title>BIS Projects</title>
+<html><head><meta charset="utf-8"/><title>BIS Existing Licenses</title>
 <style>
   body { font-family: system-ui, sans-serif; padding: 16px; color: #18181b; }
   table { width: 100%; border-collapse: collapse; font-size: 12px; }
@@ -62,22 +232,14 @@ export function printBisProjectsMasterList(rows: BisProjectMasterRow[]) {
   th { background: #f4f4f5; font-weight: 600; }
   h1 { font-size: 18px; margin-bottom: 12px; }
 </style></head><body>
-<h1>BIS Projects</h1>
+<h1>BIS Existing Licenses</h1>
 <table>
 <thead><tr>
 <th>IS Code &amp; Type</th><th style="text-align:center">Name of the Client</th><th style="text-align:center">CM/L</th><th style="text-align:center">License Validity</th><th style="text-align:center">Billing</th><th style="text-align:center">Frequency</th>
 </tr></thead>
 <tbody>${rowsHtml}</tbody>
 </table>
-<script>window.onload=function(){window.print();};</script>
 </body></html>`;
 
-  const w = window.open("", "_blank", "noopener,noreferrer");
-  if (!w) {
-    window.alert("Pop-up blocked. Allow pop-ups to print.");
-    return;
-  }
-  w.document.open();
-  w.document.write(html);
-  w.document.close();
+  openPrintWindow(html);
 }

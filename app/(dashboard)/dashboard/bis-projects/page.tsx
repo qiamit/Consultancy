@@ -1,5 +1,6 @@
 import { Suspense } from "react";
 import { BisProjectsMaster } from "@/components/modules/bis-projects";
+import { loadBisProjectsFormDropdownOptions } from "@/lib/data/bis-projects-dropdowns";
 import { loadClientMasterDropdownOptions } from "@/lib/data/client-master-dropdowns";
 import { loadIsCodeFormDropdownOptions } from "@/lib/data/is-code-form-dropdowns";
 import type { BisProjectMasterRow } from "@/lib/types/bis-project-master";
@@ -8,7 +9,7 @@ import { createClient } from "@/lib/supabase/server";
 function MasterFallback() {
   return (
     <div className="mx-auto max-w-[1400px] animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-      Loading BIS Projects…
+      Loading BIS Existing Licenses…
     </div>
   );
 }
@@ -91,10 +92,12 @@ export default async function BisProjectsPage({
       company_name: string | null;
     }[];
 
-  const [clientMasterDropdowns, isCodeFormDropdowns] = await Promise.all([
-    loadClientMasterDropdownOptions(supabase),
-    loadIsCodeFormDropdownOptions(supabase),
-  ]);
+  const [clientMasterDropdowns, isCodeFormDropdowns, bisProjectsFormDropdowns] =
+    await Promise.all([
+      loadClientMasterDropdownOptions(supabase),
+      loadIsCodeFormDropdownOptions(supabase),
+      loadBisProjectsFormDropdownOptions(supabase),
+    ]);
 
   return (
     <Suspense fallback={<MasterFallback />}>
@@ -108,6 +111,7 @@ export default async function BisProjectsPage({
         isCodeRows={isCodeRows}
         clientMasterDropdowns={clientMasterDropdowns}
         isCodeFormDropdowns={isCodeFormDropdowns}
+        bisProjectsFormDropdowns={bisProjectsFormDropdowns}
       />
     </Suspense>
   );

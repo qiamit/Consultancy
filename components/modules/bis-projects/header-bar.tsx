@@ -55,7 +55,7 @@ export function BisProjectsMasterHeaderBar({
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
         <div className="shrink-0">
           <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            BIS Projects
+            BIS Existing Licenses
           </h1>
         </div>
 

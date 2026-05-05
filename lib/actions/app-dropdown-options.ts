@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import {
+  DROPDOWN_KEY_BIS_BILLING_FREQUENCY,
+  DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY,
+  DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND,
+  DROPDOWN_KEY_BIS_PROJECT_KIND,
   DROPDOWN_KEY_CLIENT_CITY,
   DROPDOWN_KEY_CLIENT_COMPANY_SCALE,
   DROPDOWN_KEY_CLIENT_COMPANY_STATUS,
@@ -39,6 +43,32 @@ const PRODUCT_USAGE_COLUMN: Partial<Record<string, string>> = {
   [DROPDOWN_KEY_PRODUCT_UNIT]: "unit_of_item",
   [DROPDOWN_KEY_PRODUCT_GST_RATE]: "gst_rate",
 };
+
+const BIS_PROJECTS_USAGE_COLUMN: Partial<Record<string, string>> = {
+  [DROPDOWN_KEY_BIS_PROJECT_KIND]: "project_kind",
+  [DROPDOWN_KEY_BIS_BILLING_FREQUENCY]: "billing_frequency",
+};
+
+const BIS_NEW_APPLICATIONS_USAGE_COLUMN: Partial<Record<string, string>> = {
+  [DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND]: "project_kind",
+  [DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY]: "billing_frequency",
+};
+
+/** Seeded BIS catalog values (keep in sync with `bis-projects-dropdowns` + migrations). */
+const BIS_PROTECTED_SEEDED_PROJECT_KINDS = new Set([
+  "new_license",
+  "application",
+  "inclusion",
+  "renewal",
+  "maintenance",
+]);
+const BIS_PROTECTED_SEEDED_BILLING = new Set([
+  "Monthly",
+  "Quarterly",
+  "Half Yearly",
+  "Yearly",
+  "Based on Work",
+]);
 
 export async function addAppDropdownOption(
   optionKey: string,
@@ -83,6 +113,18 @@ export async function addAppDropdownOption(
   if (optionKey.startsWith("product_master.")) {
     revalidatePath("/dashboard/products");
   }
+  if (
+    optionKey === DROPDOWN_KEY_BIS_PROJECT_KIND ||
+    optionKey === DROPDOWN_KEY_BIS_BILLING_FREQUENCY
+  ) {
+    revalidatePath("/dashboard/bis-projects");
+  }
+  if (
+    optionKey === DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND ||
+    optionKey === DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY
+  ) {
+    revalidatePath("/dashboard/bis-new-applications");
+  }
   return { ok: true };
 }
 
@@ -96,6 +138,30 @@ export async function deleteAppDropdownOption(
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in." };
+
+  const trimmedValue = value.trim();
+  if (
+    (optionKey === DROPDOWN_KEY_BIS_PROJECT_KIND ||
+      optionKey === DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND) &&
+    BIS_PROTECTED_SEEDED_PROJECT_KINDS.has(trimmedValue)
+  ) {
+    return {
+      ok: false,
+      error:
+        "Built-in project types cannot be deleted. Add a new type instead of removing these.",
+    };
+  }
+  if (
+    (optionKey === DROPDOWN_KEY_BIS_BILLING_FREQUENCY ||
+      optionKey === DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY) &&
+    BIS_PROTECTED_SEEDED_BILLING.has(trimmedValue)
+  ) {
+    return {
+      ok: false,
+      error:
+        "Built-in billing frequencies cannot be deleted. Add a custom option instead of removing these.",
+    };
+  }
 
   const column = CLIENT_USAGE_COLUMN[optionKey];
   if (column) {
@@ -142,6 +208,36 @@ export async function deleteAppDropdownOption(
     }
   }
 
+  const bisCol = BIS_PROJECTS_USAGE_COLUMN[optionKey];
+  if (bisCol) {
+    const { count, error: bErr } = await supabase
+      .from("bis_projects")
+      .select("id", { count: "exact", head: true })
+      .eq(bisCol, value);
+    if (bErr) return { ok: false, error: bErr.message };
+    if ((count ?? 0) > 0) {
+      return {
+        ok: false,
+        error: `Cannot delete "${value}" — it is used by one or more BIS projects. Update those projects first.`,
+      };
+    }
+  }
+
+  const bisNewCol = BIS_NEW_APPLICATIONS_USAGE_COLUMN[optionKey];
+  if (bisNewCol) {
+    const { count, error: bErr } = await supabase
+      .from("bis_new_applications")
+      .select("id", { count: "exact", head: true })
+      .eq(bisNewCol, value);
+    if (bErr) return { ok: false, error: bErr.message };
+    if ((count ?? 0) > 0) {
+      return {
+        ok: false,
+        error: `Cannot delete "${value}" — it is used by one or more BIS new applications. Update those records first.`,
+      };
+    }
+  }
+
   const { error } = await supabase
     .from("app_dropdown_options")
     .delete()
@@ -156,6 +252,18 @@ export async function deleteAppDropdownOption(
   }
   if (optionKey.startsWith("product_master.")) {
     revalidatePath("/dashboard/products");
+  }
+  if (
+    optionKey === DROPDOWN_KEY_BIS_PROJECT_KIND ||
+    optionKey === DROPDOWN_KEY_BIS_BILLING_FREQUENCY
+  ) {
+    revalidatePath("/dashboard/bis-projects");
+  }
+  if (
+    optionKey === DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND ||
+    optionKey === DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY
+  ) {
+    revalidatePath("/dashboard/bis-new-applications");
   }
   return { ok: true };
 }

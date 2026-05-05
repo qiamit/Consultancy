@@ -49,6 +49,7 @@ export function IsCodeMaster({
   const [searchQuery, setSearchQuery] = useState("");
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
 
   const idParam = searchParams.get("id");
   const isNewParam = searchParams.get("new") === "1";
@@ -105,8 +106,6 @@ export function IsCodeMaster({
     const start = (page - 1) * pageSize;
     return filteredRows.slice(start, start + pageSize);
   }, [filteredRows, page, pageSize]);
-
-  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
 
   useEffect(() => {
     const valid = new Set(filteredRows.map((r) => r.id));

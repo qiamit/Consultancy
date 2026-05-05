@@ -1,13 +1,15 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { signOut } from "@/lib/actions/auth";
+import { SidebarAside } from "./sidebar-aside";
+import { SidebarToggleButton } from "./sidebar-toggle-button";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/dashboard/clients", label: "Client Master" },
   { href: "/dashboard/finance", label: "Finance Management" },
-  { href: "/dashboard/bis-projects", label: "BIS Projects" },
-  { href: "/dashboard/iso-projects", label: "ISO Projects" },
+  { href: "/dashboard/bis-projects", label: "BIS Existing Licenses" },
+  { href: "/dashboard/bis-new-applications", label: "BIS New Application" },
   { href: "/dashboard/is-code-master", label: "IS Code Master" },
   { href: "/dashboard/products", label: "Product & Services" },
   { href: "/dashboard/settings/company", label: "Company Settings" },
@@ -21,14 +23,17 @@ export async function Sidebar() {
   } = await supabase.auth.getUser();
 
   return (
-    <aside className="fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-      <div className="border-b border-zinc-200 px-5 py-5 dark:border-zinc-800">
-        <Link
-          href="/dashboard"
-          className="block text-[15px] font-semibold leading-snug text-zinc-900 dark:text-zinc-50"
-        >
-          Smart Consultancy Manager
-        </Link>
+    <SidebarAside>
+      <div className="flex items-start gap-2 border-b border-zinc-200 px-5 py-5 dark:border-zinc-800">
+        <div className="min-w-0 flex-1">
+          <Link
+            href="/dashboard"
+            className="block text-[15px] font-semibold leading-snug text-zinc-900 dark:text-zinc-50"
+          >
+            Smart Consultancy Manager
+          </Link>
+        </div>
+        <SidebarToggleButton />
       </div>
       <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4 text-sm">
         {nav.map((item) => (
@@ -57,6 +62,6 @@ export async function Sidebar() {
           </button>
         </form>
       </div>
-    </aside>
+    </SidebarAside>
   );
 }

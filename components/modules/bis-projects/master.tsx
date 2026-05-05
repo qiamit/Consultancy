@@ -11,6 +11,7 @@ import {
   deleteBisProjects,
   importBisProjectsMaster,
 } from "@/lib/actions/bis-projects";
+import type { BisProjectsFormDropdownOptions } from "@/lib/data/bis-projects-dropdowns";
 import type { ClientMasterDropdownOptions } from "@/lib/data/client-master-dropdowns";
 import type { IsCodeFormDropdownOptions } from "@/lib/data/is-code-form-dropdowns";
 import {
@@ -62,6 +63,7 @@ export function BisProjectsMaster({
   isCodeRows,
   clientMasterDropdowns,
   isCodeFormDropdowns,
+  bisProjectsFormDropdowns,
 }: {
   initialRows: BisProjectMasterRow[];
   fetchError?: string | null;
@@ -72,6 +74,7 @@ export function BisProjectsMaster({
   isCodeRows: BisProjectIsCodeOptionRow[];
   clientMasterDropdowns: ClientMasterDropdownOptions;
   isCodeFormDropdowns: IsCodeFormDropdownOptions;
+  bisProjectsFormDropdowns: BisProjectsFormDropdownOptions;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -80,6 +83,15 @@ export function BisProjectsMaster({
   const [searchQuery, setSearchQuery] = useState("");
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
+  const [embedClientOpen, setEmbedClientOpen] = useState(false);
+  const [embedIsCodeOpen, setEmbedIsCodeOpen] = useState(false);
+  const [embedClientForm, setEmbedClientForm] = useState(() =>
+    clientMasterEmptyForm(),
+  );
+  const [embedIsCodeForm, setEmbedIsCodeForm] = useState(() =>
+    isCodeEmptyForm(),
+  );
 
   const idParam = searchParams.get("id");
   const isNewParam = searchParams.get("new") === "1";
@@ -168,16 +180,6 @@ export function BisProjectsMaster({
     const start = (page - 1) * pageSize;
     return filteredRows.slice(start, start + pageSize);
   }, [filteredRows, page, pageSize]);
-
-  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
-  const [embedClientOpen, setEmbedClientOpen] = useState(false);
-  const [embedIsCodeOpen, setEmbedIsCodeOpen] = useState(false);
-  const [embedClientForm, setEmbedClientForm] = useState(() =>
-    clientMasterEmptyForm(),
-  );
-  const [embedIsCodeForm, setEmbedIsCodeForm] = useState(() =>
-    isCodeEmptyForm(),
-  );
 
   useEffect(() => {
     const valid = new Set(filteredRows.map((r) => r.id));
@@ -401,6 +403,10 @@ export function BisProjectsMaster({
               idParam={idParam}
               clientOptions={clientOptions}
               isCodeOptions={isCodeOptions}
+              projectKindOptions={bisProjectsFormDropdowns.projectKindOptions}
+              billingFrequencyOptions={
+                bisProjectsFormDropdowns.billingFrequencyOptions
+              }
               onClose={closeForm}
               onAddNew={addNew}
               onUpdateField={updateField}

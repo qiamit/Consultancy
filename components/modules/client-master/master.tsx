@@ -55,6 +55,7 @@ export function ClientMaster({
   countryOptions,
   paymentTermOptions,
   phoneCountryCodeOptions,
+  returnToAfterSave,
 }: {
   initialClients: ClientMasterRow[];
   fetchError?: string | null;
@@ -72,6 +73,8 @@ export function ClientMaster({
   countryOptions: AppDropdownOptionRow[];
   paymentTermOptions: AppDropdownOptionRow[];
   phoneCountryCodeOptions: AppDropdownOptionRow[];
+  /** After saving a new client, redirect here (e.g. quotation form URL). */
+  returnToAfterSave?: string | null;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -80,6 +83,7 @@ export function ClientMaster({
   const [searchQuery, setSearchQuery] = useState("");
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
+  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
 
   const idParam = searchParams.get("id");
   const isNewParam = searchParams.get("new") === "1";
@@ -145,8 +149,6 @@ export function ClientMaster({
     const start = (page - 1) * pageSize;
     return filteredClients.slice(start, start + pageSize);
   }, [filteredClients, page, pageSize]);
-
-  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
 
   useEffect(() => {
     const valid = new Set(filteredClients.map((c) => c.id));
@@ -400,6 +402,7 @@ export function ClientMaster({
               countryOptions={countryOptions}
               paymentTermOptions={paymentTermOptions}
               phoneCountryCodeOptions={phoneCountryCodeOptions}
+              returnToAfterSave={returnToAfterSave}
             />
           </div>
         </div>

@@ -1,0 +1,1 @@
+export { BisNewApplicationsMaster } from "./master";

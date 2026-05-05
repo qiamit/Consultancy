@@ -1,7 +1,64 @@
-import { updateCompanySettings } from "@/lib/actions/settings";
+import { CompanySettingsTabs } from "@/components/dashboard/company-settings-tabs";
+import { listCompanyNotesTemplates } from "@/lib/data/company-notes-templates";
+import { listCompanyScopeOfWork } from "@/lib/data/company-scope-of-work";
+import { listCompanyTerms } from "@/lib/data/company-terms";
+import { DOCUMENTS_BUCKET } from "@/lib/storage/documents";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function CompanySettingsPage() {
+async function signedImageUrl(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  path: string | null | undefined,
+): Promise<string | null> {
+  if (!path?.trim()) return null;
+  const { data, error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .createSignedUrl(path.trim(), 3600);
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
+}
+
+function firstSearchParam(
+  sp: Record<string, string | string[] | undefined>,
+  key: string,
+): string | undefined {
+  const v = sp[key];
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
+function companySettingsPageError(err: string | undefined): string | null {
+  if (!err) return null;
+  if (err === "db") return "Could not save settings. Try again.";
+  if (err === "upload") {
+    return "One or more image uploads failed. Check file size and format.";
+  }
+  if (err.endsWith("_validate")) {
+    return "Each template needs a valid link code and display name. Use lowercase letters, numbers, and underscores only for the code.";
+  }
+  if (err.endsWith("_duplicate")) {
+    return "That link code is already in use. Choose another code.";
+  }
+  if (err.endsWith("_not_found")) {
+    return "That template no longer exists. Refresh the page.";
+  }
+  if (err.endsWith("_default_delete")) {
+    return "The default template cannot be deleted.";
+  }
+  if (err.endsWith("_db")) {
+    return "Could not save templates. Try again.";
+  }
+  return null;
+}
+
+export default async function CompanySettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const err = firstSearchParam(sp, "error");
+  const errMsg = companySettingsPageError(err);
+
   const supabase = await createClient();
   const { data: row } = await supabase
     .from("company_settings")
@@ -9,93 +66,43 @@ export default async function CompanySettingsPage() {
     .eq("id", 1)
     .maybeSingle();
 
-  return (
-    <div className="mx-auto max-w-2xl space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-          Company Settings
-        </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Letterhead details used across PDFs and proposals (extend as needed).
-        </p>
-      </div>
+  const r = row as Record<string, string | null | undefined> | null;
 
-      <form
-        action={updateCompanySettings}
-        className="space-y-5 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
-      >
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Company name
-          </label>
-          <input
-            name="company_name"
-            defaultValue={row?.company_name ?? ""}
-            className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-          />
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Address
-          </label>
-          <textarea
-            name="address"
-            rows={3}
-            defaultValue={row?.address ?? ""}
-            className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-          />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              GST number
-            </label>
-            <input
-              name="gst_number"
-              defaultValue={row?.gst_number ?? ""}
-              className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-            />
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              Phone
-            </label>
-            <input
-              name="phone"
-              defaultValue={row?.phone ?? ""}
-              className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Email
-          </label>
-          <input
-            name="email"
-            type="email"
-            defaultValue={row?.email ?? ""}
-            className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-          />
-        </div>
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Logo path (Storage path after upload — optional)
-          </label>
-          <input
-            name="logo_path"
-            defaultValue={row?.logo_path ?? ""}
-            placeholder="documents/logos/..."
-            className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-          />
-        </div>
-        <button
-          type="submit"
-          className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
-        >
-          Save Company Settings
-        </button>
-      </form>
-    </div>
+  const [
+    logoUrl,
+    letterUpperUrl,
+    letterLowerUrl,
+    sealUrl,
+    upiQrUrl,
+    chequeUrl,
+    termsRows,
+    scopeRows,
+    notesRows,
+  ] = await Promise.all([
+    signedImageUrl(supabase, r?.logo_path),
+    signedImageUrl(supabase, r?.letterhead_upper_path),
+    signedImageUrl(supabase, r?.letterhead_lower_path),
+    signedImageUrl(supabase, r?.seal_sign_image_path),
+    signedImageUrl(supabase, r?.bank_upi_qr_path),
+    signedImageUrl(supabase, r?.bank_cheque_image_path),
+    listCompanyTerms(),
+    listCompanyScopeOfWork(),
+    listCompanyNotesTemplates(),
+  ]);
+
+  return (
+    <CompanySettingsTabs
+      errMsg={errMsg}
+      r={r}
+      logoUrl={logoUrl}
+      letterUpperUrl={letterUpperUrl}
+      letterLowerUrl={letterLowerUrl}
+      sealUrl={sealUrl}
+      upiQrUrl={upiQrUrl}
+      chequeUrl={chequeUrl}
+      termsRows={termsRows}
+      scopeRows={scopeRows}
+      notesRows={notesRows}
+    />
   );
 }

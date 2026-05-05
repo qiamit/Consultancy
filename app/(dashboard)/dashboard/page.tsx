@@ -4,17 +4,21 @@ import { createClient } from "@/lib/supabase/server";
 export default async function DashboardHomePage() {
   const supabase = await createClient();
 
-  const [clients, bis, iso, txns] = await Promise.all([
+  const [clients, bis, bisNewApps, txns] = await Promise.all([
     supabase.from("clients").select("id", { count: "exact", head: true }),
     supabase.from("bis_projects").select("id", { count: "exact", head: true }),
-    supabase.from("iso_projects").select("id", { count: "exact", head: true }),
+    supabase.from("bis_new_applications").select("id", { count: "exact", head: true }),
     supabase.from("transactions").select("id", { count: "exact", head: true }),
   ]);
 
   const stats = [
     { label: "Client Master", count: clients.count ?? 0, href: "/dashboard/clients" },
-    { label: "BIS Projects", count: bis.count ?? 0, href: "/dashboard/bis-projects" },
-    { label: "ISO Projects", count: iso.count ?? 0, href: "/dashboard/iso-projects" },
+    { label: "BIS Existing Licenses", count: bis.count ?? 0, href: "/dashboard/bis-projects" },
+    {
+      label: "BIS New Application",
+      count: bisNewApps.count ?? 0,
+      href: "/dashboard/bis-new-applications",
+    },
     { label: "Finance Management", count: txns.count ?? 0, href: "/dashboard/finance" },
   ];
 
@@ -25,12 +29,12 @@ export default async function DashboardHomePage() {
           Dashboard
         </h1>
         <p className="mt-2 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-          Track BIS licensing (new, renewal, inclusion, maintenance), ISO programmes,
-          testing and calibration engagements, and finances in one place.
+          Track BIS licensing (new, renewal, inclusion, maintenance), testing and
+          calibration engagements, and finances in one place.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {stats.map((s) => (
           <Link
             key={s.href}

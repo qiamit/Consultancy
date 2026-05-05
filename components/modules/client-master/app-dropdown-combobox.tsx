@@ -44,6 +44,16 @@ function labelForOption(
   return o ? (o.label || o.value) : v;
 }
 
+/** Input display: optionally keep blank when value is "" while list still uses `emptySelectLabel`. */
+function displayLabelForInput(
+  v: string,
+  rows: { value: string; label: string }[],
+  blankWhenEmpty: boolean,
+) {
+  if (!v && blankWhenEmpty) return "";
+  return labelForOption(v, rows);
+}
+
 export function AppDropdownCombobox({
   optionKey,
   name,
@@ -66,6 +76,8 @@ export function AppDropdownCombobox({
   inputRowShellClassName = inputRowShell,
   /** When set, the + button runs this instead of opening the manage-labels dialog. */
   onSuffixButtonClick,
+  /** When true and value is "", the text input stays empty (list still shows `emptySelectLabel`). */
+  blankInputWhenNoSelection = false,
 }: {
   optionKey: string;
   name: string;
@@ -90,6 +102,7 @@ export function AppDropdownCombobox({
   /** Override the inner row shell (e.g. embed beside another input). */
   inputRowShellClassName?: string;
   onSuffixButtonClick?: () => void;
+  blankInputWhenNoSelection?: boolean;
 }) {
   const router = useRouter();
   const titleId = useId();
@@ -139,7 +152,7 @@ export function AppDropdownCombobox({
   const [busy, setBusy] = useState(false);
 
   const [query, setQuery] = useState(() =>
-    labelForOption(value, selectOptions),
+    displayLabelForInput(value, selectOptions, blankInputWhenNoSelection),
   );
   const [listOpen, setListOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -173,8 +186,11 @@ export function AppDropdownCombobox({
   }, []);
 
   useEffect(() => {
-    setQuery(labelForOption(value, selectOptionsRef.current));
-  }, [value]);
+    if (listOpen) return;
+    setQuery(
+      displayLabelForInput(value, selectOptions, blankInputWhenNoSelection),
+    );
+  }, [value, selectOptions, listOpen, blankInputWhenNoSelection]);
 
   useEffect(() => {
     setHighlight(0);
@@ -199,11 +215,17 @@ export function AppDropdownCombobox({
   const pick = useCallback(
     (row: { value: string; label: string }) => {
       onChange(row.value);
-      setQuery(labelForOption(row.value, selectOptionsRef.current));
+      setQuery(
+        displayLabelForInput(
+          row.value,
+          selectOptionsRef.current,
+          blankInputWhenNoSelection,
+        ),
+      );
       setListOpen(false);
       inputRef.current?.blur();
     },
-    [onChange],
+    [onChange, blankInputWhenNoSelection],
   );
 
   function clearBlurTimer() {
@@ -222,7 +244,11 @@ export function AppDropdownCombobox({
     blurTimer.current = setTimeout(() => {
       setListOpen(false);
       setQuery(
-        labelForOption(valueRef.current, selectOptionsRef.current),
+        displayLabelForInput(
+          valueRef.current,
+          selectOptionsRef.current,
+          blankInputWhenNoSelection,
+        ),
       );
       blurTimer.current = null;
     }, 120);
@@ -252,7 +278,11 @@ export function AppDropdownCombobox({
         e.preventDefault();
         setListOpen(false);
         setQuery(
-          labelForOption(valueRef.current, selectOptionsRef.current),
+          displayLabelForInput(
+            valueRef.current,
+            selectOptionsRef.current,
+            blankInputWhenNoSelection,
+          ),
         );
       }
       return;

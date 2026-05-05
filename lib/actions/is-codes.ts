@@ -377,6 +377,7 @@ export async function executeSaveIsCodeMaster(
       await uploadNewFiles(supabase, user.id, id, formData);
       revalidatePath("/dashboard/is-code-master");
       revalidatePath("/dashboard/bis-projects");
+      revalidatePath("/dashboard/bis-new-applications");
       return { ok: true, id };
     }
 
@@ -415,6 +416,7 @@ export async function executeSaveIsCodeMaster(
     await uploadNewFiles(supabase, user.id, newId, formData);
     revalidatePath("/dashboard/is-code-master");
     revalidatePath("/dashboard/bis-projects");
+    revalidatePath("/dashboard/bis-new-applications");
     return { ok: true, id: newId };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Upload or save failed.";

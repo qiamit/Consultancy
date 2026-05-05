@@ -30,14 +30,30 @@ export const DROPDOWN_KEY_PRODUCT_UNIT = "product_master.unit" as const;
 
 export const DROPDOWN_KEY_PRODUCT_GST_RATE = "product_master.gst_rate" as const;
 
+/** Finance quotations — options come from `clients` table on the page (not app_dropdown). */
+export const DROPDOWN_KEY_FINANCE_QUOTATION_CLIENT =
+  "finance_quotations.client" as const;
+
 /** Client picker on BIS Projects (options come from `clients` rows on the page). */
 export const DROPDOWN_KEY_BIS_PROJECT_CLIENT =
   "bis_projects.client" as const;
 
-/** BIS form catalog only (+ opens in-form help); not used for `app_dropdown_options` seed. */
+/** BIS Projects form — `app_dropdown_options` catalog for `bis_projects.project_kind` (text). */
 export const DROPDOWN_KEY_BIS_PROJECT_KIND =
   "bis_projects.project_kind_catalog" as const;
 
-/** BIS form catalog only (+ opens in-form help); not used for `app_dropdown_options` seed. */
+/** BIS Projects form — `app_dropdown_options` catalog for `bis_projects.billing_frequency`. */
 export const DROPDOWN_KEY_BIS_BILLING_FREQUENCY =
   "bis_projects.billing_frequency_catalog" as const;
+
+/** Client picker on BIS New Applications (options from `clients` on the page). */
+export const DROPDOWN_KEY_BIS_NEW_APPLICATION_CLIENT =
+  "bis_new_applications.client" as const;
+
+/** BIS New Applications — `app_dropdown_options` for `bis_new_applications.project_kind`. */
+export const DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND =
+  "bis_new_applications.project_kind_catalog" as const;
+
+/** BIS New Applications — `app_dropdown_options` for `bis_new_applications.billing_frequency`. */
+export const DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY =
+  "bis_new_applications.billing_frequency_catalog" as const;

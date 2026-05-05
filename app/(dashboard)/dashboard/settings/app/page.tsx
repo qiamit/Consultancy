@@ -1,7 +1,25 @@
-import { updateAppSettings } from "@/lib/actions/settings";
+import { AppSettingsTabs } from "@/components/dashboard/app-settings-tabs";
 import { createClient } from "@/lib/supabase/server";
 
-export default async function AppSettingsPage() {
+function firstSearchParam(
+  sp: Record<string, string | string[] | undefined>,
+  key: string,
+): string | undefined {
+  const v = sp[key];
+  if (v === undefined) return undefined;
+  return Array.isArray(v) ? v[0] : v;
+}
+
+export default async function AppSettingsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const err = firstSearchParam(sp, "error");
+  const errMsg =
+    err === "db" ? "Could not save settings. Try again." : null;
+
   const supabase = await createClient();
   const { data: row } = await supabase
     .from("app_settings")
@@ -9,39 +27,26 @@ export default async function AppSettingsPage() {
     .eq("id", 1)
     .maybeSingle();
 
+  const initial = (row ?? {}) as Record<string, string | null | undefined>;
+
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
+    <div className="mx-auto max-w-3xl space-y-8">
       <div>
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           App Settings
         </h1>
         <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Internal portal title and defaults.
+          Portal title, prefixes, appearance defaults, currency, and date/time formats.
         </p>
       </div>
 
-      <form
-        action={updateAppSettings}
-        className="space-y-5 rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-800 dark:bg-zinc-900"
-      >
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-            Site title
-          </label>
-          <input
-            name="site_title"
-            required
-            defaultValue={row?.site_title ?? "Technical Consultancy"}
-            className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-          />
-        </div>
-        <button
-          type="submit"
-          className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
-        >
-          Save App Settings
-        </button>
-      </form>
+      {errMsg ? (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+          {errMsg}
+        </p>
+      ) : null}
+
+      <AppSettingsTabs initial={initial} />
     </div>
   );
 }

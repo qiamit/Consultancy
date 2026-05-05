@@ -180,6 +180,7 @@ export default async function ClientsPage({
         queryError={firstSearchParam(sp, "error")}
         dbErrorCode={firstSearchParam(sp, "db_code")}
         dbErrorHint={firstSearchParam(sp, "db_hint")}
+        returnToAfterSave={firstSearchParam(sp, "return_to")}
         companyTypeOptions={companyTypeOptions}
         companyScaleOptions={companyScaleOptions}
         companyStatusOptions={companyStatusOptions}

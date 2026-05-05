@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { bisIsCodeDisplayLabel } from "@/lib/bis-project-is-code-label";
+import {
+  DROPDOWN_KEY_BIS_BILLING_FREQUENCY,
+  DROPDOWN_KEY_BIS_PROJECT_KIND,
+} from "@/lib/dropdown-keys";
 import { createClient } from "@/lib/supabase/server";
 
 function str(formData: FormData, key: string) {
@@ -51,6 +55,24 @@ const BILLING = new Set([
   "Yearly",
   "Based on Work",
 ]);
+
+async function allowedDropdownValues(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  optionKey: string,
+  legacyFallback: Set<string>,
+): Promise<Set<string>> {
+  const { data, error } = await supabase
+    .from("app_dropdown_options")
+    .select("value")
+    .eq("option_key", optionKey);
+  if (error || !data?.length) return legacyFallback;
+  const next = new Set(
+    data
+      .map((r: { value: string }) => (r.value ?? "").trim())
+      .filter(Boolean),
+  );
+  return next.size > 0 ? next : legacyFallback;
+}
 
 async function buildTitle(
   supabase: Awaited<ReturnType<typeof createClient>>,
@@ -107,7 +129,11 @@ export async function saveBisProjectMaster(formData: FormData) {
 
   const id = nullableStr(formData, "id");
   const project_kind = str(formData, "project_kind");
-  if (!KINDS.has(project_kind))
+  const [allowedKinds, allowedBilling] = await Promise.all([
+    allowedDropdownValues(supabase, DROPDOWN_KEY_BIS_PROJECT_KIND, KINDS),
+    allowedDropdownValues(supabase, DROPDOWN_KEY_BIS_BILLING_FREQUENCY, BILLING),
+  ]);
+  if (!allowedKinds.has(project_kind))
     redirect(`/dashboard/bis-projects?error=${encodeURIComponent("kind")}`);
 
   const client_id = nullableStr(formData, "client_id");
@@ -133,7 +159,7 @@ export async function saveBisProjectMaster(formData: FormData) {
   const case_referred_by = str(formData, "case_referred_by") || "QE";
 
   const billing_frequency = str(formData, "billing_frequency") || "Yearly";
-  if (!BILLING.has(billing_frequency))
+  if (!allowedBilling.has(billing_frequency))
     redirect(`/dashboard/bis-projects?error=${encodeURIComponent("billing_freq")}`);
 
   const billing = parseMoney(str(formData, "billing_amount"));
@@ -157,12 +183,7 @@ export async function saveBisProjectMaster(formData: FormData) {
 
   const row = {
     title,
-    project_kind: project_kind as
-      | "new_license"
-      | "application"
-      | "inclusion"
-      | "renewal"
-      | "maintenance",
+    project_kind,
     status: status as
       | "lead"
       | "in_progress"
@@ -422,8 +443,13 @@ async function buildBisImportPayload(
   | { ok: true; row: Record<string, unknown> }
   | { ok: false; error: string }
 > {
+  const [allowedKinds, allowedBilling] = await Promise.all([
+    allowedDropdownValues(ctx.supabase, DROPDOWN_KEY_BIS_PROJECT_KIND, KINDS),
+    allowedDropdownValues(ctx.supabase, DROPDOWN_KEY_BIS_BILLING_FREQUENCY, BILLING),
+  ]);
+
   const project_kind = (r.project_kind ?? "").trim();
-  if (!KINDS.has(project_kind)) {
+  if (!allowedKinds.has(project_kind)) {
     return { ok: false, error: `Invalid project_kind "${project_kind}".` };
   }
 
@@ -472,7 +498,7 @@ async function buildBisImportPayload(
     (r.case_referred_by ?? "").trim() || "QE";
 
   const billing_frequency = (r.billing_frequency ?? "").trim() || "Yearly";
-  if (!BILLING.has(billing_frequency)) {
+  if (!allowedBilling.has(billing_frequency)) {
     return { ok: false, error: `Invalid billing_frequency "${billing_frequency}".` };
   }
 
@@ -503,12 +529,7 @@ async function buildBisImportPayload(
 
   const row = {
     title,
-    project_kind: project_kind as
-      | "new_license"
-      | "application"
-      | "inclusion"
-      | "renewal"
-      | "maintenance",
+    project_kind,
     status: status as
       | "lead"
       | "in_progress"

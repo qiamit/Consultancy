@@ -48,6 +48,21 @@ function nullableStr(formData: FormData, key: string) {
   return s ? s : null;
 }
 
+/** Same-origin path only (e.g. return to Finance after saving client from another screen). */
+function isSafeReturnToPath(path: string): boolean {
+  if (path.length < 2 || path.length > 2048) return false;
+  if (!path.startsWith("/dashboard/")) return false;
+  if (path.includes("..") || path.includes("//")) return false;
+  if (/[\r\n\0]/.test(path)) return false;
+  if (path.includes("://") || path.includes("@")) return false;
+  return true;
+}
+
+function appendQueryParam(path: string, key: string, value: string): string {
+  const pair = `${encodeURIComponent(key)}=${encodeURIComponent(value)}`;
+  return path.includes("?") ? `${path}&${pair}` : `${path}?${pair}`;
+}
+
 const BALANCE_TYPES = new Set(["Cr", "Dr"]);
 
 /** Escape `\`, `%`, `_` so `.ilike()` matches the literal string (case-insensitive). */
@@ -552,6 +567,7 @@ export async function executeSaveClientMaster(
     }
     revalidatePath("/dashboard/clients");
     revalidatePath("/dashboard/bis-projects");
+    revalidatePath("/dashboard/bis-new-applications");
     return { ok: true, id };
   }
 
@@ -592,6 +608,7 @@ export async function executeSaveClientMaster(
 
   revalidatePath("/dashboard/clients");
   revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/bis-new-applications");
   return { ok: true, id: newId };
 }
 
@@ -602,7 +619,24 @@ export async function saveClientMaster(formData: FormData) {
   if (!user) redirect("/login");
 
   const r = await executeSaveClientMaster(formData);
+  const returnTo = str(formData, "return_to");
+
   if (!r.ok) {
+    if (returnTo && isSafeReturnToPath(returnTo)) {
+      const q = new URLSearchParams();
+      q.set("new", "1");
+      q.set("return_to", returnTo);
+      if (r.redirectCode === "db" && (r.dbHint || r.dbCode)) {
+        q.set("error", "db");
+        if (r.dbCode) q.set("db_code", r.dbCode);
+        q.set("db_hint", (r.dbHint ?? r.error).slice(0, 280));
+      } else if (r.redirectCode) {
+        q.set("error", r.redirectCode);
+      } else {
+        q.set("error", "db");
+      }
+      redirect(`/dashboard/clients?${q.toString()}`);
+    }
     if (r.redirectCode === "db" && (r.dbHint || r.dbCode)) {
       const hint = encodeURIComponent(
         (r.dbHint ?? r.error).slice(0, 280),
@@ -617,6 +651,11 @@ export async function saveClientMaster(formData: FormData) {
       );
     }
     redirect("/dashboard/clients?error=db");
+  }
+
+  if (returnTo && isSafeReturnToPath(returnTo)) {
+    revalidatePath("/dashboard/finance", "layout");
+    redirect(appendQueryParam(returnTo, "client_id", r.id));
   }
 
   redirect("/dashboard/clients");
