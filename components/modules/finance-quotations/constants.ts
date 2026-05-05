@@ -94,6 +94,8 @@ export function rowToForm(
       : [emptyLine()];
 
   const qParts = splitQuotationNumberForFormLib(row.quotation_number ?? "");
+  const bankDetails =
+    (row.bank_details ?? "").trim() || (defaultBankDetails ?? "");
   return {
     id: row.id,
     quotation_number_prefix: qParts.quotation_number_prefix,
@@ -105,7 +107,7 @@ export function rowToForm(
     notes: row.notes ?? "",
     terms_and_conditions: row.terms_and_conditions ?? "",
     scope_of_work: row.scope_of_work ?? "",
-    bank_details: row.bank_details ?? defaultBankDetails ?? "",
+    bank_details: bankDetails,
     seal_and_sign: row.seal_and_sign ?? "",
     lines,
   };

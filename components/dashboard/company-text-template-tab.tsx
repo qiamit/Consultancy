@@ -1,4 +1,7 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { useState } from "react";
 import type { CompanyTextTemplateRow } from "@/lib/types/company-text-template";
 
 const inp =
@@ -14,6 +17,85 @@ type Actions = {
   update: (formData: FormData) => Promise<void>;
   remove: (formData: FormData) => Promise<void>;
 };
+
+function slugFromDisplayName(raw: string): string {
+  return raw
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_+/g, "_");
+}
+
+function CreateTemplateForm({
+  action,
+  bodyLabel,
+  addCodePlaceholder,
+  addNamePlaceholder,
+}: {
+  action: (formData: FormData) => Promise<void>;
+  bodyLabel: string;
+  addCodePlaceholder?: string;
+  addNamePlaceholder?: string;
+}) {
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [codeTouched, setCodeTouched] = useState(false);
+
+  return (
+    <form action={action} className="mt-4 space-y-3">
+      <div className="grid gap-3 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Display Name
+          </label>
+          <input
+            name="name"
+            placeholder={addNamePlaceholder ?? "e.g. Standard package"}
+            className={inp}
+            required
+            autoComplete="off"
+            value={name}
+            onChange={(e) => {
+              const nextName = e.target.value;
+              setName(nextName);
+              if (!codeTouched) {
+                setCode(slugFromDisplayName(nextName));
+              }
+            }}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+            Link Code
+          </label>
+          <input
+            name="code"
+            placeholder={addCodePlaceholder ?? "e.g. standard_audit"}
+            className={inp}
+            required
+            autoComplete="off"
+            spellCheck={false}
+            value={code}
+            onChange={(e) => {
+              setCodeTouched(true);
+              setCode(slugFromDisplayName(e.target.value));
+            }}
+          />
+        </div>
+      </div>
+      <div className="space-y-1.5">
+        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+          {bodyLabel}
+        </label>
+        <textarea name="body" rows={6} className={inp} placeholder="" />
+      </div>
+      <button type="submit" className={btnPrimary}>
+        Add Template
+      </button>
+    </form>
+  );
+}
 
 function TemplateCard({
   row,
@@ -74,7 +156,7 @@ function TemplateCard({
         </div>
         <div className="flex flex-wrap gap-2 pt-1">
           <button type="submit" className={btnPrimary}>
-            Save template
+            Save Template
           </button>
         </div>
       </form>
@@ -115,10 +197,6 @@ export function CompanyTextTemplateTab({
 }) {
   return (
     <div className="space-y-8">
-      <div className="rounded-xl border border-sky-100 bg-sky-50/80 px-4 py-3 text-sm text-sky-950 dark:border-sky-900/40 dark:bg-sky-950/30 dark:text-sky-100">
-        {intro}
-      </div>
-
       <div className="grid gap-6 lg:grid-cols-2">
         {rows.map((row) => (
           <TemplateCard
@@ -133,50 +211,12 @@ export function CompanyTextTemplateTab({
       </div>
 
       <div className="rounded-xl border border-dashed border-zinc-300 bg-zinc-50/80 p-5 dark:border-zinc-600 dark:bg-zinc-900/40">
-        <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-          Add template
-        </h3>
-        <p className="mt-1 text-xs text-zinc-600 dark:text-zinc-400">
-          Choose a new unique link code — it cannot be changed later.
-        </p>
-        <form action={actions.create} className="mt-4 space-y-3">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Link code
-              </label>
-              <input
-                name="code"
-                placeholder={addCodePlaceholder ?? "e.g. standard_audit"}
-                className={inp}
-                required
-                autoComplete="off"
-                spellCheck={false}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-                Display name
-              </label>
-              <input
-                name="name"
-                placeholder={addNamePlaceholder ?? "e.g. Standard package"}
-                className={inp}
-                required
-                autoComplete="off"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
-              {bodyLabel}
-            </label>
-            <textarea name="body" rows={6} className={inp} placeholder="" />
-          </div>
-          <button type="submit" className={btnPrimary}>
-            Add template
-          </button>
-        </form>
+        <CreateTemplateForm
+          action={actions.create}
+          bodyLabel={bodyLabel}
+          addCodePlaceholder={addCodePlaceholder}
+          addNamePlaceholder={addNamePlaceholder}
+        />
       </div>
     </div>
   );

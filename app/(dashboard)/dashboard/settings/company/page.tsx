@@ -38,6 +38,12 @@ function companySettingsPageError(err: string | undefined): string | null {
   if (err.endsWith("_duplicate")) {
     return "That link code is already in use. Choose another code.";
   }
+  if (err.endsWith("_schema")) {
+    return "Database schema is outdated for templates. Run the latest Supabase migrations, then try again.";
+  }
+  if (err.endsWith("_rls")) {
+    return "Template save is blocked by database permissions (RLS). Check policies and ensure you are logged in.";
+  }
   if (err.endsWith("_not_found")) {
     return "That template no longer exists. Refresh the page.";
   }

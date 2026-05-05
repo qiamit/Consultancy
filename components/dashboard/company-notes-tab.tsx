@@ -11,7 +11,7 @@ export function CompanyNotesTab({ rows }: { rows: CompanyTextTemplateRow[] }) {
     <CompanyTextTemplateTab
       variant="notes"
       rows={rows}
-      bodyLabel="Notes text"
+      bodyLabel="Notes Text"
       addCodePlaceholder="e.g. internal_only"
       addNamePlaceholder="e.g. Internal memo block"
       actions={{

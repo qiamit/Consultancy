@@ -9,6 +9,19 @@ function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
+function redirectForTermsDbError(code: string | undefined) {
+  if (code === "23505") {
+    redirect("/dashboard/settings/company?error=terms_duplicate");
+  }
+  if (code === "42P01" || code === "42703") {
+    redirect("/dashboard/settings/company?error=terms_schema");
+  }
+  if (code === "42501") {
+    redirect("/dashboard/settings/company?error=terms_rls");
+  }
+  redirect("/dashboard/settings/company?error=terms_db");
+}
+
 async function syncLegacyCompanyTermsColumn(supabase: Awaited<ReturnType<typeof createClient>>, body: string) {
   await supabase
     .from("company_settings")
@@ -52,12 +65,7 @@ export async function createCompanyTerm(formData: FormData) {
     updated_at: new Date().toISOString(),
   });
 
-  if (error) {
-    if (error.code === "23505") {
-      redirect("/dashboard/settings/company?error=terms_duplicate");
-    }
-    redirect("/dashboard/settings/company?error=terms_db");
-  }
+  if (error) redirectForTermsDbError(error.code);
 
   if (code === "default") {
     await syncLegacyCompanyTermsColumn(supabase, body);
@@ -102,7 +110,7 @@ export async function updateCompanyTerm(formData: FormData) {
     })
     .eq("id", id);
 
-  if (error) redirect("/dashboard/settings/company?error=terms_db");
+  if (error) redirectForTermsDbError(error.code);
 
   if (existing.code === "default") {
     await syncLegacyCompanyTermsColumn(supabase, body);
@@ -136,7 +144,7 @@ export async function deleteCompanyTerm(formData: FormData) {
 
   const { error } = await supabase.from("company_terms").delete().eq("id", id);
 
-  if (error) redirect("/dashboard/settings/company?error=terms_db");
+  if (error) redirectForTermsDbError(error.code);
 
   revalidatePath("/dashboard/settings/company");
   revalidatePath("/dashboard/finance", "layout");

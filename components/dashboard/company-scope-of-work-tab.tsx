@@ -15,7 +15,7 @@ export function CompanyScopeOfWorkTab({
     <CompanyTextTemplateTab
       variant="scope"
       rows={rows}
-      bodyLabel="Scope of work text"
+      bodyLabel="Scope of Work Text"
       addCodePlaceholder="e.g. bis_license"
       addNamePlaceholder="e.g. BIS certification scope"
       actions={{

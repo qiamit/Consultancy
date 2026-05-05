@@ -17,8 +17,6 @@ const inputRowShell =
 const inputInner =
   "min-w-0 flex-1 border-0 bg-transparent py-2 pl-3 pr-2 text-sm text-zinc-900 outline-none ring-0 focus:ring-0 dark:bg-transparent dark:text-zinc-100";
 
-const EMPTY_LABEL = "— Clear selection —";
-
 function labelForOption(
   v: string,
   rows: { value: string; label: string }[],
@@ -81,19 +79,13 @@ export function ProductLineCombobox({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const fromData = !q
+    return !q
       ? typeRows
       : typeRows.filter((o) => {
           const hay = `${o.label ?? ""} ${o.filterText ?? ""} ${o.value}`
             .toLowerCase();
           return hay.includes(q);
         });
-
-    const clearLower = EMPTY_LABEL.toLowerCase();
-    if (!q || clearLower.includes(q)) {
-      return [{ value: "", label: EMPTY_LABEL }, ...fromData];
-    }
-    return fromData;
   }, [query, typeRows]);
 
   useEffect(() => {
@@ -235,7 +227,7 @@ export function ProductLineCombobox({
               onMouseEnter={() => setHighlight(i)}
               onMouseDown={() => pick(o)}
             >
-              {o.label || o.value || EMPTY_LABEL}
+              {o.label || o.value}
             </li>
           ))}
         </ul>

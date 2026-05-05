@@ -9,6 +9,7 @@ export function ClientDropdownField({
   inputRowShellClassName,
   listZIndexClass,
   onSuffixButtonClick,
+  suffixButtonClassName,
   blankInputWhenNoSelection,
   ...rest
 }: {
@@ -32,6 +33,7 @@ export function ClientDropdownField({
   hideLabel?: boolean;
   inputRowShellClassName?: string;
   onSuffixButtonClick?: () => void;
+  suffixButtonClassName?: string;
   blankInputWhenNoSelection?: boolean;
 }) {
   return (
@@ -42,6 +44,7 @@ export function ClientDropdownField({
       listZIndexClass={listZIndexClass}
       searchPlaceholder={searchPlaceholder ?? "Type to search…"}
       onSuffixButtonClick={onSuffixButtonClick}
+      suffixButtonClassName={suffixButtonClassName}
       blankInputWhenNoSelection={blankInputWhenNoSelection}
     />
   );

@@ -2,6 +2,7 @@ import { FinanceQuotationsMaster } from "./master";
 import { listCompanyNotesTemplates } from "@/lib/data/company-notes-templates";
 import { listCompanyScopeOfWork } from "@/lib/data/company-scope-of-work";
 import { listCompanyTerms } from "@/lib/data/company-terms";
+import { DOCUMENTS_BUCKET } from "@/lib/storage/documents";
 import { createClient } from "@/lib/supabase/server";
 import type {
   FinanceQuotationRow,
@@ -48,6 +49,18 @@ function buildDefaultBankDetails(row: Record<string, unknown> | null): string {
   push("SWIFT", s(row, "bank_swift"));
   push("UPI", s(row, "bank_upi_id"));
   return lines.join("\n");
+}
+
+async function signedImageUrl(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  path: string,
+): Promise<string | null> {
+  if (!path.trim()) return null;
+  const { data, error } = await supabase.storage
+    .from(DOCUMENTS_BUCKET)
+    .createSignedUrl(path.trim(), 3600);
+  if (error || !data?.signedUrl) return null;
+  return data.signedUrl;
 }
 
 export async function FinanceQuotationsServer({
@@ -118,6 +131,13 @@ export async function FinanceQuotationsServer({
   const defaultBankDetails = buildDefaultBankDetails(
     (company ?? null) as Record<string, unknown> | null,
   );
+  const sealSignImagePath = s(
+    (company ?? null) as Record<string, unknown> | null,
+    "seal_sign_image_path",
+  );
+  const sealSignImageUrl = sealSignImagePath
+    ? await signedImageUrl(supabase, sealSignImagePath)
+    : null;
 
   return (
     <FinanceQuotationsMaster
@@ -127,6 +147,7 @@ export async function FinanceQuotationsServer({
       clientRows={clientRows}
       productRows={productRows}
       defaultBankDetails={defaultBankDetails}
+      sealSignImageUrl={sealSignImageUrl}
       termsTemplates={termsTemplates}
       scopeTemplates={scopeTemplates}
       notesTemplates={notesTemplates}

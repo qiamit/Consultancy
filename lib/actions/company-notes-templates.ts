@@ -9,6 +9,19 @@ function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
+function redirectForNotesDbError(code: string | undefined) {
+  if (code === "23505") {
+    redirect("/dashboard/settings/company?error=notes_duplicate");
+  }
+  if (code === "42P01" || code === "42703") {
+    redirect("/dashboard/settings/company?error=notes_schema");
+  }
+  if (code === "42501") {
+    redirect("/dashboard/settings/company?error=notes_rls");
+  }
+  redirect("/dashboard/settings/company?error=notes_db");
+}
+
 export async function createCompanyNotesTemplate(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -42,12 +55,7 @@ export async function createCompanyNotesTemplate(formData: FormData) {
     updated_at: new Date().toISOString(),
   });
 
-  if (error) {
-    if (error.code === "23505") {
-      redirect("/dashboard/settings/company?error=notes_duplicate");
-    }
-    redirect("/dashboard/settings/company?error=notes_db");
-  }
+  if (error) redirectForNotesDbError(error.code);
 
   revalidatePath("/dashboard/settings/company");
   revalidatePath("/dashboard/finance", "layout");
@@ -88,7 +96,7 @@ export async function updateCompanyNotesTemplate(formData: FormData) {
     })
     .eq("id", id);
 
-  if (error) redirect("/dashboard/settings/company?error=notes_db");
+  if (error) redirectForNotesDbError(error.code);
 
   revalidatePath("/dashboard/settings/company");
   revalidatePath("/dashboard/finance", "layout");
@@ -118,7 +126,7 @@ export async function deleteCompanyNotesTemplate(formData: FormData) {
 
   const { error } = await supabase.from("company_notes").delete().eq("id", id);
 
-  if (error) redirect("/dashboard/settings/company?error=notes_db");
+  if (error) redirectForNotesDbError(error.code);
 
   revalidatePath("/dashboard/settings/company");
   revalidatePath("/dashboard/finance", "layout");

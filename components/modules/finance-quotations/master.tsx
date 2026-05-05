@@ -57,7 +57,7 @@ function productsToOptions(products: ProductMasterOptionRow[]): AppDropdownOptio
   return products.map((p) => ({
     id: p.id,
     value: p.id,
-    label: `${p.item_code} — ${p.name}`,
+    label: p.name,
     canDelete: false,
     filterText: `${p.item_code} ${p.name} ${p.category} ${p.unit_of_item}`,
   }));
@@ -76,6 +76,7 @@ export function FinanceQuotationsMaster({
   clientRows,
   productRows,
   defaultBankDetails,
+  sealSignImageUrl,
   notesTemplates = [],
   termsTemplates = [],
   scopeTemplates = [],
@@ -86,6 +87,7 @@ export function FinanceQuotationsMaster({
   clientRows: ClientOptionRow[];
   productRows: ProductMasterOptionRow[];
   defaultBankDetails: string;
+  sealSignImageUrl: string | null;
   notesTemplates?: CompanyTextTemplateRow[];
   termsTemplates?: CompanyTextTemplateRow[];
   scopeTemplates?: CompanyTextTemplateRow[];
@@ -469,6 +471,7 @@ export function FinanceQuotationsMaster({
               onRemoveLine={removeLine}
               onQuotationDateChange={onQuotationDateChange}
               quotationReturnUrl={quotationReturnUrl}
+              sealSignImageUrl={sealSignImageUrl}
               notesTemplates={notesTemplates}
               termsTemplates={termsTemplates}
               scopeTemplates={scopeTemplates}

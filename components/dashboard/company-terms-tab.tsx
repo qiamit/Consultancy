@@ -11,7 +11,7 @@ export function CompanyTermsTab({ terms }: { terms: CompanyTermsRow[] }) {
     <CompanyTextTemplateTab
       variant="terms"
       rows={terms}
-      bodyLabel="Terms & conditions text"
+      bodyLabel="Term & Condition Text"
       addCodePlaceholder="e.g. export_lcl"
       addNamePlaceholder="e.g. Export quotation"
       actions={{

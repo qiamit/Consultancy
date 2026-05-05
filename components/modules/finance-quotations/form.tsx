@@ -47,6 +47,78 @@ function linePreview(L: QuotationLineForm) {
   return { sub, tax, tot };
 }
 
+function numberToIndianWords(amount: number): string {
+  const ones = [
+    "",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+  ];
+  const tens = [
+    "",
+    "",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+  ];
+
+  function twoDigit(n: number): string {
+    if (n < 20) return ones[n];
+    const t = Math.floor(n / 10);
+    const o = n % 10;
+    return `${tens[t]}${o ? ` ${ones[o]}` : ""}`.trim();
+  }
+
+  function threeDigit(n: number): string {
+    const h = Math.floor(n / 100);
+    const r = n % 100;
+    if (!h) return twoDigit(r);
+    return `${ones[h]} hundred${r ? ` ${twoDigit(r)}` : ""}`;
+  }
+
+  function integerToWords(n: number): string {
+    if (n === 0) return "zero";
+    const crore = Math.floor(n / 10000000);
+    const lakh = Math.floor((n % 10000000) / 100000);
+    const thousand = Math.floor((n % 100000) / 1000);
+    const hundred = n % 1000;
+    const parts: string[] = [];
+    if (crore) parts.push(`${twoDigit(crore)} crore`);
+    if (lakh) parts.push(`${twoDigit(lakh)} lakh`);
+    if (thousand) parts.push(`${twoDigit(thousand)} thousand`);
+    if (hundred) parts.push(threeDigit(hundred));
+    return parts.join(" ").trim();
+  }
+
+  const safe = Math.max(0, Number.isFinite(amount) ? amount : 0);
+  const rupees = Math.floor(safe);
+  const paise = Math.round((safe - rupees) * 100);
+  const rupeesWords = integerToWords(rupees);
+  const paiseWords = paise ? ` and ${integerToWords(paise)} paise` : "";
+  return `Rupees ${rupeesWords}${paiseWords} only`;
+}
+
 function CompanyTemplateSelect({
   templates,
   onPick,
@@ -82,6 +154,50 @@ function CompanyTemplateSelect({
   );
 }
 
+function CompanyTemplateSearchBox({
+  templates,
+  onPick,
+  ariaLabel,
+  placeholder,
+  listId,
+}: {
+  templates: CompanyTextTemplateRow[];
+  onPick: (body: string) => void;
+  ariaLabel: string;
+  placeholder: string;
+  listId: string;
+}) {
+  const [query, setQuery] = useState("");
+  if (templates.length === 0) return null;
+
+  return (
+    <div className="space-y-1">
+      <input
+        list={listId}
+        aria-label={ariaLabel}
+        value={query}
+        onChange={(e) => {
+          const next = e.target.value;
+          setQuery(next);
+          const t = templates.find(
+            (x) =>
+              x.name.toLowerCase() === next.toLowerCase() ||
+              x.code.toLowerCase() === next.toLowerCase(),
+          );
+          if (t) onPick(t.body);
+        }}
+        placeholder={placeholder}
+        className={`${fieldClass} py-1.5 text-xs`}
+      />
+      <datalist id={listId}>
+        {templates.map((t) => (
+          <option key={t.id} value={t.name} />
+        ))}
+      </datalist>
+    </div>
+  );
+}
+
 export function FinanceQuotationForm({
   visible,
   overlay,
@@ -99,6 +215,7 @@ export function FinanceQuotationForm({
   onRemoveLine,
   onQuotationDateChange,
   quotationReturnUrl,
+  sealSignImageUrl,
   notesTemplates = [],
   termsTemplates = [],
   scopeTemplates = [],
@@ -120,6 +237,7 @@ export function FinanceQuotationForm({
   onQuotationDateChange: (iso: string) => void;
   /** Current quotation URL (path + ?new=1 or ?id=) for “add client” return navigation. */
   quotationReturnUrl: string;
+  sealSignImageUrl: string | null;
   notesTemplates?: CompanyTextTemplateRow[];
   termsTemplates?: CompanyTextTemplateRow[];
   scopeTemplates?: CompanyTextTemplateRow[];
@@ -141,12 +259,21 @@ export function FinanceQuotationForm({
     [formValues.lines],
   );
 
-  const grandPreview = useMemo(() => {
-    let g = 0;
+  const totalsPreview = useMemo(() => {
+    let basic = 0;
+    let gst = 0;
+    let grand = 0;
     for (const L of formValues.lines) {
-      g += linePreview(L).tot;
+      const pv = linePreview(L);
+      basic += pv.sub;
+      gst += pv.tax;
+      grand += pv.tot;
     }
-    return Math.round(g * 100) / 100;
+    return {
+      basic: Math.round(basic * 100) / 100,
+      gst: Math.round(gst * 100) / 100,
+      grand: Math.round(grand * 100) / 100,
+    };
   }, [formValues.lines]);
 
   function handleProductPick(index: number, productId: string) {
@@ -334,6 +461,7 @@ export function FinanceQuotationForm({
                 onClearSelection={() => onUpdateField("client_id", "")}
                 searchPlaceholder="Search company name…"
                 emptySelectLabel="— Select client —"
+                suffixButtonClassName="px-1.5 py-1 text-[10px]"
                 blankInputWhenNoSelection
                 onSuffixButtonClick={() => {
                   const rt = encodeURIComponent(quotationReturnUrl);
@@ -359,7 +487,7 @@ export function FinanceQuotationForm({
                   <col style={{ width: "10%" }} />
                   <col style={{ width: "10%" }} />
                   <col style={{ width: "10%" }} />
-                  <col style={{ width: "3rem" }} />
+                  <col style={{ width: "1.5rem" }} />
                 </colgroup>
                 <thead className="bg-zinc-50 text-xs font-semibold uppercase text-zinc-500 dark:bg-zinc-900/60 dark:text-zinc-400">
                   <tr>
@@ -376,9 +504,10 @@ export function FinanceQuotationForm({
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                   {formValues.lines.map((L, i) => {
                     const pv = linePreview(L);
+                    const isLastRow = i === formValues.lines.length - 1;
                     return (
                       <tr key={i} className="align-top">
-                        <td className="min-w-0 px-2 py-2 align-top">
+                        <td className="min-w-0 px-2 py-1.5 align-top">
                           <div className="flex min-w-0 flex-col gap-1.5 break-words">
                             {!L.product_master_item_id ? (
                               <>
@@ -422,23 +551,11 @@ export function FinanceQuotationForm({
                                     );
                                   })()}
                                 </div>
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    onUpdateLine(i, {
-                                      product_master_item_id: "",
-                                      item_description: "",
-                                    })
-                                  }
-                                  className="self-start text-xs font-medium text-sky-600 underline-offset-2 hover:underline dark:text-sky-400"
-                                >
-                                  Change item
-                                </button>
                               </>
                             )}
                           </div>
                         </td>
-                        <td className="min-w-0 px-2 py-2 align-top text-center">
+                        <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.unit_of_item}
                             onChange={(e) =>
@@ -447,7 +564,7 @@ export function FinanceQuotationForm({
                             className={`${fieldClass} min-w-0 text-center`}
                           />
                         </td>
-                        <td className="min-w-0 px-2 py-2 align-top text-center">
+                        <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.qty}
                             onChange={(e) => onUpdateLine(i, { qty: e.target.value })}
@@ -455,7 +572,7 @@ export function FinanceQuotationForm({
                             className={`${fieldClass} min-w-0 text-center`}
                           />
                         </td>
-                        <td className="min-w-0 px-2 py-2 align-top text-center">
+                        <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.unit_rate}
                             onChange={(e) =>
@@ -465,7 +582,7 @@ export function FinanceQuotationForm({
                             className={`${fieldClass} min-w-0 text-center`}
                           />
                         </td>
-                        <td className="min-w-0 px-2 py-2 align-top text-center">
+                        <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.line_discount}
                             onChange={(e) =>
@@ -475,25 +592,25 @@ export function FinanceQuotationForm({
                             className={`${fieldClass} min-w-0 text-center`}
                           />
                         </td>
-                        <td className="min-w-0 px-2 py-2 align-top text-center">
+                        <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.gst_rate}
                             onChange={(e) => onUpdateLine(i, { gst_rate: e.target.value })}
                             className={`${fieldClass} min-w-0 text-center`}
                           />
                         </td>
-                        <td className="px-2 py-2 text-right tabular-nums text-zinc-800 dark:text-zinc-200 align-top">
+                        <td className="px-2 py-1.5 text-center tabular-nums text-zinc-800 dark:text-zinc-200 align-top">
                           {pv.tot.toLocaleString("en-IN", {
                             minimumFractionDigits: 2,
                             maximumFractionDigits: 2,
                           })}
                         </td>
-                        <td className="px-1 py-2 text-center align-middle">
-                          {formValues.lines.length <= 1 ? (
+                        <td className="w-min px-[0.225rem] py-[0.36rem] text-center align-middle">
+                          {isLastRow ? (
                             <button
                               type="button"
                               onClick={onAddLine}
-                              className="rounded p-1 text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/40"
+                              className="rounded p-1 text-[1.3em] leading-none text-sky-600 hover:bg-sky-50 dark:text-sky-400 dark:hover:bg-sky-950/40"
                               aria-label="Add line"
                             >
                               +
@@ -514,32 +631,53 @@ export function FinanceQuotationForm({
                   })}
                 </tbody>
               </table>
+              <div className="space-y-1 border-t border-zinc-200 px-3 py-2 text-sm text-zinc-800 dark:border-zinc-800 dark:text-zinc-100">
+                <p className="text-right font-medium">
+                  Total Basic Amount -{" "}
+                  <span className="tabular-nums">
+                    {totalsPreview.basic.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </p>
+                <p className="text-right font-medium">
+                  GST -{" "}
+                  <span className="tabular-nums">
+                    {totalsPreview.gst.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </p>
+                <p className="text-right font-semibold">
+                  Grand Total -{" "}
+                  <span className="tabular-nums">
+                    {totalsPreview.grand.toLocaleString("en-IN", {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2,
+                    })}
+                  </span>
+                </p>
+                <p className="text-left">
+                  Amount in Words:{" "}
+                  <span className="font-medium capitalize">
+                    {numberToIndianWords(totalsPreview.grand)}
+                  </span>
+                </p>
+              </div>
             </div>
-            <button
-              type="button"
-              onClick={onAddLine}
-              className="text-sm font-medium text-sky-600 hover:underline dark:text-sky-400"
-            >
-              + Add line
-            </button>
-            <p className="text-right text-sm font-medium text-zinc-800 dark:text-zinc-100">
-              Grand total (preview):{" "}
-              <span className="tabular-nums">
-                {grandPreview.toLocaleString("en-IN", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </span>
-            </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:items-start">
             <div className="flex min-h-0 min-w-0 flex-col space-y-2">
               <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>Notes</label>
-              <CompanyTemplateSelect
+              <CompanyTemplateSearchBox
                 templates={notesTemplates}
                 onPick={(body) => onUpdateField("notes", body)}
-                ariaLabel="Insert notes from company settings template"
+                ariaLabel="Search notes from company settings template"
+                placeholder="Search Company Setting Notes..."
+                listId="company-notes-template-list"
               />
               <textarea
                 name="notes"
@@ -550,7 +688,7 @@ export function FinanceQuotationForm({
               />
             </div>
             <div className="flex min-h-0 min-w-0 flex-col space-y-2">
-              <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>Terms &amp; conditions</label>
+              <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>Term &amp; Condition</label>
               <CompanyTemplateSelect
                 templates={termsTemplates}
                 onPick={(body) => onUpdateField("terms_and_conditions", body)}
@@ -565,7 +703,7 @@ export function FinanceQuotationForm({
               />
             </div>
             <div className="flex min-h-0 min-w-0 flex-col space-y-2">
-              <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>Scope of work</label>
+              <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>Scope of Work</label>
               <CompanyTemplateSelect
                 templates={scopeTemplates}
                 onPick={(body) => onUpdateField("scope_of_work", body)}
@@ -582,26 +720,32 @@ export function FinanceQuotationForm({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-2 lg:col-span-2">
-              <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>Bank details</label>
+            <div className="space-y-2">
+              <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>Bank Details</label>
               <textarea
                 name="bank_details"
                 rows={4}
                 value={formValues.bank_details}
                 onChange={(e) => onUpdateField("bank_details", e.target.value)}
                 className={fieldClass}
+                placeholder={"Bank Name -\nAccount No -\nIFSC Code -\nBranch Name -"}
               />
             </div>
-            <div className="space-y-2 lg:col-span-2">
+            <div className="space-y-2">
               <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>Seal &amp; sign</label>
-              <textarea
-                name="seal_and_sign"
-                rows={3}
-                value={formValues.seal_and_sign}
-                onChange={(e) => onUpdateField("seal_and_sign", e.target.value)}
-                className={fieldClass}
-                placeholder="Authorised signatory, stamp instructions, or image URL"
-              />
+              {sealSignImageUrl ? (
+                <div className="flex justify-end rounded-lg border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-700 dark:bg-zinc-900/60">
+                  <img
+                    src={sealSignImageUrl}
+                    alt="Company seal and sign"
+                    className="max-h-40 max-w-full rounded-md border border-zinc-200 object-contain dark:border-zinc-700"
+                  />
+                </div>
+              ) : (
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  No seal &amp; sign image found in Company Settings.
+                </p>
+              )}
             </div>
           </div>
 

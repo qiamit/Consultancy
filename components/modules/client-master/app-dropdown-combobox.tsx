@@ -76,6 +76,7 @@ export function AppDropdownCombobox({
   inputRowShellClassName = inputRowShell,
   /** When set, the + button runs this instead of opening the manage-labels dialog. */
   onSuffixButtonClick,
+  suffixButtonClassName,
   /** When true and value is "", the text input stays empty (list still shows `emptySelectLabel`). */
   blankInputWhenNoSelection = false,
 }: {
@@ -102,6 +103,7 @@ export function AppDropdownCombobox({
   /** Override the inner row shell (e.g. embed beside another input). */
   inputRowShellClassName?: string;
   onSuffixButtonClick?: () => void;
+  suffixButtonClassName?: string;
   blankInputWhenNoSelection?: boolean;
 }) {
   const router = useRouter();
@@ -367,7 +369,7 @@ export function AppDropdownCombobox({
           />
           <button
             type="button"
-            className={suffixBtn}
+            className={suffixButtonClassName ? `${suffixBtn} ${suffixButtonClassName}` : suffixBtn}
             aria-label={manageAriaLabel}
             aria-expanded={onSuffixButtonClick ? undefined : open}
             aria-haspopup={onSuffixButtonClick ? undefined : "dialog"}

@@ -23,11 +23,11 @@ function ImageUploadCard({ children }: { children: ReactNode }) {
 }
 
 const TABS = [
-  { id: "company" as const, label: "Company details" },
-  { id: "bank" as const, label: "Bank details" },
-  { id: "images" as const, label: "Company images" },
-  { id: "terms" as const, label: "Company terms & conditions" },
-  { id: "scope" as const, label: "Scope of work" },
+  { id: "company" as const, label: "Company Details" },
+  { id: "bank" as const, label: "Bank Details" },
+  { id: "images" as const, label: "Company Images" },
+  { id: "terms" as const, label: "Term & Condition" },
+  { id: "scope" as const, label: "Scope of Work" },
   { id: "notes" as const, label: "Notes" },
 ];
 
@@ -90,6 +90,7 @@ export function CompanySettingsTabs({
   notesRows: CompanyTextTemplateRow[];
 }) {
   const [tab, setTab] = useState<TabId>("company");
+  const isBaseSettingsTab = tab === "company" || tab === "bank" || tab === "images";
 
   const tabBtn = (id: TabId, label: string) => {
     const active = tab === id;
@@ -123,11 +124,7 @@ export function CompanySettingsTabs({
         </p>
       ) : null}
 
-      <form
-        action={updateCompanySettings}
-        encType="multipart/form-data"
-        className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-      >
+      <div className="overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <div
           className="flex gap-1 overflow-x-auto border-b border-zinc-200 bg-zinc-50/90 px-2 py-2 dark:border-zinc-800 dark:bg-zinc-900/80"
           role="tablist"
@@ -137,11 +134,13 @@ export function CompanySettingsTabs({
         </div>
 
         <div className="p-6">
-          <div
-            className={tab === "company" ? "space-y-4" : "hidden"}
-            role="tabpanel"
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
+          {isBaseSettingsTab ? (
+            <form action={updateCompanySettings}>
+              <div
+                className={tab === "company" ? "space-y-4" : "hidden"}
+                role="tabpanel"
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
                 <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                   Name of the company
@@ -244,14 +243,14 @@ export function CompanySettingsTabs({
                   className={inp}
                 />
               </div>
-            </div>
-          </div>
+                </div>
+              </div>
 
-          <div
-            className={tab === "bank" ? "space-y-4" : "hidden"}
-            role="tabpanel"
-          >
-            <div className="grid gap-4 sm:grid-cols-2">
+              <div
+                className={tab === "bank" ? "space-y-4" : "hidden"}
+                role="tabpanel"
+              >
+                <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2 sm:col-span-2">
                 <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
                   Name of account holder
@@ -354,31 +353,31 @@ export function CompanySettingsTabs({
                   className={inp}
                 />
               </div>
-            </div>
-          </div>
+                </div>
+              </div>
 
-          <div
-            className={tab === "images" ? "space-y-8" : "hidden"}
-            role="tabpanel"
-          >
-            <input
-              type="hidden"
-              name="letterhead_upper_path"
-              value={str(r?.letterhead_upper_path)}
-            />
-            <input
-              type="hidden"
-              name="letterhead_lower_path"
-              value={str(r?.letterhead_lower_path)}
-            />
-            <input
-              type="hidden"
-              name="seal_sign_image_path"
-              value={str(r?.seal_sign_image_path)}
-            />
-            <input type="hidden" name="logo_path" value={str(r?.logo_path)} />
+              <div
+                className={tab === "images" ? "space-y-8" : "hidden"}
+                role="tabpanel"
+              >
+                <input
+                  type="hidden"
+                  name="letterhead_upper_path"
+                  value={str(r?.letterhead_upper_path)}
+                />
+                <input
+                  type="hidden"
+                  name="letterhead_lower_path"
+                  value={str(r?.letterhead_lower_path)}
+                />
+                <input
+                  type="hidden"
+                  name="seal_sign_image_path"
+                  value={str(r?.seal_sign_image_path)}
+                />
+                <input type="hidden" name="logo_path" value={str(r?.logo_path)} />
 
-            <div className="grid gap-6 sm:grid-cols-2 lg:gap-8">
+                <div className="grid gap-6 sm:grid-cols-2 lg:gap-8">
               <ImageUploadCard>
                 <ImageFieldPreview
                   label="Letter head upper"
@@ -446,40 +445,39 @@ export function CompanySettingsTabs({
                   className={fileInp}
                 />
               </ImageUploadCard>
+                </div>
+              </div>
+
+              <div className="mt-6 border-t border-zinc-200 bg-zinc-50/80 px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+                <button
+                  type="submit"
+                  className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
+                >
+                  Save Company Setting
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {tab === "terms" ? (
+            <div className="space-y-4" role="tabpanel">
+              <CompanyTermsTab terms={termsRows} />
             </div>
-          </div>
+          ) : null}
 
-          <div
-            className={tab === "terms" ? "space-y-4" : "hidden"}
-            role="tabpanel"
-          >
-            <CompanyTermsTab terms={termsRows} />
-          </div>
+          {tab === "scope" ? (
+            <div className="space-y-4" role="tabpanel">
+              <CompanyScopeOfWorkTab rows={scopeRows} />
+            </div>
+          ) : null}
 
-          <div
-            className={tab === "scope" ? "space-y-4" : "hidden"}
-            role="tabpanel"
-          >
-            <CompanyScopeOfWorkTab rows={scopeRows} />
-          </div>
-
-          <div
-            className={tab === "notes" ? "space-y-4" : "hidden"}
-            role="tabpanel"
-          >
-            <CompanyNotesTab rows={notesRows} />
-          </div>
+          {tab === "notes" ? (
+            <div className="space-y-4" role="tabpanel">
+              <CompanyNotesTab rows={notesRows} />
+            </div>
+          ) : null}
         </div>
-
-        <div className="border-t border-zinc-200 bg-zinc-50/80 px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-          <button
-            type="submit"
-            className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
-          >
-            Save company settings
-          </button>
-        </div>
-      </form>
+      </div>
     </div>
   );
 }
