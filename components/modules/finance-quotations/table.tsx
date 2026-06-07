@@ -1,16 +1,20 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef } from "react";
+import { SALES_ORDER_LIST_PATH } from "@/components/modules/finance-sales-orders/constants";
+import { TAX_INVOICE_LIST_PATH } from "@/components/modules/finance-tax-invoices/constants";
 import type { FinanceQuotationRow } from "@/lib/types/finance-quotation";
 import { FinanceQuotationsFooterBar } from "./footer-bar";
 
-const COL_COUNT = 6;
+const COL_COUNT = 7;
 
 function clientLabel(r: FinanceQuotationRow): string {
   const c = r.clients;
   if (!c) return "—";
   const company = (c.company_name ?? "").trim();
-  return company ? `${c.name} (${company})` : c.name;
+  const name = (c.name ?? "").trim();
+  return company || name || "—";
 }
 
 function dash(v: string | null | undefined): string {
@@ -94,6 +98,9 @@ export function FinanceQuotationsTable({
   rows,
   idParam,
   onEditRow,
+  onDownloadRow,
+  onShareRow,
+  onStatusChange,
   matchedCount,
   grandCount,
   searchActive,
@@ -103,7 +110,6 @@ export function FinanceQuotationsTable({
   onPrintList,
   onDelete,
   deleteDisabled,
-  onDeleteRow,
   selectedIds,
   onToggleRowSelection,
   onToggleSelectPage,
@@ -111,6 +117,12 @@ export function FinanceQuotationsTable({
   rows: FinanceQuotationRow[];
   idParam: string | null;
   onEditRow: (r: FinanceQuotationRow) => void;
+  onDownloadRow: (r: FinanceQuotationRow) => void;
+  onShareRow: (r: FinanceQuotationRow) => void | Promise<void>;
+  onStatusChange: (
+    r: FinanceQuotationRow,
+    status: "pending" | "accepted" | "cancelled",
+  ) => void;
   matchedCount: number;
   grandCount: number;
   searchActive: boolean;
@@ -120,7 +132,6 @@ export function FinanceQuotationsTable({
   onPrintList: () => void;
   onDelete: () => void;
   deleteDisabled: boolean;
-  onDeleteRow: (r: FinanceQuotationRow) => void;
   selectedIds: ReadonlySet<string>;
   onToggleRowSelection: (id: string) => void;
   onToggleSelectPage: () => void;
@@ -128,7 +139,6 @@ export function FinanceQuotationsTable({
   const emptyMaster = grandCount === 0;
   const noMatches = !emptyMaster && rows.length === 0;
   const pageRowIds = rows.map((r) => r.id);
-
   return (
     <div className="overflow-x-auto">
       <table className="min-w-[920px] w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
@@ -143,11 +153,12 @@ export function FinanceQuotationsTable({
                 />
               </div>
             </th>
-            <th className="min-w-[160px] px-3 py-2">Quotation details</th>
+            <th className="min-w-[160px] px-3 py-2">Quotation Details</th>
             <th className="min-w-[160px] px-3 py-2 text-center">Client</th>
             <th className="min-w-[100px] px-3 py-2 text-center">Type</th>
+            <th className="min-w-[90px] px-3 py-2 text-center">Status</th>
             <th className="min-w-[120px] px-3 py-2 text-right">Total</th>
-            <th className="min-w-[5.5rem] px-2 py-2 text-center">Action</th>
+            <th className="w-[15%] px-2 py-2 text-right">Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-200 bg-white dark:divide-zinc-800 dark:bg-zinc-950/40">
@@ -201,7 +212,6 @@ export function FinanceQuotationsTable({
                       {r.quotation_number}
                     </div>
                     <StackLine muted>Date: {dash(r.quotation_date)}</StackLine>
-                    <StackLine muted>Expires: {dash(r.expiry_date)}</StackLine>
                   </GroupCell>
 
                   <GroupCell textCenter>
@@ -212,35 +222,95 @@ export function FinanceQuotationsTable({
                     <StackLine className="capitalize">{r.quotation_type}</StackLine>
                   </GroupCell>
 
+                  <GroupCell textCenter>
+                    <select
+                      value={r.quotation_status ?? "pending"}
+                      onChange={(e) =>
+                        onStatusChange(
+                          r,
+                          e.target.value as "pending" | "accepted" | "cancelled",
+                        )
+                      }
+                      className="rounded-md border border-zinc-300 bg-white px-2 py-1 text-xs capitalize text-zinc-700 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="accepted">Accepted</option>
+                      <option value="cancelled">Cancelled</option>
+                    </select>
+                  </GroupCell>
+
                   <td className="align-top px-3 py-2 text-right tabular-nums text-zinc-900 dark:text-zinc-100">
-                    {Number(r.grand_total).toLocaleString("en-IN", {
-                      style: "currency",
-                      currency: "INR",
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    })}
+                    <div>
+                      {Number(r.grand_total).toLocaleString("en-IN", {
+                        style: "currency",
+                        currency: "INR",
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </div>
+                    <div className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
+                      GST:{" "}
+                      {Number(r.tax_total).toLocaleString("en-IN", {
+                        style: "currency",
+                        currency: "INR",
+                        minimumFractionDigits: 2,
+                        maximumFractionDigits: 2,
+                      })}
+                    </div>
                   </td>
 
-                  <td className="align-top px-2 py-2 text-center">
+                  <td className="align-top px-2 py-2 text-right">
                     <div
-                      className="flex flex-col items-center gap-1.5"
+                      className="flex flex-col items-end gap-1"
                       role="group"
                       aria-label="Row actions"
                     >
-                      <button
-                        type="button"
-                        onClick={() => onEditRow(r)}
-                        className="text-sm font-medium text-sky-600 hover:underline dark:text-sky-400"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => onDeleteRow(r)}
-                        className="text-sm font-medium text-red-600 hover:underline dark:text-red-400"
-                      >
-                        Delete
-                      </button>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => onEditRow(r)}
+                          className="text-sm font-medium text-sky-600 hover:underline dark:text-sky-400"
+                        >
+                          Edit
+                        </button>
+                        <span className="text-zinc-400 dark:text-zinc-600">
+                          |
+                        </span>
+                        <Link
+                          href={`${SALES_ORDER_LIST_PATH}?new=1&quotation_id=${encodeURIComponent(r.id)}`}
+                          className="text-sm font-medium text-emerald-600 hover:underline dark:text-emerald-400"
+                        >
+                          Sales Order
+                        </Link>
+                        <span className="text-zinc-400 dark:text-zinc-600">
+                          |
+                        </span>
+                        <Link
+                          href={`${TAX_INVOICE_LIST_PATH}?new=1&quotation_id=${encodeURIComponent(r.id)}`}
+                          className="text-sm font-medium text-violet-600 hover:underline dark:text-violet-400"
+                        >
+                          Tax Invoice
+                        </Link>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => void onShareRow(r)}
+                          className="text-sm font-medium text-zinc-700 hover:underline dark:text-zinc-300"
+                        >
+                          Share
+                        </button>
+                        <span className="text-zinc-400 dark:text-zinc-600">
+                          |
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onDownloadRow(r)}
+                          className="text-sm font-medium text-zinc-700 hover:underline dark:text-zinc-300"
+                        >
+                          Download
+                        </button>
+                      </div>
                     </div>
                   </td>
                 </tr>

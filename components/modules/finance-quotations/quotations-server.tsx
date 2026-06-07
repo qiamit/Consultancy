@@ -30,20 +30,8 @@ function buildDefaultBankDetails(row: Record<string, unknown> | null): string {
   const push = (label: string, val: string) => {
     if (val) lines.push(`${label}: ${val}`);
   };
-  if (s(row, "company_name")) lines.push(s(row, "company_name"));
-  if (s(row, "address")) lines.push(s(row, "address"));
-  const loc = [s(row, "company_pin_code"), s(row, "company_city"), s(row, "company_state"), s(row, "company_country")]
-    .filter(Boolean)
-    .join(", ");
-  if (loc) lines.push(loc);
-  push("GSTIN", s(row, "gst_number"));
-  push("Contact person", s(row, "contact_person_name"));
-  push("Phone", s(row, "phone"));
-  push("Email", s(row, "email"));
-  lines.push("");
-  lines.push("Bank details");
-  push("Account holder", s(row, "bank_account_holder_name"));
-  push("Account no.", s(row, "bank_account_number"));
+  push("Account Holder", s(row, "bank_account_holder_name"));
+  push("Account No.", s(row, "bank_account_number"));
   push("Branch", s(row, "bank_branch_name"));
   push("IFSC", s(row, "bank_ifsc"));
   push("SWIFT", s(row, "bank_swift"));
@@ -83,7 +71,7 @@ export async function FinanceQuotationsServer({
       supabase
         .from("finance_quotations")
         .select(
-          `id, quotation_number, quotation_date, expiry_date, client_id, quotation_type,
+          `id, quotation_number, quotation_status, quotation_date, expiry_date, client_id, quotation_type,
           notes, terms_and_conditions, scope_of_work, bank_details, seal_and_sign,
           subtotal, tax_total, grand_total, created_at, updated_at,
           clients(name, company_name),
@@ -95,7 +83,9 @@ export async function FinanceQuotationsServer({
         .order("created_at", { ascending: false }),
       supabase
         .from("clients")
-        .select("id,name,company_name,gst_number")
+        .select(
+          "id,name,company_name,gst_number,contact_person_name,email,phone_country_code,phone,address,pin_code,city,state,country",
+        )
         .order("company_name", { ascending: true, nullsFirst: false })
         .order("name", { ascending: true }),
       supabase
@@ -124,6 +114,15 @@ export async function FinanceQuotationsServer({
       name: string;
       company_name: string | null;
       gst_number: string | null;
+      contact_person_name: string | null;
+      email: string | null;
+      phone_country_code: string | null;
+      phone: string | null;
+      address: string | null;
+      pin_code: string | null;
+      city: string | null;
+      state: string | null;
+      country: string | null;
     }[];
 
   const productRows = (productsRaw ?? []) as unknown as ProductMasterOptionRow[];
@@ -135,8 +134,22 @@ export async function FinanceQuotationsServer({
     (company ?? null) as Record<string, unknown> | null,
     "seal_sign_image_path",
   );
+  const letterheadUpperPath = s(
+    (company ?? null) as Record<string, unknown> | null,
+    "letterhead_upper_path",
+  );
+  const letterheadLowerPath = s(
+    (company ?? null) as Record<string, unknown> | null,
+    "letterhead_lower_path",
+  );
   const sealSignImageUrl = sealSignImagePath
     ? await signedImageUrl(supabase, sealSignImagePath)
+    : null;
+  const letterheadUpperImageUrl = letterheadUpperPath
+    ? await signedImageUrl(supabase, letterheadUpperPath)
+    : null;
+  const letterheadLowerImageUrl = letterheadLowerPath
+    ? await signedImageUrl(supabase, letterheadLowerPath)
     : null;
 
   return (
@@ -148,6 +161,8 @@ export async function FinanceQuotationsServer({
       productRows={productRows}
       defaultBankDetails={defaultBankDetails}
       sealSignImageUrl={sealSignImageUrl}
+      letterheadUpperImageUrl={letterheadUpperImageUrl}
+      letterheadLowerImageUrl={letterheadLowerImageUrl}
       termsTemplates={termsTemplates}
       scopeTemplates={scopeTemplates}
       notesTemplates={notesTemplates}

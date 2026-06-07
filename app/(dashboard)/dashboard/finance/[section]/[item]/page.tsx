@@ -1,5 +1,12 @@
 import { notFound } from "next/navigation";
 import { FinanceQuotationsServer } from "@/components/modules/finance-quotations";
+import { FinanceCreditNotesServer } from "@/components/modules/finance-credit-notes";
+import { FinanceCustomerStatementsServer } from "@/components/modules/finance-customer-statements";
+import { FinancePaymentInsServer } from "@/components/modules/finance-payment-ins";
+import { FinancePaymentOutsServer } from "@/components/modules/finance-payment-outs";
+import { FinanceProformaInvoicesServer } from "@/components/modules/finance-proforma-invoices";
+import { FinanceSalesOrdersServer } from "@/components/modules/finance-sales-orders";
+import { FinanceTaxInvoicesServer } from "@/components/modules/finance-tax-invoices";
 import {
   FinanceModuleShell,
   FinancePlaceholderPanel,
@@ -28,6 +35,21 @@ const QUERY_ERROR_MESSAGES: Record<string, string> = {
   quotation_number_required: "Quotation number is required.",
   quotation_number_duplicate:
     "That quotation number is already in use. Choose a different number.",
+  sales_order_number_required: "Sales order number is required.",
+  sales_order_number_duplicate:
+    "That sales order number is already in use. Choose a different number.",
+  proforma_invoice_number_required: "Proforma number is required.",
+  proforma_invoice_number_duplicate:
+    "That proforma number is already in use. Choose a different number.",
+  tax_invoice_number_required: "Tax invoice number is required.",
+  tax_invoice_number_duplicate:
+    "That tax invoice number is already in use. Choose a different number.",
+  credit_note_number_required: "Credit note number is required.",
+  credit_note_number_duplicate:
+    "That credit note number is already in use. Choose a different number.",
+  customer_statement_number_required: "Customer statement number is required.",
+  customer_statement_number_duplicate:
+    "That customer statement number is already in use. Choose a different number.",
 };
 
 export default async function FinanceModulePage({
@@ -56,67 +78,103 @@ export default async function FinanceModulePage({
     section.id === "accounting" &&
     item.slug === "cash-bank-book" &&
     item.implemented;
+  const livePurchaseRequisition =
+    section.id === "purchase" &&
+    item.slug === "purchase-requisition" &&
+    item.implemented;
+  const livePurchaseOrder =
+    section.id === "purchase" &&
+    item.slug === "purchase-order" &&
+    item.implemented;
+  const livePurchaseInvoice =
+    section.id === "purchase" &&
+    item.slug === "purchase-invoice" &&
+    item.implemented;
+  const livePurchaseDebitNote =
+    section.id === "purchase" &&
+    item.slug === "debit-note" &&
+    item.implemented;
+  const liveExpenseManagement =
+    section.id === "purchase" &&
+    item.slug === "expense-management" &&
+    item.implemented;
   const liveQuotationEstimate =
     section.id === "sales" &&
     item.slug === "quotation-estimate" &&
     item.implemented;
 
+  const liveSalesOrder =
+    section.id === "sales" &&
+    item.slug === "sales-order" &&
+    item.implemented;
+
+  const liveProformaInvoice =
+    section.id === "sales" &&
+    item.slug === "proforma-invoice" &&
+    item.implemented;
+  const liveTaxInvoice =
+    section.id === "sales" &&
+    item.slug === "tax-invoice" &&
+    item.implemented;
+  const liveCreditNote =
+    section.id === "sales" &&
+    item.slug === "credit-note" &&
+    item.implemented;
+  const liveCustomerStatement =
+    section.id === "sales" &&
+    item.slug === "customer-statement" &&
+    item.implemented;
+
+  if (liveCustomerStatement) {
+    return <FinanceCustomerStatementsServer searchParams={searchParams} />;
+  }
+
+  if (liveCreditNote) {
+    return <FinanceCreditNotesServer searchParams={searchParams} />;
+  }
+
+  if (liveTaxInvoice) {
+    return <FinanceTaxInvoicesServer searchParams={searchParams} />;
+  }
+
+  if (livePaymentIn) {
+    return <FinancePaymentInsServer searchParams={searchParams} />;
+  }
+
+  if (livePurchaseRequisition) {
+    return <FinanceQuotationsServer searchParams={searchParams} />;
+  }
+
+  if (livePurchaseOrder) {
+    return <FinanceSalesOrdersServer searchParams={searchParams} />;
+  }
+
+  if (livePurchaseInvoice) {
+    return <FinanceTaxInvoicesServer searchParams={searchParams} />;
+  }
+
+  if (livePurchaseDebitNote) {
+    return <FinanceCreditNotesServer searchParams={searchParams} />;
+  }
+
+  if (liveExpenseManagement) {
+    return <FinanceCustomerStatementsServer searchParams={searchParams} />;
+  }
+
+  if (liveProformaInvoice) {
+    return <FinanceProformaInvoicesServer searchParams={searchParams} />;
+  }
+
+  if (liveSalesOrder) {
+    return <FinanceSalesOrdersServer searchParams={searchParams} />;
+  }
+
   if (liveQuotationEstimate) {
     return <FinanceQuotationsServer searchParams={searchParams} />;
   }
 
-  if (livePaymentIn) {
-    return (
-      <div className="space-y-4">
-        {errMsg ? (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-            {errMsg}
-          </p>
-        ) : null}
-        <FinanceModuleShell
-          breadcrumb={breadcrumb}
-          title={item.label}
-          description={item.description}
-        >
-          <div className="space-y-6">
-            <FinanceTransactionNewForm paymentFlow="in" redirectPath={href} />
-            <div>
-              <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Recent receipts
-              </h2>
-              <FinanceTransactionTable flow="in" />
-            </div>
-          </div>
-        </FinanceModuleShell>
-      </div>
-    );
-  }
-
   if (livePaymentOut) {
-    return (
-      <div className="space-y-4">
-        {errMsg ? (
-          <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
-            {errMsg}
-          </p>
-        ) : null}
-        <FinanceModuleShell
-          breadcrumb={breadcrumb}
-          title={item.label}
-          description={item.description}
-        >
-          <div className="space-y-6">
-            <FinanceTransactionNewForm paymentFlow="out" redirectPath={href} />
-            <div>
-              <h2 className="mb-3 text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-                Recent payments
-              </h2>
-              <FinanceTransactionTable flow="out" />
-            </div>
-          </div>
-        </FinanceModuleShell>
-      </div>
-    );
+    return <FinancePaymentOutsServer searchParams={searchParams} />;
   }
 
   if (liveCashBook) {

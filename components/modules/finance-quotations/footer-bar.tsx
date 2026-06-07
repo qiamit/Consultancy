@@ -37,7 +37,7 @@ export function FinanceQuotationsFooterBar({
   return (
     <tfoot className="border-t border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200">
       <tr>
-        <td colSpan={4} className="px-3 py-2 align-middle">
+        <td colSpan={5} className="px-3 py-2 align-middle">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
             <div className="min-w-0 shrink-0">
               <span>Total Entries: {matchedCount}</span>
@@ -101,7 +101,7 @@ export function FinanceQuotationsFooterBar({
           </div>
         </td>
         <td className="px-3 py-2 text-right align-middle tabular-nums">
-          Grand total
+          Grand Total
           {searchActive ? " (matches)" : ""}
         </td>
         <td className="px-3 py-2 text-right align-middle tabular-nums">

@@ -34,6 +34,34 @@ export const DROPDOWN_KEY_PRODUCT_GST_RATE = "product_master.gst_rate" as const;
 export const DROPDOWN_KEY_FINANCE_QUOTATION_CLIENT =
   "finance_quotations.client" as const;
 
+/** Finance sales orders — options come from `clients` table on the page. */
+export const DROPDOWN_KEY_FINANCE_SALES_ORDER_CLIENT =
+  "finance_sales_orders.client" as const;
+
+/** Finance proforma invoices — options come from `clients` table on the page. */
+export const DROPDOWN_KEY_FINANCE_PROFORMA_INVOICE_CLIENT =
+  "finance_proforma_invoices.client" as const;
+
+/** Finance tax invoices — options come from `clients` table on the page. */
+export const DROPDOWN_KEY_FINANCE_TAX_INVOICE_CLIENT =
+  "finance_tax_invoices.client" as const;
+
+/** Finance credit notes — options come from `clients` table on the page. */
+export const DROPDOWN_KEY_FINANCE_CREDIT_NOTE_CLIENT =
+  "finance_credit_notes.client" as const;
+
+/** Finance customer statements — options come from `clients` table on the page. */
+export const DROPDOWN_KEY_FINANCE_CUSTOMER_STATEMENT_CLIENT =
+  "finance_customer_statements.client" as const;
+
+/** Finance payment-in — options come from `clients` table on the page. */
+export const DROPDOWN_KEY_FINANCE_PAYMENT_IN_CLIENT =
+  "finance_payment_in.client" as const;
+
+/** Finance payment-out — options come from `clients` table on the page. */
+export const DROPDOWN_KEY_FINANCE_PAYMENT_OUT_CLIENT =
+  "finance_payment_out.client" as const;
+
 /** Client picker on BIS Projects (options come from `clients` rows on the page). */
 export const DROPDOWN_KEY_BIS_PROJECT_CLIENT =
   "bis_projects.client" as const;

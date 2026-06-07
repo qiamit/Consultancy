@@ -10,6 +10,7 @@ import {
   deleteFinanceQuotation,
   deleteFinanceQuotations,
   importFinanceQuotations,
+  updateFinanceQuotationStatus,
 } from "@/lib/actions/finance-quotations";
 import {
   buildFinanceQuotationsExportCsv,
@@ -20,6 +21,7 @@ import {
   emptyLine,
   QUOTATION_LIST_PATH,
   rowToForm,
+  splitQuotationNumberForForm,
   type QuotationFormState,
   type QuotationLineForm,
 } from "./constants";
@@ -34,6 +36,15 @@ type ClientOptionRow = {
   name: string;
   company_name: string | null;
   gst_number: string | null;
+  contact_person_name: string | null;
+  email: string | null;
+  phone_country_code: string | null;
+  phone: string | null;
+  address: string | null;
+  pin_code: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
 };
 
 /** Labels show Client Master `company_name` only; search also matches contact name & GSTIN. */
@@ -69,6 +80,51 @@ function addOneMonthISO(isoDate: string): string {
   return d.toISOString().slice(0, 10);
 }
 
+function getNextQuotationNumberParts(
+  rows: FinanceQuotationRow[],
+  preferredPrefixOverride?: string,
+): {
+  quotation_number_prefix: string;
+  quotation_number_value: string;
+} {
+  if (rows.length === 0) {
+    return {
+      quotation_number_prefix: preferredPrefixOverride ?? "",
+      quotation_number_value: "00001",
+    };
+  }
+
+  const sortedByCreatedAt = [...rows].sort((a, b) =>
+    a.created_at < b.created_at ? 1 : -1,
+  );
+  const latestParts = splitQuotationNumberForForm(
+    sortedByCreatedAt[0]?.quotation_number ?? "",
+  );
+  const preferredPrefix =
+    preferredPrefixOverride ?? latestParts.quotation_number_prefix;
+
+  let maxValue = 0;
+  let width = 5;
+
+  for (const row of rows) {
+    const parts = splitQuotationNumberForForm(row.quotation_number ?? "");
+    if (parts.quotation_number_prefix !== preferredPrefix) continue;
+    if (!/^\d+$/.test(parts.quotation_number_value)) continue;
+
+    const parsed = Number(parts.quotation_number_value);
+    if (!Number.isFinite(parsed)) continue;
+
+    maxValue = Math.max(maxValue, parsed);
+    width = Math.max(width, parts.quotation_number_value.length);
+  }
+
+  const next = String(maxValue + 1).padStart(width, "0");
+  return {
+    quotation_number_prefix: preferredPrefix,
+    quotation_number_value: next,
+  };
+}
+
 export function FinanceQuotationsMaster({
   initialRows,
   fetchError,
@@ -77,6 +133,8 @@ export function FinanceQuotationsMaster({
   productRows,
   defaultBankDetails,
   sealSignImageUrl,
+  letterheadUpperImageUrl,
+  letterheadLowerImageUrl,
   notesTemplates = [],
   termsTemplates = [],
   scopeTemplates = [],
@@ -88,6 +146,8 @@ export function FinanceQuotationsMaster({
   productRows: ProductMasterOptionRow[];
   defaultBankDetails: string;
   sealSignImageUrl: string | null;
+  letterheadUpperImageUrl: string | null;
+  letterheadLowerImageUrl: string | null;
   notesTemplates?: CompanyTextTemplateRow[];
   termsTemplates?: CompanyTextTemplateRow[];
   scopeTemplates?: CompanyTextTemplateRow[];
@@ -126,6 +186,11 @@ export function FinanceQuotationsMaster({
     for (const p of productRows) m.set(p.id, p);
     return m;
   }, [productRows]);
+  const clientById = useMemo(() => {
+    const m = new Map<string, ClientOptionRow>();
+    for (const c of clientRows) m.set(c.id, c);
+    return m;
+  }, [clientRows]);
 
   useEffect(() => {
     setRows(initialRows);
@@ -135,9 +200,14 @@ export function FinanceQuotationsMaster({
     if (isNewParam) {
       setForm((prev) => {
         const base = emptyForm(defaultBankDetails);
+        const prevPrefix = prev.quotation_number_prefix.trim();
+        const nextNumber = getNextQuotationNumberParts(
+          initialRows,
+          prevPrefix || undefined,
+        );
         const fromUrl = searchParams.get("client_id")?.trim() ?? "";
-        if (fromUrl) return { ...base, client_id: fromUrl };
-        return { ...base, client_id: prev.client_id };
+        if (fromUrl) return { ...base, ...nextNumber, client_id: fromUrl };
+        return { ...base, ...nextNumber, client_id: prev.client_id };
       });
       return;
     }
@@ -239,6 +309,60 @@ export function FinanceQuotationsMaster({
       router.replace(`${QUOTATION_LIST_PATH}?id=${encodeURIComponent(r.id)}`, {
         scroll: false,
       });
+    },
+    [router],
+  );
+
+  const downloadRow = useCallback((r: FinanceQuotationRow) => {
+    const blob = new Blob([JSON.stringify(r, null, 2)], {
+      type: "application/json;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${(r.quotation_number || "quotation").trim()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }, []);
+
+  const shareRow = useCallback(
+    async (r: FinanceQuotationRow) => {
+      const url = `${window.location.origin}${QUOTATION_LIST_PATH}?id=${encodeURIComponent(r.id)}`;
+      const text = `Quotation ${r.quotation_number || r.id}`;
+      try {
+        if (navigator.share) {
+          await navigator.share({ title: "Quotation", text, url });
+          return;
+        }
+        await navigator.clipboard.writeText(url);
+        window.alert("Quotation link copied to clipboard.");
+      } catch {
+        window.alert("Unable to share right now.");
+      }
+    },
+    [],
+  );
+  const updateRowStatus = useCallback(
+    async (
+      r: FinanceQuotationRow,
+      status: "pending" | "accepted" | "cancelled",
+    ) => {
+      setRows((prev) =>
+        prev.map((x) => (x.id === r.id ? { ...x, quotation_status: status } : x)),
+      );
+      const result = await updateFinanceQuotationStatus({ id: r.id, status });
+      if (!result.ok) {
+        setRows((prev) =>
+          prev.map((x) =>
+            x.id === r.id
+              ? { ...x, quotation_status: r.quotation_status ?? "pending" }
+              : x,
+          ),
+        );
+        window.alert(result.error);
+        return;
+      }
+      router.refresh();
     },
     [router],
   );
@@ -363,24 +487,13 @@ export function FinanceQuotationsMaster({
     void deleteFinanceQuotation(idParam);
   }
 
-  function handleDeleteRow(r: FinanceQuotationRow) {
-    const label = r.quotation_number || "this quotation";
-    if (
-      !window.confirm(
-        `Delete "${label}" permanently? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
-    void deleteFinanceQuotation(r.id);
-  }
-
   const hasSelection = selectedIds.size > 0;
   const canDeleteOpenRow =
     !!idParam &&
     !isNewParam &&
     rows.some((r) => r.id === idParam);
   const deleteDisabled = !hasSelection && !canDeleteOpenRow;
+  const selectedClient = clientById.get(form.client_id) ?? null;
 
   const errMsg =
     queryError === "dates"
@@ -404,6 +517,60 @@ export function FinanceQuotationsMaster({
           {errMsg}
         </p>
       ) : null}
+      {formVisible ? (
+        <div className="mb-4 rounded-lg border border-zinc-200 bg-white p-3 text-xs text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+          {selectedClient ? (
+            <div className="space-y-1.5">
+              <p>
+                <span className="font-semibold">Firm:</span>{" "}
+                {selectedClient.company_name?.trim() ||
+                  selectedClient.name?.trim() ||
+                  "—"}
+              </p>
+              <p>
+                <span className="font-semibold">Address:</span>{" "}
+                {[
+                  selectedClient.address,
+                  selectedClient.city,
+                  selectedClient.state,
+                  selectedClient.pin_code,
+                  selectedClient.country,
+                ]
+                  .map((v) => String(v ?? "").trim())
+                  .filter(Boolean)
+                  .join(", ") || "—"}
+              </p>
+              <p>
+                <span className="font-semibold">GST:</span>{" "}
+                {selectedClient.gst_number?.trim() || "—"}
+              </p>
+              <p>
+                <span className="font-semibold">Contact:</span>{" "}
+                {selectedClient.contact_person_name?.trim() ||
+                  selectedClient.name?.trim() ||
+                  "—"}
+              </p>
+              <p>
+                <span className="font-semibold">Email:</span>{" "}
+                {selectedClient.email?.trim() || "—"}
+              </p>
+              <p>
+                <span className="font-semibold">Mobile:</span>{" "}
+                {[
+                  String(selectedClient.phone_country_code ?? "").trim(),
+                  String(selectedClient.phone ?? "").trim(),
+                ]
+                  .filter(Boolean)
+                  .join(" ") || "—"}
+              </p>
+            </div>
+          ) : (
+            <p className="text-zinc-500 dark:text-zinc-400">
+              Select a client to see details here.
+            </p>
+          )}
+        </div>
+      ) : null}
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <FinanceQuotationsHeaderBar
@@ -423,6 +590,9 @@ export function FinanceQuotationsMaster({
           rows={paginated}
           idParam={idParam}
           onEditRow={selectRow}
+          onDownloadRow={downloadRow}
+          onShareRow={shareRow}
+          onStatusChange={updateRowStatus}
           matchedCount={filteredTotal}
           grandCount={grandTotal}
           searchActive={searchActive}
@@ -432,7 +602,6 @@ export function FinanceQuotationsMaster({
           onPrintList={handlePrintList}
           onDelete={handleDelete}
           deleteDisabled={deleteDisabled}
-          onDeleteRow={handleDeleteRow}
           selectedIds={selectedIds}
           onToggleRowSelection={toggleRowSelection}
           onToggleSelectPage={toggleSelectPage}
@@ -472,6 +641,9 @@ export function FinanceQuotationsMaster({
               onQuotationDateChange={onQuotationDateChange}
               quotationReturnUrl={quotationReturnUrl}
               sealSignImageUrl={sealSignImageUrl}
+              letterheadUpperImageUrl={letterheadUpperImageUrl}
+              letterheadLowerImageUrl={letterheadLowerImageUrl}
+              selectedClientDetails={selectedClient}
               notesTemplates={notesTemplates}
               termsTemplates={termsTemplates}
               scopeTemplates={scopeTemplates}

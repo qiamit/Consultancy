@@ -17,6 +17,7 @@ export type FinanceQuotationLineRow = {
 export type FinanceQuotationRow = {
   id: string;
   quotation_number: string;
+  quotation_status: "pending" | "accepted" | "cancelled";
   quotation_date: string;
   expiry_date: string;
   client_id: string | null;

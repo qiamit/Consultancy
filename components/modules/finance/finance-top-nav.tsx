@@ -125,15 +125,6 @@ export function FinanceTopNav() {
                     title={`${activeSection.title}: ${item.label} — ${item.description}`}
                   >
                     <span className="max-w-[14rem] sm:max-w-[16rem]">{item.label}</span>
-                    {item.implemented ? (
-                      <span className="rounded bg-emerald-100 px-1 py-0.5 text-[9px] font-semibold uppercase text-emerald-800 dark:bg-emerald-950/60 dark:text-emerald-200">
-                        Live
-                      </span>
-                    ) : (
-                      <span className="rounded bg-zinc-100 px-1 py-0.5 text-[9px] font-semibold uppercase text-zinc-500 dark:bg-zinc-800 dark:text-zinc-400">
-                        Soon
-                      </span>
-                    )}
                   </Link>
                 </li>
               );

@@ -6,6 +6,7 @@ import { joinQuotationNumberParts } from "@/lib/finance-quotation-number";
 import { createClient } from "@/lib/supabase/server";
 
 const LIST_PATH = "/dashboard/finance/sales/quotation-estimate";
+type QuotationStatus = "pending" | "accepted" | "cancelled";
 
 function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -119,6 +120,13 @@ export async function saveFinanceQuotation(formData: FormData) {
   const expiry_date = str(formData, "expiry_date");
   const client_id = nullableStr(formData, "client_id");
   const quotation_type = str(formData, "quotation_type") || "service";
+  const quotation_status_in = str(formData, "quotation_status").toLowerCase();
+  const quotation_status: QuotationStatus | null =
+    quotation_status_in === "accepted" || quotation_status_in === "cancelled"
+      ? quotation_status_in
+      : quotation_status_in === "pending"
+        ? "pending"
+        : null;
   if (quotation_type !== "service" && quotation_type !== "supply") {
     redirect(`${LIST_PATH}?error=type`);
   }
@@ -146,6 +154,7 @@ export async function saveFinanceQuotation(formData: FormData) {
     expiry_date,
     client_id,
     quotation_type,
+    ...(quotation_status ? { quotation_status } : {}),
     notes: nullableStr(formData, "notes"),
     terms_and_conditions: nullableStr(formData, "terms_and_conditions"),
     scope_of_work: nullableStr(formData, "scope_of_work"),
@@ -303,6 +312,11 @@ export async function importFinanceQuotations(
       expiry_date,
       client_id,
       quotation_type,
+      quotation_status:
+        String(rec.quotation_status ?? "").trim().toLowerCase() === "accepted" ||
+        String(rec.quotation_status ?? "").trim().toLowerCase() === "cancelled"
+          ? (String(rec.quotation_status ?? "").trim().toLowerCase() as QuotationStatus)
+          : "pending",
       notes: nullableStrFromRecord(rec, "notes"),
       terms_and_conditions: nullableStrFromRecord(rec, "terms_and_conditions"),
       scope_of_work: nullableStrFromRecord(rec, "scope_of_work"),
@@ -357,7 +371,140 @@ export async function importFinanceQuotations(
   return { ok: true, inserted: records.length };
 }
 
+export async function updateFinanceQuotationStatus(input: {
+  id: string;
+  status: QuotationStatus;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Please login again." };
+
+  const id = String(input.id ?? "").trim();
+  const statusRaw = String(input.status ?? "").trim().toLowerCase();
+  const status: QuotationStatus =
+    statusRaw === "accepted" || statusRaw === "cancelled" ? statusRaw : "pending";
+  if (!id) return { ok: false, error: "Quotation id missing." };
+
+  const { error } = await supabase
+    .from("finance_quotations")
+    .update({
+      quotation_status: status,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: "Could not update quotation status." };
+
+  revalidatePath(LIST_PATH, "layout");
+  return { ok: true };
+}
+
 function nullableStrFromRecord(rec: Record<string, string>, key: string) {
   const s = String(rec[key] ?? "").trim();
   return s ? s : null;
+}
+
+export async function updateFinanceQuotationNoteTemplate(input: {
+  id: string;
+  body: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Please login again." };
+
+  const id = String(input.id ?? "").trim();
+  const body = String(input.body ?? "");
+  if (!id) return { ok: false, error: "Template not selected." };
+
+  const { error } = await supabase
+    .from("company_notes")
+    .update({
+      body,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+
+  if (error) return { ok: false, error: "Could not update notes template." };
+
+  revalidatePath("/dashboard/settings/company");
+  revalidatePath("/dashboard/finance", "layout");
+  return { ok: true };
+}
+
+export async function updateFinanceQuotationTermTemplate(input: {
+  id: string;
+  body: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Please login again." };
+
+  const id = String(input.id ?? "").trim();
+  const body = String(input.body ?? "");
+  if (!id) return { ok: false, error: "Template not selected." };
+
+  const { data: row, error: rowErr } = await supabase
+    .from("company_terms")
+    .select("code")
+    .eq("id", id)
+    .maybeSingle();
+  if (rowErr || !row?.code) {
+    return { ok: false, error: "Selected terms template was not found." };
+  }
+
+  const { error } = await supabase
+    .from("company_terms")
+    .update({
+      body,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: "Could not update terms template." };
+
+  if (row.code === "default") {
+    await supabase
+      .from("company_settings")
+      .update({
+        company_terms_text: body || null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", 1);
+  }
+
+  revalidatePath("/dashboard/settings/company");
+  revalidatePath("/dashboard/finance", "layout");
+  return { ok: true };
+}
+
+export async function updateFinanceQuotationScopeTemplate(input: {
+  id: string;
+  body: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Please login again." };
+
+  const id = String(input.id ?? "").trim();
+  const body = String(input.body ?? "");
+  if (!id) return { ok: false, error: "Template not selected." };
+
+  const { error } = await supabase
+    .from("company_scope_of_work")
+    .update({
+      body,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: "Could not update scope template." };
+
+  revalidatePath("/dashboard/settings/company");
+  revalidatePath("/dashboard/finance", "layout");
+  return { ok: true };
 }
