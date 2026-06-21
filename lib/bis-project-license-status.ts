@@ -1,6 +1,11 @@
-/** Licence display status from validity date (and project kind). */
+/** Licence display status — combines validity date AND db compliance status. */
 
-export type LicenseDisplayStatus = "Operative" | "Deferred" | "Expired" | "N/A";
+export type LicenseDisplayStatus =
+  | "Operative"
+  | "Deferred"
+  | "Expired"
+  | "Stop Marking"
+  | "N/A";
 
 function parseYmd(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
@@ -17,12 +22,26 @@ function addDays(d: Date, days: number): Date {
   return x;
 }
 
+/**
+ * Compute the display status for a BIS license row.
+ *
+ * Stop Marking is a DB compliance flag — it takes precedence over the
+ * date-based calculation. A Stop Marking license can be reverted to
+ * Operative by restoring compliance (no renewal needed).
+ *
+ * Date-based rules (when not Stop Marking):
+ *   today ≤ validityEnd            → Operative
+ *   validityEnd < today ≤ +90 days → Deferred (grace window)
+ *   today > validityEnd + 90 days  → Expired
+ */
 export function computeLicenseDisplayStatus(
   projectKind: string,
   validityDateYmd: string | null | undefined,
+  dbStatus?: string | null,
   now: Date = new Date(),
 ): LicenseDisplayStatus {
   if (projectKind === "application") return "N/A";
+  if (dbStatus === "stop_marking") return "Stop Marking";
   const vRaw = (validityDateYmd ?? "").trim();
   if (!vRaw) return "N/A";
   const validityEnd = startOfDay(parseYmd(vRaw));
@@ -31,6 +50,34 @@ export function computeLicenseDisplayStatus(
   if (today <= validityEnd) return "Operative";
   if (today <= deferredEnd) return "Deferred";
   return "Expired";
+}
+
+/**
+ * Returns true if today is within the renewal window:
+ * 90 days BEFORE validity (Operative approaching expiry) OR
+ * 90 days AFTER validity (Deferred grace window).
+ * Stop Marking is excluded — it needs compliance restoration first.
+ */
+export function isRenewalWindowActive(
+  validityDateYmd: string | null | undefined,
+  dbStatus?: string | null,
+  now: Date = new Date(),
+): boolean {
+  if (dbStatus === "stop_marking") return false;
+  const vRaw = (validityDateYmd ?? "").trim();
+  if (!vRaw) return false;
+  const validityEnd = startOfDay(parseYmd(vRaw));
+  const today = startOfDay(now);
+  return today >= addDays(validityEnd, -90) && today <= addDays(validityEnd, 90);
+}
+
+/**
+ * Only Operative and Deferred licenses can be renewed.
+ * Expired licenses require a fresh application.
+ * Stop Marking requires compliance restoration, not renewal.
+ */
+export function canApplyForRenewal(lic: LicenseDisplayStatus): boolean {
+  return lic === "Operative" || lic === "Deferred";
 }
 
 /** CM/L before digits for licence & inclusion; CM/A for application. */
@@ -44,7 +91,7 @@ export function formatCmDisplay(
 ): string {
   const d = (digits ?? "").trim();
   if (!/^\d{10}$/.test(d)) return "—";
-  return `${cmPrefixForProjectKind(projectKind)}${d}`;
+  return `${cmPrefixForProjectKind(projectKind)}-${d}`;
 }
 
 /** Licence validity end date plus/minus 90 calendar days (en-IN labels). */

@@ -7,6 +7,8 @@ import {
   SidebarExpandFab,
   SidebarLayoutProvider,
 } from "@/components/dashboard/sidebar-layout-context";
+import { MobileTopBar } from "@/components/dashboard/mobile-top-bar";
+import { QEAssistantProvider } from "@/components/dashboard/qe-assistant-provider";
 import { createClient } from "@/lib/supabase/server";
 
 export default async function DashboardLayout({
@@ -27,9 +29,14 @@ export default async function DashboardLayout({
           <Sidebar />
         </Suspense>
         <MainContentOffset>
-          <main className="px-4 py-8 text-left sm:px-6 lg:px-10">{children}</main>
+          {/* Mobile-only top bar with hamburger */}
+          <MobileTopBar />
+          <main className="px-3 py-4 sm:px-5 sm:py-6 lg:px-8 lg:py-8">
+            {children}
+          </main>
         </MainContentOffset>
         <SidebarExpandFab />
+        <QEAssistantProvider />
       </div>
     </SidebarLayoutProvider>
   );

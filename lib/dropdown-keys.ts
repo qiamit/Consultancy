@@ -85,3 +85,47 @@ export const DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND =
 /** BIS New Applications — `app_dropdown_options` for `bis_new_applications.billing_frequency`. */
 export const DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY =
   "bis_new_applications.billing_frequency_catalog" as const;
+
+/** BIS Application checklist — managed dropdown catalogs. */
+export const DROPDOWN_KEY_BIS_APPLICATION_BRANCH =
+  "bis_application.bis_branch_name" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_NAME =
+  "bis_application.dealing_officer_name" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_DESIGNATION =
+  "bis_application.dealing_officer_designation" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_NAME =
+  "bis_application.inspection_officer_name" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_DESIGNATION =
+  "bis_application.inspection_officer_designation" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_NAME =
+  "bis_application.branch_head_name" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_DESIGNATION =
+  "bis_application.branch_head_designation" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_NATURE_OF_INSPECTION =
+  "bis_application.nature_of_inspection" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE =
+  "bis_application.marking_clause" as const;
+
+export const DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE =
+  "bis_application.packaging_clause" as const;
+
+export const BIS_APPLICATION_DROPDOWN_KEYS = [
+  DROPDOWN_KEY_BIS_APPLICATION_BRANCH,
+  DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_NAME,
+  DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_DESIGNATION,
+  DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_NAME,
+  DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_DESIGNATION,
+  DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_NAME,
+  DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_DESIGNATION,
+  DROPDOWN_KEY_BIS_APPLICATION_NATURE_OF_INSPECTION,
+  DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE,
+  DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE,
+] as const;

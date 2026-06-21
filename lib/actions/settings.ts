@@ -138,6 +138,27 @@ export async function updateCompanySettings(formData: FormData) {
       letterhead_lower_path,
       seal_sign_image_path,
       logo_path,
+      website: nullableStr(formData, "website"),
+      // Print & page settings
+      print_paper_size: str(formData, "print_paper_size") || "A4",
+      print_orientation: str(formData, "print_orientation") || "portrait",
+      print_margin_top: Number(str(formData, "print_margin_top")) || 12,
+      print_margin_bottom: Number(str(formData, "print_margin_bottom")) || 12,
+      print_margin_left: Number(str(formData, "print_margin_left")) || 12,
+      print_margin_right: Number(str(formData, "print_margin_right")) || 12,
+      print_font_family: str(formData, "print_font_family") || "Arial",
+      print_primary_color: str(formData, "print_primary_color") || "#1e3a8a",
+      print_show_letterhead: formData.get("print_show_letterhead") === "on" || str(formData, "print_show_letterhead") === "true",
+      print_letterhead_layout: str(formData, "print_letterhead_layout") || "logo-left",
+      print_letterhead_tagline: nullableStr(formData, "print_letterhead_tagline"),
+      print_letterhead_show_address: formData.get("print_letterhead_show_address") === "on" || str(formData, "print_letterhead_show_address") === "true",
+      print_letterhead_show_contact: formData.get("print_letterhead_show_contact") === "on" || str(formData, "print_letterhead_show_contact") === "true",
+      print_letterhead_show_gst: formData.get("print_letterhead_show_gst") === "on" || str(formData, "print_letterhead_show_gst") === "true",
+      print_footer_left: nullableStr(formData, "print_footer_left"),
+      print_footer_center: nullableStr(formData, "print_footer_center"),
+      print_footer_right: str(formData, "print_footer_right") || "Page {page} of {total}",
+      print_show_page_numbers: formData.get("print_show_page_numbers") === "on" || str(formData, "print_show_page_numbers") === "true",
+      print_show_footer_line: formData.get("print_show_footer_line") === "on" || str(formData, "print_show_footer_line") === "true",
       updated_at: new Date().toISOString(),
     },
     { onConflict: "id" },
@@ -197,6 +218,16 @@ export async function updateAppSettings(formData: FormData) {
   );
 
   if (error) redirect("/dashboard/settings/app?error=db");
+
+  // Save the theme preference in a cookie so the server and head script can read it instantly on every page load
+  try {
+    const { cookies } = await import("next/headers");
+    const cookieStore = await cookies();
+    cookieStore.set("theme", app_theme, { path: "/", maxAge: 60 * 60 * 24 * 365 });
+  } catch (cookieError) {
+    console.error("Failed to set theme cookie:", cookieError);
+  }
+
   revalidatePath("/dashboard/settings/app");
   revalidatePath("/");
   redirect("/dashboard/settings/app");

@@ -16,6 +16,15 @@ import {
 import { BIS_FIELD_LABEL_CLASS, DEFAULT_BILLING_FREQUENCY } from "./constants";
 import { manakOnlineEbisLoginHref } from "@/lib/manak-online-portal";
 import { IsCodeCombobox, type IsCodeComboboxOption } from "./is-code-combobox";
+import { LicenseScopeField, ScopeTypeSelect } from "./license-scope-field";
+import type { LicenseScopeFormat } from "@/lib/application-checklist-notes";
+import {
+  plainTextToScopeRows,
+} from "@/lib/bis-project-license-scope-notes";
+import {
+  serializeLicenseScopeText,
+  storedRowsToEditorRows,
+} from "@/lib/license-scope-format";
 
 const fieldInputRowShellClass =
   "flex overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950";
@@ -163,7 +172,38 @@ export function BisProjectsMasterForm({
   const licenseStatus = computeLicenseDisplayStatus(
     formValues.project_kind,
     formValues.license_validity_date,
+    formValues.status,
   );
+  const scopeType = (formValues.scope_type === "table" ? "table" : "plain") as LicenseScopeFormat;
+
+  function handleScopeTypeChange(next: LicenseScopeFormat) {
+    if (next === scopeType) return;
+    if (next === "table") {
+      const rows = plainTextToScopeRows(formValues.notes);
+      onUpdateField("license_scope_rows", JSON.stringify(rows.length > 0 ? rows : []));
+      onUpdateField("scope_type", next);
+      return;
+    }
+    let tableRows = storedRowsToEditorRows([]);
+    try {
+      const parsed = JSON.parse(formValues.license_scope_rows || "[]") as {
+        component?: string;
+        value?: string;
+      }[];
+      if (Array.isArray(parsed)) {
+        tableRows = storedRowsToEditorRows(
+          parsed.map((r) => ({
+            component: String(r.component ?? ""),
+            value: String(r.value ?? ""),
+          })),
+        );
+      }
+    } catch {
+      // ignore
+    }
+    onUpdateField("notes", serializeLicenseScopeText("table", formValues.notes, tableRows));
+    onUpdateField("scope_type", next);
+  }
 
   if (!visible) return null;
 
@@ -190,7 +230,6 @@ export function BisProjectsMasterForm({
       >
         <input type="hidden" name="id" value={formValues.id} />
         <input type="hidden" name="title" value={formValues.title} />
-        <input type="hidden" name="status" value={formValues.status} />
         <input type="hidden" name="license_number" value={formValues.license_number} />
         <input type="hidden" name="start_date" value={formValues.start_date} />
         <input type="hidden" name="target_date" value={formValues.target_date} />
@@ -327,10 +366,22 @@ export function BisProjectsMasterForm({
               <span className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-5 lg:row-start-1`}>
                 License Status
               </span>
-              <div className="min-w-0 w-full lg:col-start-5 lg:row-start-2">
-                <div className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-medium text-zinc-900 dark:border-zinc-700 dark:bg-zinc-800/50 dark:text-zinc-100">
+              <div className="min-w-0 w-full lg:col-start-5 lg:row-start-2 space-y-1.5">
+                <input type="hidden" name="status" value={formValues.status} />
+                <div className={`rounded-md px-3 py-2 text-xs font-bold text-center tracking-wide ${
+                  licenseStatus === "Operative"    ? "bg-green-50 text-green-700 border border-green-200 dark:bg-green-950/30 dark:text-green-400 dark:border-green-800" :
+                  licenseStatus === "Deferred"     ? "bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800" :
+                  licenseStatus === "Expired"      ? "bg-red-50 text-red-700 border border-red-200 dark:bg-red-950/30 dark:text-red-400 dark:border-red-800" :
+                  licenseStatus === "Stop Marking" ? "bg-orange-50 text-orange-700 border border-orange-200 dark:bg-orange-950/30 dark:text-orange-400 dark:border-orange-800" :
+                  "bg-zinc-50 text-zinc-400 border border-zinc-200 dark:bg-zinc-800 dark:text-zinc-500 dark:border-zinc-700"
+                }`}>
                   {licenseStatus}
                 </div>
+                {formValues.status !== "in_progress" && (
+                  <div className="text-center text-[10px] font-medium text-zinc-400 dark:text-zinc-500">
+                    Override: {formValues.status.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -415,7 +466,7 @@ export function BisProjectsMasterForm({
         </div>
 
         <div className="min-w-0 sm:col-span-2 lg:col-span-4">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:grid-rows-[auto_auto] lg:gap-x-4 lg:gap-y-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5 lg:grid-rows-[auto_auto] lg:gap-x-4 lg:gap-y-2">
             <div className="flex min-w-0 flex-col gap-1 lg:contents">
               <label
                 htmlFor="case_handled_by_bis_field"
@@ -512,22 +563,32 @@ export function BisProjectsMasterForm({
                 />
               </div>
             </div>
+            <div className="flex min-w-0 flex-col gap-1 lg:contents">
+              <label
+                htmlFor="scope_type_bis_field"
+                className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-5 lg:row-start-1`}
+              >
+                Scope Type
+              </label>
+              <div className="min-w-0 w-full lg:col-start-5 lg:row-start-2">
+                <ScopeTypeSelect
+                  hideLabel
+                  value={scopeType}
+                  onChange={handleScopeTypeChange}
+                />
+              </div>
+            </div>
           </div>
         </div>
 
-        <div className="min-w-0 sm:col-span-2 lg:col-span-4">
-          <label htmlFor="bis_license_scope" className={BIS_FIELD_LABEL_CLASS}>
-            Licence Scope
-          </label>
-          <textarea
-            id="bis_license_scope"
-            name="notes"
-            rows={3}
-            value={formValues.notes}
-            onChange={(e) => onUpdateField("notes", e.target.value)}
-            className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-          />
-        </div>
+        <LicenseScopeField
+          key={`${formValues.id}-${scopeType}`}
+          scopeType={scopeType}
+          plainText={formValues.notes}
+          rowsJson={formValues.license_scope_rows}
+          onPlainTextChange={(v) => onUpdateField("notes", v)}
+          onRowsJsonChange={(v) => onUpdateField("license_scope_rows", v)}
+        />
 
         <div className="flex flex-wrap items-center justify-end gap-3 sm:col-span-2 lg:col-span-4">
           <button

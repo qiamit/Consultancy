@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
 import { DialogCloseXButton } from "@/components/modules/client-master/dialog-close-x";
 import { CLIENT_FIELD_LABEL_BLOCK_CLASS } from "@/components/modules/client-master/constants";
@@ -18,6 +18,9 @@ import {
 } from "@/lib/actions/finance-quotations";
 import type { QuotationFormState, QuotationLineForm } from "./constants";
 import { ProductLineCombobox } from "./product-line-combobox";
+import { ClientMasterEmbedModal } from "@/components/modules/finance/client-master-embed-modal";
+import { ProductMasterEmbedModal } from "@/components/modules/finance/product-master-embed-modal";
+import { DEFAULT_PRINT_SETTINGS, type PrintCompanyInfo, type PrintSettings } from "@/lib/print/types";
 
 type ClientDetailsPreview = {
   name: string;
@@ -146,13 +149,32 @@ function formatInrCurrency(amount: number): string {
   });
 }
 
+function pickDefaultTemplate(
+  templates: CompanyTextTemplateRow[],
+  exactMatches: string[],
+): CompanyTextTemplateRow | null {
+  if (!templates.length) return null;
+  const exact = templates.find((t) => {
+    const code = t.code.trim().toLowerCase();
+    const name = t.name.trim().toLowerCase();
+    return exactMatches.includes(code) || exactMatches.includes(name);
+  });
+  if (exact) return exact;
+  const byDefault = templates.find((t) => {
+    const code = t.code.trim().toLowerCase();
+    const name = t.name.trim().toLowerCase();
+    return code.includes("default") || name.includes("default");
+  });
+  if (byDefault) return byDefault;
+  return templates.length === 1 ? templates[0] : null;
+}
+
 function CompanyTemplateSearchBox({
   templates,
   onPick,
   onTemplatePick,
   ariaLabel,
   placeholder,
-  listId,
   defaultQuery,
 }: {
   templates: CompanyTextTemplateRow[];
@@ -160,45 +182,80 @@ function CompanyTemplateSearchBox({
   onTemplatePick?: (template: CompanyTextTemplateRow) => void;
   ariaLabel: string;
   placeholder: string;
-  listId: string;
+  listId?: string;
   defaultQuery?: string;
 }) {
   const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     const next = (defaultQuery ?? "").trim();
     if (!next) return;
     if (query.trim()) return;
     setQuery(next);
   }, [defaultQuery, query]);
+
+  useEffect(() => {
+    function onDown(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, []);
+
   if (templates.length === 0) return null;
 
+  const filtered = query.trim()
+    ? templates.filter((t) =>
+        t.name.toLowerCase().includes(query.toLowerCase()) ||
+        t.code.toLowerCase().includes(query.toLowerCase()),
+      )
+    : templates;
+
+  function pick(t: CompanyTextTemplateRow) {
+    setQuery(t.name);
+    setOpen(false);
+    onPick(t.body);
+    onTemplatePick?.(t);
+  }
+
   return (
-    <div className="space-y-1">
+    <div ref={wrapRef} className="relative">
       <input
-        list={listId}
         aria-label={ariaLabel}
         value={query}
+        onFocus={() => setOpen(true)}
         onChange={(e) => {
           const next = e.target.value;
           setQuery(next);
-          const t = templates.find(
+          setOpen(true);
+          const exact = templates.find(
             (x) =>
               x.name.toLowerCase() === next.toLowerCase() ||
               x.code.toLowerCase() === next.toLowerCase(),
           );
-          if (t) {
-            onPick(t.body);
-            onTemplatePick?.(t);
-          }
+          if (exact) pick(exact);
         }}
         placeholder={placeholder}
         className={`${fieldClass} py-1.5 text-xs`}
+        autoComplete="off"
       />
-      <datalist id={listId}>
-        {templates.map((t) => (
-          <option key={t.id} value={t.name} />
-        ))}
-      </datalist>
+      {open && filtered.length > 0 && (
+        <ul className="absolute left-0 top-full z-50 mt-1 max-h-48 w-full overflow-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+          {filtered.map((t) => (
+            <li
+              key={t.id}
+              onMouseDown={(e) => { e.preventDefault(); pick(t); }}
+              className="cursor-pointer px-3 py-1.5 text-xs hover:bg-sky-50 dark:hover:bg-zinc-800"
+            >
+              {t.name}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -227,6 +284,8 @@ export function FinanceQuotationForm({
   notesTemplates = [],
   termsTemplates = [],
   scopeTemplates = [],
+  printSettings = DEFAULT_PRINT_SETTINGS,
+  printCompany = {} as PrintCompanyInfo,
 }: {
   visible: boolean;
   overlay?: boolean;
@@ -238,12 +297,11 @@ export function FinanceQuotationForm({
   productById: Map<string, ProductMasterOptionRow>;
   onClose: () => void;
   onAddNew: () => void;
-  onUpdateField: (key: keyof QuotationFormState, value: string) => void; // quotation_type: 'service' | 'supply'
+  onUpdateField: (key: keyof QuotationFormState, value: string) => void;
   onUpdateLine: (index: number, patch: Partial<QuotationLineForm>) => void;
   onAddLine: () => void;
   onRemoveLine: (index: number) => void;
   onQuotationDateChange: (iso: string) => void;
-  /** Current quotation URL (path + ?new=1 or ?id=) for “add client” return navigation. */
   quotationReturnUrl: string;
   sealSignImageUrl: string | null;
   letterheadUpperImageUrl: string | null;
@@ -252,8 +310,13 @@ export function FinanceQuotationForm({
   notesTemplates?: CompanyTextTemplateRow[];
   termsTemplates?: CompanyTextTemplateRow[];
   scopeTemplates?: CompanyTextTemplateRow[];
+  printSettings?: PrintSettings;
+  printCompany?: PrintCompanyInfo;
 }) {
   const router = useRouter();
+  const [quickAddClientOpen, setQuickAddClientOpen] = useState(false);
+  const [quickAddProduct, setQuickAddProduct] = useState<{ lineIndex: number; prefill: string } | null>(null);
+  const [editingDescLine, setEditingDescLine] = useState<number | null>(null);
   const [showNotes, setShowNotes] = useState(false);
   const [notesTemplateId, setNotesTemplateId] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
@@ -276,30 +339,15 @@ export function FinanceQuotationForm({
   const [scopeSaveError, setScopeSaveError] = useState<string | null>(null);
   const [isSavingScopeTemplate, startSaveScopeTemplate] = useTransition();
   const defaultNotesTemplate = useMemo(
-    () =>
-      notesTemplates.find(
-        (t) =>
-          t.code.trim().toLowerCase() === "quotation_notes" ||
-          t.name.trim().toLowerCase() === "quotation notes",
-      ) ?? null,
+    () => pickDefaultTemplate(notesTemplates, ["quotation_notes", "quotation notes"]),
     [notesTemplates],
   );
   const defaultTermsTemplate = useMemo(
-    () =>
-      termsTemplates.find(
-        (t) =>
-          t.code.trim().toLowerCase() === "quotation_term_condition" ||
-          t.name.trim().toLowerCase() === "quotation term & condition",
-      ) ?? null,
+    () => pickDefaultTemplate(termsTemplates, ["quotation_term_condition", "quotation term & condition"]),
     [termsTemplates],
   );
   const defaultScopeTemplate = useMemo(
-    () =>
-      scopeTemplates.find(
-        (t) =>
-          t.code.trim().toLowerCase() === "quotation_scope_of_work" ||
-          t.name.trim().toLowerCase() === "quotation scope of work",
-      ) ?? null,
+    () => pickDefaultTemplate(scopeTemplates, ["quotation_scope_of_work", "quotation scope of work"]),
     [scopeTemplates],
   );
 
@@ -434,94 +482,181 @@ export function FinanceQuotationForm({
     .filter(Boolean)
     .join(", ");
 
-  const buildQuotationDocumentParts = () => {
+  const buildQuotationDocumentParts = (overrideSettings?: import("@/lib/print/types").PrintSettings) => {
+    const ps = overrideSettings ?? printSettings;
+    const hasDiscount = formValues.lines.some((l) => {
+      const d = parseFloat(String(l.line_discount ?? "0").replace("%", "").trim());
+      return Number.isFinite(d) && d > 0;
+    });
+    const cellPad = ps.table_compact ? "4px 7px" : "6px 7px";
+
     const lineRows = formValues.lines
       .map((line, idx) => {
         const pv = linePreview(line);
+        const product = productById.get(line.product_master_item_id);
+        const descText = ps.table_show_description ? (product?.description?.trim() || "") : "";
+        const nameCell = descText
+          ? `<div style="font-weight:600">${esc(line.item_description || "-")}</div><div style="font-size:10px;color:#6b7280;margin-top:2px">${esc(descText)}</div>`
+          : `<div style="font-weight:600">${esc(line.item_description || "-")}</div>`;
         return `<tr>
-          <td>${idx + 1}</td>
-          <td>${esc(line.item_description || "-")}</td>
-          <td>${esc(line.unit_of_item || "-")}</td>
-          <td>${esc(line.qty || "0")}</td>
-          <td>${toInr(Number(line.unit_rate) || 0)}</td>
-          <td>${esc(line.line_discount || "0%")}</td>
-          <td>${esc(line.gst_rate || "0%")}</td>
-          <td>${toInr(pv.sub)}</td>
-          <td>${toInr(pv.tax)}</td>
-          <td>${toInr(pv.tot)}</td>
+          <td style="text-align:center;width:28px;padding:${cellPad}">${idx + 1}</td>
+          <td style="padding:${cellPad}">${nameCell}</td>
+          <td style="text-align:center;padding:${cellPad}">${esc(line.unit_of_item || "-")}</td>
+          <td style="text-align:center;padding:${cellPad}">${esc(line.qty || "0")}</td>
+          <td style="text-align:right;padding:${cellPad}">${toInr(Number(line.unit_rate) || 0)}</td>
+          ${hasDiscount ? `<td style="text-align:center;padding:${cellPad}">${esc(line.line_discount || "0%")}</td>` : ""}
+          <td style="text-align:right;padding:${cellPad}">${toInr(pv.sub)}</td>
+          <td style="text-align:right;font-weight:600;padding:${cellPad}">${toInr(pv.tot)}</td>
         </tr>`;
       })
       .join("");
+    const S = {
+      border: "1px solid #d1d5db",
+      borderDark: "2px solid #1e3a8a",
+      labelStyle: "font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#6b7280;margin-bottom:3px",
+      valueStyle: "font-size:11px;line-height:1.55;color:#111",
+      sectionPad: "padding:10px 12px",
+      cellLeft: "display:table-cell;width:60%;vertical-align:top;padding:10px 12px;border-right:1px solid #d1d5db",
+      cellRight: "display:table-cell;width:40%;vertical-align:top;padding:10px 12px",
+    };
     const styles = `
   @page { size: A4; margin: 10mm; }
   body,.finance-quotation-pdf-mount{font-family:Arial,sans-serif;color:#111;margin:0}
-  .doc{max-width:190mm;margin:0 auto;border:1px solid #222}
-  .pad{padding:10px}
-  .headimg{width:100%;max-height:90px;object-fit:contain}
-  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-  .title{font-size:32px;font-weight:700;letter-spacing:.6px}
-  .section{border-top:1px solid #222;padding:10px}
-  .label{font-size:12px;font-weight:700;margin-bottom:4px}
-  .muted{font-size:12px;line-height:1.5}
+  .doc{max-width:190mm;margin:0 auto}
   table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{border:1px solid #444;padding:6px;vertical-align:top}
-  th{background:#f2efe3;font-weight:700}
+  th{background:#eef2fb;color:#1e3a8a;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:6px 7px;border:1px solid #c7d2f0}
+  td{padding:6px 7px;border:1px solid #e5e7eb;vertical-align:top}
+  tr:nth-child(even) td{background:#fafbff}
+  tfoot th{background:#dde5f8;font-size:11px}
   .right{text-align:right}.center{text-align:center}`;
     const docInner = `
-  ${letterheadUpperImageUrl ? `<img class="headimg" src="${letterheadUpperImageUrl}" alt="Upper letterhead"/>` : ""}
-  <div class="pad grid">
-    <div><div class="label">Quotation Number</div><div>${esc(quotationNumber || "-")}</div></div>
-    <div class="right"><div class="title">QUOTATION</div><div class="muted">Date: ${esc(formValues.quotation_date || "-")} | Validity: ${esc(formValues.expiry_date || "-")}</div></div>
+  <!-- QUOTATION TITLE -->
+  <div style="text-align:center;padding:10px 12px 8px;border-bottom:${S.borderDark};background:#f0f4ff">
+    <div style="font-size:${ps.title_font_size}px;font-weight:900;letter-spacing:4px;color:#1e3a8a;text-transform:uppercase;line-height:1">QUOTATION</div>
   </div>
-  <div class="section">
-    <div class="label">Client Details</div>
-    <div class="muted">
-      <b>Name:</b> ${esc(selectedClientDetails?.company_name?.trim() || selectedClientDetails?.name?.trim() || "-")}<br/>
-      <b>Address:</b> ${esc(clientAddress || "-")}<br/>
-      <b>GST:</b> ${esc(selectedClientDetails?.gst_number?.trim() || "-")}<br/>
-      <b>Contact Person:</b> ${esc(selectedClientDetails?.contact_person_name?.trim() || selectedClientDetails?.name?.trim() || "-")}<br/>
-      <b>Email:</b> ${esc(selectedClientDetails?.email?.trim() || "-")}<br/>
-      <b>Mobile:</b> ${esc(([String(selectedClientDetails?.phone_country_code ?? "").trim(), String(selectedClientDetails?.phone ?? "").trim()].filter(Boolean).join(" ")) || "-")}
+
+  <!-- CLIENT + QUOTATION DETAILS (2-col) -->
+  <div style="display:table;width:100%;table-layout:fixed;border-collapse:collapse;border-bottom:${S.border}">
+    <div style="${S.cellLeft}">
+      <div style="${S.labelStyle}">Client Details</div>
+      <div style="${S.valueStyle}">
+        <div style="font-size:13px;font-weight:800;color:#111;margin-bottom:4px">${esc(selectedClientDetails?.company_name?.trim() || selectedClientDetails?.name?.trim() || "-")}</div>
+        <b>Address:</b> ${esc(clientAddress || "-")}<br/>
+        <div style="display:table;width:100%;margin-top:6px;font-size:10px;color:#555;border-top:1px solid #e5e7eb;padding-top:5px">
+          <div style="display:table-row">
+            <div style="display:table-cell;padding:2px 8px 2px 0;white-space:nowrap"><span style="font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">GST:</span> ${esc(selectedClientDetails?.gst_number?.trim() || "-")}</div>
+            <div style="display:table-cell;padding:2px 0;white-space:nowrap"><span style="font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Contact:</span> ${esc(selectedClientDetails?.contact_person_name?.trim() || selectedClientDetails?.name?.trim() || "-")}</div>
+          </div>
+          <div style="display:table-row">
+            <div style="display:table-cell;padding:2px 8px 2px 0;white-space:nowrap"><span style="font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Email:</span> ${esc(selectedClientDetails?.email?.trim() || "-")}</div>
+            <div style="display:table-cell;padding:2px 0;white-space:nowrap"><span style="font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em">Mobile:</span> ${esc(([String(selectedClientDetails?.phone_country_code ?? "").trim(), String(selectedClientDetails?.phone ?? "").trim()].filter(Boolean).join(" ")) || "-")}</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div style="${S.cellRight};text-align:right">
+      <div style="border-bottom:1px solid #e5e7eb;margin-bottom:8px;padding-bottom:4px"></div>
+      <div style="font-size:10px;color:#555;line-height:1.9">
+        <div><span style="font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-right:6px">Quot. No.</span><span style="font-size:13px;font-weight:800;font-family:monospace;color:#1e3a8a">${esc(quotationNumber || "-")}</span></div>
+        <div><span style="font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-right:6px">Date:</span>${esc(formValues.quotation_date || "-")}</div>
+        <div><span style="font-weight:700;color:#6b7280;text-transform:uppercase;letter-spacing:.04em;margin-right:6px">Valid Until:</span>${esc(formValues.expiry_date || "-")}</div>
+      </div>
     </div>
   </div>
-  <div class="section">
-    <div class="label">Product & Services</div>
-    <table><thead><tr><th>Sr.</th><th>Name of Product</th><th>Unit</th><th>Qty</th><th>Rate</th><th>Discount</th><th>GST</th><th>Taxable Value</th><th>GST Amount</th><th>Total</th></tr></thead>
-    <tbody>${lineRows}</tbody>
-    <tfoot><tr><th colspan="7" class="right">Grand Total</th><th class="right">${toInr(totalsPreview.basic)}</th><th class="right">${toInr(totalsPreview.gst)}</th><th class="right">${toInr(totalsPreview.grand)}</th></tr></tfoot>
+
+  <!-- PRODUCT TABLE -->
+  <div style="${S.sectionPad};border-bottom:${S.border}">
+    <div style="${S.labelStyle};margin-bottom:6px">Product &amp; Services</div>
+    <table>
+      <thead><tr>
+        <th style="text-align:center;width:28px;font-weight:800">Sr.</th>
+        <th style="text-align:center;font-weight:800">Name of Product</th>
+        <th style="text-align:center;font-weight:800">Unit</th>
+        <th style="text-align:center;font-weight:800">Qty</th>
+        <th style="text-align:center;font-weight:800">Rate</th>
+        ${hasDiscount ? `<th style="text-align:center;font-weight:800">Discount</th>` : ""}
+        <th style="text-align:center;font-weight:800">Taxable Value</th>
+        <th style="text-align:center;font-weight:800">Total</th>
+      </tr></thead>
+      <tbody>${lineRows}</tbody>
+      <tfoot>
+        <tr><th colspan="${hasDiscount ? 6 : 5}" style="text-align:right;font-size:10px;font-weight:600;color:#555">Subtotal</th><th style="text-align:right">${toInr(totalsPreview.basic)}</th><th style="text-align:right">${toInr(totalsPreview.grand)}</th></tr>
+      </tfoot>
     </table>
+    <!-- GST SUMMARY -->
+    <div style="display:table;width:100%;margin-top:8px">
+      <div style="display:table-cell;width:60%;vertical-align:top;padding-right:12px">
+        <div style="font-size:10px;color:#6b7280;font-style:italic">All amounts are inclusive of applicable GST as per line items.</div>
+        <div style="margin-top:6px;font-size:10px;color:#444;font-style:italic"><b>Amount in Words:</b> ${esc(numberToIndianWords(totalsPreview.grand))}</div>
+      </div>
+      <div style="display:table-cell;width:40%;vertical-align:top">
+        <table style="width:100%;border-collapse:collapse;font-size:11px">
+          <tbody>
+            <tr><td style="border:none;padding:3px 8px;text-align:right;color:#555">Taxable Amount</td><td style="border:none;padding:3px 0;text-align:right;font-weight:600">${toInr(totalsPreview.basic)}</td></tr>
+            <tr><td style="border:none;padding:3px 8px;text-align:right;color:#555">GST Amount</td><td style="border:none;padding:3px 0;text-align:right;font-weight:600">${toInr(totalsPreview.gst)}</td></tr>
+            <tr style="border-top:2px solid #1e3a8a"><td style="border:none;padding:5px 8px;text-align:right;font-size:13px;font-weight:800;color:#1e3a8a">Grand Total</td><td style="border:none;padding:5px 0;text-align:right;font-size:13px;font-weight:800;color:#1e3a8a">${toInr(totalsPreview.grand)}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </div>
-  <div class="section grid">
-    <div><div class="label">Notes</div><div class="muted">${nl2br(formValues.notes || "-")}</div></div>
-    <div><div class="label">Term & Conditions</div><div class="muted">${nl2br(formValues.terms_and_conditions || "-")}</div></div>
+
+  <!-- BOTTOM 2-COL: Left = Scope 70% | Right = Term+Notes+Bank 30% -->
+  <div style="display:table;width:100%;table-layout:fixed;border-collapse:collapse;border-bottom:${S.border}">
+    <div style="display:table-cell;width:55%;vertical-align:top;padding:10px 12px;border-right:1px solid #d1d5db">
+      <div style="${S.labelStyle}">Scope of Works</div>
+      <div style="${S.valueStyle}">${nl2br(formValues.scope_of_work || "-")}</div>
+    </div>
+    <div style="display:table-cell;width:45%;vertical-align:top;padding:10px 12px">
+      <div style="${S.labelStyle}">Term &amp; Conditions</div>
+      <div style="${S.valueStyle};margin-bottom:12px">${nl2br(formValues.terms_and_conditions || "-")}</div>
+      <div style="${S.labelStyle}">Notes</div>
+      <div style="${S.valueStyle};margin-bottom:12px">${nl2br(formValues.notes || "-")}</div>
+      <div style="${S.labelStyle}">Bank Details</div>
+      <div style="${S.valueStyle};margin-bottom:12px">${nl2br(formValues.bank_details || "-")}</div>
+      ${sealSignImageUrl ? `<div style="text-align:right;margin-top:16px;padding-top:12px;border-top:1px solid #e5e7eb"><img style="max-width:180px;max-height:80px;object-fit:contain" src="${sealSignImageUrl}" alt="Seal and sign"/><div style="font-size:10px;color:#666;margin-top:4px">Authorised Signatory</div></div>` : ""}
+    </div>
   </div>
-  <div class="section grid">
-    <div><div class="label">Scope of Works</div><div class="muted">${nl2br(formValues.scope_of_work || "-")}</div></div>
-    <div><div class="label">Bank Details</div><div class="muted">${nl2br(formValues.bank_details || "-")}</div></div>
-  </div>
-  <div class="section grid">
-    <div>${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl}" alt="Lower letterhead"/>` : ""}</div>
-    <div class="right">${sealSignImageUrl ? `<img style="max-width:240px;max-height:120px;object-fit:contain" src="${sealSignImageUrl}" alt="Seal and sign"/>` : ""}</div>
-  </div>`;
+  `;
     return { styles, docInner };
   };
 
   const buildQuotationDocumentHtml = () => {
-    const { styles, docInner } = buildQuotationDocumentParts();
+    const { docInner } = buildQuotationDocumentParts();
+    // Inline import not available synchronously — build basic wrapper for PDF path
     return `<!doctype html>
 <html><head><meta charset="utf-8" /><title>Quotation ${esc(quotationNumber || "")}</title>
-<style>${styles}</style></head><body>
-<div class="doc">${docInner}</div></body></html>`;
+<style>@page{size:A4;margin:${printSettings.margin_top}mm ${printSettings.margin_right}mm ${printSettings.margin_bottom}mm ${printSettings.margin_left}mm;}body{font-family:${printSettings.font_family},Arial,sans-serif;color:#111;margin:0}.doc{max-width:190mm;margin:0 auto;border:1px solid #222}.pad{padding:10px}.headimg{width:100%;max-height:90px;object-fit:contain}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.title{font-size:28px;font-weight:700;color:${printSettings.primary_color}}.section{border-top:1px solid #222;padding:10px}.label{font-size:11px;font-weight:700;margin-bottom:4px;color:${printSettings.primary_color}}.muted{font-size:11px;line-height:1.5}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border:1px solid #ccc;padding:6px;vertical-align:top}th{background:#f2f4f8;font-weight:700;color:${printSettings.primary_color}}.right{text-align:right}</style>
+</head><body>
+<div class="doc">
+${letterheadUpperImageUrl ? `<img class="headimg" src="${letterheadUpperImageUrl}" alt="Letterhead"/>` : ""}
+${docInner}
+${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl}" alt="Footer letterhead"/>` : ""}
+</div></body></html>`;
   };
-  const printQuotation = () => {
-    const html = buildQuotationDocumentHtml();
-    const w = window.open("", "_blank", "noopener,noreferrer");
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
-    w.focus();
-    w.print();
+  const printQuotation = async () => {
+    const { openPrintPreview } = await import("@/lib/print/preview");
+    const { buildPrintDocument } = await import("@/lib/print/engine");
+    openPrintPreview({
+      buildDoc: (settings, company) => {
+        const { styles, docInner } = buildQuotationDocumentParts(settings);
+        const extraStyles = styles.replace(/@page\s*\{[^}]*\}/s, "").trim();
+        return buildPrintDocument({
+          title: `Quotation ${quotationNumber || ""}`,
+          bodyHtml: docInner,
+          settings,
+          company,
+          extraStyles,
+        });
+      },
+      initialSettings: printSettings,
+      company: {
+        ...printCompany,
+        letterhead_upper_url: letterheadUpperImageUrl,
+        letterhead_lower_url: letterheadLowerImageUrl,
+        seal_sign_url: sealSignImageUrl,
+      },
+    });
   };
   const createPdfBlob = async (): Promise<Blob> => {
     const html2pdf = (await import("html2pdf.js")).default;
@@ -763,12 +898,7 @@ export function FinanceQuotationForm({
                   emptySelectLabel="— Select client —"
                   suffixButtonClassName="px-1.5 py-1 text-[10px]"
                   blankInputWhenNoSelection
-                  onSuffixButtonClick={() => {
-                    const rt = encodeURIComponent(quotationReturnUrl);
-                    router.push(
-                      `/dashboard/clients?new=1&return_to=${rt}`,
-                    );
-                  }}
+                  onSuffixButtonClick={() => setQuickAddClientOpen(true)}
                 />
               </div>
               <div className="-mt-[20mm] space-y-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
@@ -833,27 +963,25 @@ export function FinanceQuotationForm({
               Product &amp; Services
             </label>
             <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-              <table className="w-full table-fixed text-sm">
+              <table className="w-full text-sm">
                 <colgroup>
-                  <col style={{ width: "35%" }} />
-                  <col style={{ width: "8%" }} />
-                  <col style={{ width: "8%" }} />
-                  <col style={{ width: "12%" }} />
-                  <col style={{ width: "8%" }} />
-                  <col style={{ width: "8%" }} />
-                  <col style={{ width: "14%" }} />
-                  <col style={{ width: "7%" }} />
+                  <col style={{ width: "auto" }} />
+                  <col style={{ width: "80px" }} />
+                  <col style={{ width: "60px" }} />
+                  <col style={{ width: "110px" }} />
+                  <col style={{ width: "90px" }} />
+                  <col style={{ width: "120px" }} />
+                  <col style={{ width: "32px" }} />
                 </colgroup>
                 <thead className="bg-zinc-50 text-xs font-semibold uppercase text-zinc-500 dark:bg-zinc-900/60 dark:text-zinc-400">
                   <tr>
-                    <th className="px-2 py-2 text-left">Item</th>
+                    <th className="w-full px-2 py-2 text-left">Item</th>
                     <th className="whitespace-nowrap px-2 py-2 text-center">Unit</th>
                     <th className="whitespace-nowrap px-2 py-2 text-center">Qty</th>
                     <th className="whitespace-nowrap px-2 py-2 text-center">Rate</th>
                     <th className="whitespace-nowrap px-2 py-2 text-center">Discount</th>
-                    <th className="whitespace-nowrap px-2 py-2 text-right">GST Amt</th>
                     <th className="whitespace-nowrap px-2 py-2 text-right">Total</th>
-                    <th className="whitespace-nowrap px-1 py-2 text-center" aria-hidden="true" />
+                    <th className="whitespace-nowrap px-1 py-2 text-right" aria-hidden="true" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
@@ -870,6 +998,8 @@ export function FinanceQuotationForm({
                                   options={productOptions}
                                   value={L.product_master_item_id}
                                   onPick={(id) => handleProductPick(i, id)}
+                                  onAddNew={(label) => onUpdateLine(i, { item_description: label })}
+                                  onOpenProductModal={(prefill) => setQuickAddProduct({ lineIndex: i, prefill })}
                                   idSuffix={`${formValues.id || "new"}_${i}`}
                                 />
                                 {L.item_description?.trim() ? (
@@ -905,24 +1035,38 @@ export function FinanceQuotationForm({
                                         <p className="text-xs font-medium text-zinc-800 dark:text-zinc-200">
                                           {title}
                                         </p>
-                                        {shownDescription ? (
+                                        {editingDescLine === i ? (
+                                          <div className="mt-1 flex flex-col gap-1">
+                                            <textarea
+                                              autoFocus
+                                              rows={3}
+                                              defaultValue={shownDescription}
+                                              onBlur={(e) => {
+                                                const trimmed = e.target.value.trim();
+                                                onUpdateLine(i, { item_description: trimmed || (p?.name ?? "") });
+                                                setEditingDescLine(null);
+                                              }}
+                                              onKeyDown={(e) => {
+                                                if (e.key === "Escape") { setEditingDescLine(null); e.preventDefault(); }
+                                                if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                                                  const trimmed = e.currentTarget.value.trim();
+                                                  onUpdateLine(i, { item_description: trimmed || (p?.name ?? "") });
+                                                  setEditingDescLine(null);
+                                                  e.preventDefault();
+                                                }
+                                              }}
+                                              className="w-full rounded border border-sky-400 bg-white px-2 py-1.5 text-xs text-zinc-800 outline-none focus:ring-2 focus:ring-sky-500/30 dark:border-sky-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                            />
+                                            <p className="text-[10px] text-zinc-400">Ctrl+Enter to save · Esc to cancel</p>
+                                          </div>
+                                        ) : shownDescription ? (
                                           <div className="flex items-center gap-2">
                                             <p className="text-xs leading-snug text-zinc-600 dark:text-zinc-400">
                                               {shownDescription}
                                             </p>
                                             <button
                                               type="button"
-                                              onClick={() => {
-                                                const next = window.prompt(
-                                                  "Edit description",
-                                                  shownDescription,
-                                                );
-                                                if (next === null) return;
-                                                const trimmed = next.trim();
-                                                onUpdateLine(i, {
-                                                  item_description: trimmed || (p?.name ?? ""),
-                                                });
-                                              }}
+                                              onClick={() => setEditingDescLine(i)}
                                               className="text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
                                             >
                                               Edit
@@ -943,6 +1087,7 @@ export function FinanceQuotationForm({
                             onChange={(e) =>
                               onUpdateLine(i, { unit_of_item: e.target.value })
                             }
+                            style={{ width: "64.66px", height: "36.56px" }}
                             className={`${fieldClass} min-w-0 text-center`}
                           />
                         </td>
@@ -951,6 +1096,7 @@ export function FinanceQuotationForm({
                             value={L.qty}
                             onChange={(e) => onUpdateLine(i, { qty: e.target.value })}
                             inputMode="decimal"
+                            style={{ width: "50px", height: "36.56px" }}
                             className={`${fieldClass} min-w-0 text-center`}
                           />
                         </td>
@@ -965,6 +1111,7 @@ export function FinanceQuotationForm({
                             step="0.01"
                             inputMode="decimal"
                             aria-label="Rate (currency)"
+                            style={{ width: "80px", height: "36.56px" }}
                             className={`${fieldClass} min-w-0 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
                           />
                         </td>
@@ -979,12 +1126,9 @@ export function FinanceQuotationForm({
                           />
                         </td>
                         <td className="px-2 py-1.5 text-right align-middle tabular-nums text-zinc-800 dark:text-zinc-200">
-                          {formatInrCurrency(pv.tax)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right align-middle tabular-nums text-zinc-800 dark:text-zinc-200">
                           {formatInrCurrency(pv.tot)}
                         </td>
-                        <td className="w-min px-[0.225rem] py-[0.36rem] text-center align-middle">
+                        <td className="w-min px-[0.225rem] py-[0.36rem] text-right align-middle">
                           {isLastRow ? (
                             <button
                               type="button"
@@ -1184,10 +1328,10 @@ export function FinanceQuotationForm({
                 </button>
                 <button
                   type="button"
-                  onClick={printQuotation}
-                  className="rounded-lg border border-zinc-300 bg-white px-4 py-2.5 text-sm font-semibold text-zinc-700 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
+                  onClick={() => void printQuotation()}
+                  className="inline-flex items-center gap-2 rounded-lg border border-sky-300 bg-sky-50 px-4 py-2.5 text-sm font-semibold text-sky-700 shadow-sm hover:bg-sky-100 dark:border-sky-700 dark:bg-sky-950/40 dark:text-sky-300 dark:hover:bg-sky-950/60"
                 >
-                  Print
+                  🖨 Print Preview
                 </button>
                 <button
                   type="button"
@@ -1452,6 +1596,34 @@ export function FinanceQuotationForm({
             </div>
           </div>
         ) : null}
+
+        {quickAddClientOpen && (
+          <ClientMasterEmbedModal
+            onClose={() => setQuickAddClientOpen(false)}
+            onSuccess={(id) => {
+              onUpdateField("client_id", id);
+              setQuickAddClientOpen(false);
+              router.refresh();
+            }}
+          />
+        )}
+      {quickAddProduct && (
+        <ProductMasterEmbedModal
+          prefillName={quickAddProduct.prefill}
+          onClose={() => setQuickAddProduct(null)}
+          onSuccess={(p) => {
+            onUpdateLine(quickAddProduct.lineIndex, {
+              product_master_item_id: p.id,
+              item_description: p.name,
+              unit_of_item: p.unit_of_item,
+              unit_rate: String(p.sale_price),
+              gst_rate: p.gst_rate,
+            });
+            setQuickAddProduct(null);
+            router.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }

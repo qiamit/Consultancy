@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { FinancePaymentInRow } from "@/lib/types/finance-payment-in";
+import { printSettingsFromRow, type PrintCompanyInfo } from "@/lib/print/types";
 import { FinancePaymentInsMaster } from "./master";
 
 function firstSearchParam(
@@ -11,6 +12,11 @@ function firstSearchParam(
   return Array.isArray(v) ? (v[0] ?? null) : v;
 }
 
+function s(row: Record<string, unknown> | null, key: string): string {
+  const v = row?.[key];
+  return v != null && String(v).trim() ? String(v).trim() : "";
+}
+
 export async function FinancePaymentInsServer({
   searchParams,
 }: {
@@ -18,7 +24,7 @@ export async function FinancePaymentInsServer({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
-  const [{ data: rowsRaw }, { data: clientsRaw }] = await Promise.all([
+  const [{ data: rowsRaw }, { data: clientsRaw }, { data: company }] = await Promise.all([
     supabase
       .from("transactions")
       .select(
@@ -31,7 +37,29 @@ export async function FinancePaymentInsServer({
       .select("id,name,company_name")
       .order("company_name", { ascending: true, nullsFirst: false })
       .order("name", { ascending: true }),
+    supabase.from("company_settings").select("*").eq("id", 1).maybeSingle(),
   ]);
+
+  const companyRow = (company ?? null) as Record<string, unknown> | null;
+  const printSettings = printSettingsFromRow(companyRow);
+  const printCompany: PrintCompanyInfo = {
+    name: s(companyRow, "company_name"),
+    address: s(companyRow, "address"),
+    city: s(companyRow, "company_city"),
+    state: s(companyRow, "company_state"),
+    pin_code: s(companyRow, "company_pin_code"),
+    country: s(companyRow, "company_country"),
+    gst_number: s(companyRow, "gst_number"),
+    email: s(companyRow, "email"),
+    phone: s(companyRow, "phone"),
+    contact_person: s(companyRow, "contact_person_name"),
+    website: s(companyRow, "website"),
+    logo_url: null,
+    letterhead_upper_url: null,
+    letterhead_lower_url: null,
+    seal_sign_url: null,
+  };
+
   return (
     <FinancePaymentInsMaster
       initialRows={(rowsRaw ?? []) as unknown as FinancePaymentInRow[]}
@@ -44,7 +72,8 @@ export async function FinancePaymentInsServer({
           company_name: string | null;
         }>
       }
+      printSettings={printSettings}
+      printCompany={printCompany}
     />
   );
 }
-

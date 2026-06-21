@@ -26,6 +26,7 @@ const TABS = [
   { id: "company" as const, label: "Company Details" },
   { id: "bank" as const, label: "Bank Details" },
   { id: "images" as const, label: "Company Images" },
+  { id: "print" as const, label: "Print & Page Settings" },
   { id: "terms" as const, label: "Term & Condition" },
   { id: "scope" as const, label: "Scope of Work" },
   { id: "notes" as const, label: "Notes" },
@@ -90,7 +91,7 @@ export function CompanySettingsTabs({
   notesRows: CompanyTextTemplateRow[];
 }) {
   const [tab, setTab] = useState<TabId>("company");
-  const isBaseSettingsTab = tab === "company" || tab === "bank" || tab === "images";
+  const isBaseSettingsTab = tab === "company" || tab === "bank" || tab === "images" || tab === "print";
 
   const tabBtn = (id: TabId, label: string) => {
     const active = tab === id;
@@ -200,6 +201,18 @@ export function CompanySettingsTabs({
                 <input
                   name="phone"
                   defaultValue={str(r?.phone)}
+                  className={inp}
+                />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  Website
+                </label>
+                <input
+                  name="website"
+                  type="url"
+                  defaultValue={str(r?.website)}
+                  placeholder="https://www.yourcompany.com"
                   className={inp}
                 />
               </div>
@@ -446,6 +459,155 @@ export function CompanySettingsTabs({
                 />
               </ImageUploadCard>
                 </div>
+              </div>
+
+              {/* ── Print & Page Settings tab ─────────────────────────── */}
+              <div
+                className={tab === "print" ? "space-y-6" : "hidden"}
+                role="tabpanel"
+              >
+                {/* Hidden fields to keep other tabs' values */}
+                <input type="hidden" name="print_paper_size"           defaultValue={str(r?.print_paper_size) || "A4"} />
+                <input type="hidden" name="print_orientation"          defaultValue={str(r?.print_orientation) || "portrait"} />
+                <input type="hidden" name="print_margin_top"           defaultValue={str(r?.print_margin_top) || "12"} />
+                <input type="hidden" name="print_margin_bottom"        defaultValue={str(r?.print_margin_bottom) || "12"} />
+                <input type="hidden" name="print_margin_left"          defaultValue={str(r?.print_margin_left) || "12"} />
+                <input type="hidden" name="print_margin_right"         defaultValue={str(r?.print_margin_right) || "12"} />
+                <input type="hidden" name="print_font_family"          defaultValue={str(r?.print_font_family) || "Arial"} />
+                <input type="hidden" name="print_primary_color"        defaultValue={str(r?.print_primary_color) || "#1e3a8a"} />
+                <input type="hidden" name="print_show_letterhead"      defaultValue={String(r?.print_show_letterhead ?? "true")} />
+                <input type="hidden" name="print_letterhead_layout"    defaultValue={str(r?.print_letterhead_layout) || "logo-left"} />
+                <input type="hidden" name="print_letterhead_tagline"   defaultValue={str(r?.print_letterhead_tagline)} />
+                <input type="hidden" name="print_letterhead_show_address" defaultValue={String(r?.print_letterhead_show_address ?? "true")} />
+                <input type="hidden" name="print_letterhead_show_contact" defaultValue={String(r?.print_letterhead_show_contact ?? "true")} />
+                <input type="hidden" name="print_letterhead_show_gst"     defaultValue={String(r?.print_letterhead_show_gst ?? "true")} />
+                <input type="hidden" name="print_footer_left"          defaultValue={str(r?.print_footer_left)} />
+                <input type="hidden" name="print_footer_center"        defaultValue={str(r?.print_footer_center)} />
+                <input type="hidden" name="print_footer_right"         defaultValue={str(r?.print_footer_right) || "Page {page} of {total}"} />
+                <input type="hidden" name="print_show_page_numbers"    defaultValue={String(r?.print_show_page_numbers ?? "true")} />
+                <input type="hidden" name="print_show_footer_line"     defaultValue={String(r?.print_show_footer_line ?? "true")} />
+
+                {/* ── Page Settings ───── */}
+                <fieldset className="space-y-4">
+                  <legend className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Page Settings</legend>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Paper Size</label>
+                      <select name="print_paper_size" defaultValue={str(r?.print_paper_size) || "A4"} className={inp}>
+                        <option value="A4">A4 (210×297 mm)</option>
+                        <option value="A5">A5 (148×210 mm)</option>
+                        <option value="Letter">Letter (8.5×11 in)</option>
+                        <option value="Legal">Legal (8.5×14 in)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Orientation</label>
+                      <select name="print_orientation" defaultValue={str(r?.print_orientation) || "portrait"} className={inp}>
+                        <option value="portrait">Portrait</option>
+                        <option value="landscape">Landscape</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Font Family</label>
+                      <select name="print_font_family" defaultValue={str(r?.print_font_family) || "Arial"} className={inp}>
+                        <option value="Arial">Arial</option>
+                        <option value="Times New Roman">Times New Roman</option>
+                        <option value="Georgia">Georgia</option>
+                        <option value="Calibri">Calibri</option>
+                        <option value="Verdana">Verdana</option>
+                        <option value="Inter">Inter</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Primary Colour</label>
+                      <div className="flex items-center gap-3">
+                        <input type="color" name="print_primary_color" defaultValue={str(r?.print_primary_color) || "#1e3a8a"} className="h-10 w-20 cursor-pointer rounded-lg border border-zinc-300 dark:border-zinc-700" />
+                        <span className="text-sm text-zinc-500">Used for headings, table headers, borders</span>
+                      </div>
+                    </div>
+                  </div>
+                </fieldset>
+
+                {/* ── Margins ───── */}
+                <fieldset className="space-y-4">
+                  <legend className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Margins (mm)</legend>
+                  <div className="grid gap-4 sm:grid-cols-4">
+                    {(["top","bottom","left","right"] as const).map((side) => (
+                      <div key={side} className="space-y-2">
+                        <label className="text-sm font-medium capitalize text-zinc-700 dark:text-zinc-300">{side}</label>
+                        <input type="number" name={`print_margin_${side}`} defaultValue={str(r?.[`print_margin_${side}`]) || "12"} min={0} max={50} className={inp} />
+                      </div>
+                    ))}
+                  </div>
+                </fieldset>
+
+                {/* ── Letterhead ───── */}
+                <fieldset className="space-y-4">
+                  <legend className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Letterhead</legend>
+                  <div className="flex items-center gap-3">
+                    <input type="checkbox" name="print_show_letterhead" id="ps_show_lh" defaultChecked={str(r?.print_show_letterhead) !== "false"} className="h-4 w-4 accent-sky-600" />
+                    <label htmlFor="ps_show_lh" className="text-sm text-zinc-700 dark:text-zinc-300">Show letterhead on all documents</label>
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Logo / Header Position</label>
+                      <select name="print_letterhead_layout" defaultValue={str(r?.print_letterhead_layout) || "logo-left"} className={inp}>
+                        <option value="logo-left">Logo Left, Info Right</option>
+                        <option value="logo-center">Logo + Info Centred</option>
+                        <option value="logo-right">Info Left, Logo Right</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Company Tagline</label>
+                      <input type="text" name="print_letterhead_tagline" defaultValue={str(r?.print_letterhead_tagline)} placeholder="e.g. ISO 9001 Certified" className={inp} />
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-4">
+                    {[
+                      { name: "print_letterhead_show_address", id: "ps_addr", label: "Show address" },
+                      { name: "print_letterhead_show_contact", id: "ps_contact", label: "Show email & phone" },
+                      { name: "print_letterhead_show_gst", id: "ps_gst", label: "Show GST number" },
+                    ].map((f) => (
+                      <label key={f.id} className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                        <input type="checkbox" id={f.id} name={f.name} defaultChecked={str(r?.[f.name]) !== "false"} className="h-4 w-4 accent-sky-600" />
+                        {f.label}
+                      </label>
+                    ))}
+                  </div>
+                </fieldset>
+
+                {/* ── Footer ───── */}
+                <fieldset className="space-y-4">
+                  <legend className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">Footer</legend>
+                  <div className="flex flex-wrap gap-4">
+                    {[
+                      { name: "print_show_footer_line", id: "ps_ftline", label: "Show footer separator line" },
+                      { name: "print_show_page_numbers", id: "ps_pgnum", label: "Show page numbers" },
+                    ].map((f) => (
+                      <label key={f.id} className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+                        <input type="checkbox" id={f.id} name={f.name} defaultChecked={str(r?.[f.name]) !== "false"} className="h-4 w-4 accent-sky-600" />
+                        {f.label}
+                      </label>
+                    ))}
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Footer — Left</label>
+                      <input type="text" name="print_footer_left" defaultValue={str(r?.print_footer_left)} placeholder="{company} or custom text" className={inp} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Footer — Centre</label>
+                      <input type="text" name="print_footer_center" defaultValue={str(r?.print_footer_center)} placeholder="e.g. Confidential" className={inp} />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">Footer — Right (page numbers)</label>
+                      <input type="text" name="print_footer_right" defaultValue={str(r?.print_footer_right) || "Page {page} of {total}"} placeholder="Page {page} of {total}" className={inp} />
+                    </div>
+                  </div>
+                  <p className="text-xs text-zinc-500">Use <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{company}"}</code>, <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{gst}"}</code>, <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{page}"}</code>, <code className="rounded bg-zinc-100 px-1 dark:bg-zinc-800">{"{total}"}</code> as placeholders.</p>
+                </fieldset>
               </div>
 
               <div className="mt-6 border-t border-zinc-200 bg-zinc-50/80 px-6 py-4 dark:border-zinc-800 dark:bg-zinc-900/60">

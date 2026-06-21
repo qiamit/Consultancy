@@ -188,7 +188,7 @@ export function IsCodeMasterForm({
             </div>
             <div className="min-w-0">
               <Field
-                label="Amendment Number"
+                label="Amendment No"
                 name="amendment_number"
                 value={formValues.amendment_number}
                 onChange={(v) => onUpdateField("amendment_number", v)}

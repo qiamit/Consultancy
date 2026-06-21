@@ -69,6 +69,12 @@ export async function deleteFinancePaymentIn(id: string) {
   redirect(LIST_PATH);
 }
 
+export async function deleteFinancePaymentInForm(formData: FormData) {
+  const id = str(formData, "id");
+  if (!id) return;
+  await deleteFinancePaymentIn(id);
+}
+
 export async function deleteFinancePaymentIns(ids: string[]) {
   const uniq = Array.from(new Set(ids.map((x) => x.trim()).filter(Boolean)));
   if (uniq.length === 0) return;

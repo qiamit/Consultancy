@@ -31,12 +31,24 @@ create policy "company_terms_all"
   with check (true);
 
 -- Seed default template from legacy single column (if row exists and default missing).
-insert into public.company_terms (code, name, body, sort_order)
-select
-  'default',
-  'Default',
-  coalesce(nullif(trim(cs.company_terms_text), ''), ''),
-  0
-from public.company_settings cs
-where cs.id = 1
-  and not exists (select 1 from public.company_terms t where t.code = 'default');
+do $$
+begin
+  if exists (
+    select 1 
+    from information_schema.columns 
+    where table_schema = 'public' 
+      and table_name = 'company_settings' 
+      and column_name = 'company_terms_text'
+  ) then
+    execute 'insert into public.company_terms (code, name, body, sort_order)
+             select ''default'', ''Default'', coalesce(nullif(trim(company_terms_text), ''''), ''''), 0
+             from public.company_settings
+             where id = 1
+               and not exists (select 1 from public.company_terms t where t.code = ''default'')';
+  else
+    insert into public.company_terms (code, name, body, sort_order)
+    values ('default', 'Default', '', 0)
+    on conflict (code) do nothing;
+  end if;
+end
+$$;

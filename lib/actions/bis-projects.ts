@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { bisIsCodeDisplayLabel } from "@/lib/bis-project-is-code-label";
+import { buildBisProjectTitle } from "@/lib/bis-project-scope-label";
+import {
+  buildBisProjectLicenseScopeNotes,
+} from "@/lib/bis-project-license-scope-notes";
+import type { LicenseScopeTableRow } from "@/lib/application-checklist-notes";
 import {
   DROPDOWN_KEY_BIS_BILLING_FREQUENCY,
   DROPDOWN_KEY_BIS_PROJECT_KIND,
@@ -45,6 +50,7 @@ const STATUSES = new Set([
   "submitted",
   "completed",
   "on_hold",
+  "stop_marking",
   "cancelled",
 ]);
 
@@ -80,8 +86,12 @@ async function buildTitle(
   isCodeId: string | null,
   fallback: string,
 ): Promise<string> {
-  let clientPart = "";
-  let isPart = "";
+  let clientName: string | null = null;
+  let companyName: string | null = null;
+  let isNumber: string | null = null;
+  let revisionYear: number | null = null;
+  let isCodeTitle: string | null = null;
+
   if (clientId) {
     const { data: c } = await supabase
       .from("clients")
@@ -90,9 +100,8 @@ async function buildTitle(
       .maybeSingle();
     if (c) {
       const row = c as { name: string; company_name: string | null };
-      clientPart = row.company_name
-        ? `${row.name} (${row.company_name})`
-        : row.name;
+      clientName = row.name;
+      companyName = row.company_name;
     }
   }
   if (isCodeId) {
@@ -107,17 +116,20 @@ async function buildTitle(
         is_code_title: string;
         revision_year: number | null;
       };
-      const y = row.revision_year;
-      isPart =
-        y != null && Number.isFinite(Number(y))
-          ? `${row.is_number}: ${y}`
-          : `${row.is_number} — ${row.is_code_title}`;
+      isNumber = row.is_number;
+      revisionYear = row.revision_year;
+      isCodeTitle = row.is_code_title;
     }
   }
-  const parts = [clientPart, isPart].filter(Boolean);
-  if (parts.length === 0) return fallback || "BIS project";
-  const t = parts.join(" / ");
-  return t.length > 500 ? t.slice(0, 497) + "…" : t;
+
+  return buildBisProjectTitle({
+    clientName,
+    companyName,
+    isNumber,
+    revisionYear,
+    isCodeTitle,
+    fallback: fallback || "BIS project",
+  });
 }
 
 export async function saveBisProjectMaster(formData: FormData) {
@@ -173,7 +185,48 @@ export async function saveBisProjectMaster(formData: FormData) {
   if (!STATUSES.has(status))
     redirect(`/dashboard/bis-projects?error=${encodeURIComponent("status")}`);
 
-  const notes = nullableStr(formData, "notes");
+  const notes = await (async () => {
+    const scopeFormat = str(formData, "license_scope_format") === "table" ? "table" : "plain";
+    const scopePlain = str(formData, "license_scope_plain");
+    let scopeRows: LicenseScopeTableRow[] = [];
+    try {
+      const rawRows = str(formData, "license_scope_rows");
+      if (rawRows) {
+        const parsed = JSON.parse(rawRows) as unknown;
+        if (Array.isArray(parsed)) {
+          scopeRows = parsed
+            .map((row) => {
+              if (!row || typeof row !== "object") return null;
+              const r = row as Record<string, unknown>;
+              return {
+                component: String(r.component ?? "").trim(),
+                value: String(r.value ?? "").trim(),
+              };
+            })
+            .filter((r): r is LicenseScopeTableRow => r !== null);
+        }
+      }
+    } catch {
+      scopeRows = [];
+    }
+
+    let existingNotes: string | null = null;
+    if (id) {
+      const { data: existing } = await supabase
+        .from("bis_projects")
+        .select("notes")
+        .eq("id", id)
+        .maybeSingle();
+      existingNotes = existing?.notes ?? null;
+    }
+
+    const built = buildBisProjectLicenseScopeNotes(existingNotes, {
+      scopeType: scopeFormat,
+      plainText: scopePlain,
+      rows: scopeRows,
+    });
+    return built.trim() ? built : null;
+  })();
   const title = await buildTitle(
     supabase,
     client_id,
@@ -190,6 +243,7 @@ export async function saveBisProjectMaster(formData: FormData) {
       | "submitted"
       | "completed"
       | "on_hold"
+      | "stop_marking"
       | "cancelled",
     client_id,
     is_code_id,
@@ -536,6 +590,7 @@ async function buildBisImportPayload(
       | "submitted"
       | "completed"
       | "on_hold"
+      | "stop_marking"
       | "cancelled",
     client_id,
     is_code_id,
@@ -608,4 +663,115 @@ export async function importBisProjectsMaster(
 
   revalidatePath("/dashboard/bis-projects");
   return { ok: true, inserted: builtRows.length };
+}
+
+export async function updateBisProjectTargetDate(
+  projectId: string,
+  targetDate: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = projectId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid project" };
+
+  const trimmedDate = targetDate?.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+    return { ok: false, error: "Invalid date" };
+  }
+
+  const { error } = await supabase
+    .from("bis_projects")
+    .update({ target_date: trimmedDate, updated_at: new Date().toISOString() })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/bis-new-applications");
+  return { ok: true };
+}
+
+export async function updateBisProjectNotes(
+  projectId: string,
+  notes: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = projectId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid project" };
+
+  const { error } = await supabase
+    .from("bis_projects")
+    .update({ notes, updated_at: new Date().toISOString() })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/bis-new-applications");
+  return { ok: true };
+}
+
+export async function convertApplicationToLicense(
+  projectId: string,
+  cmLDigits: string,
+  licenseValidityDate: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = projectId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid project" };
+
+  const cmDigits = (cmLDigits ?? "").replace(/\D/g, "");
+  if (cmDigits.length !== 10) {
+    return { ok: false, error: "CM/L number must be exactly 10 digits." };
+  }
+
+  const trimmedDate = licenseValidityDate?.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+    return { ok: false, error: "Pick a valid license validity date." };
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("bis_projects")
+    .select("project_kind")
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!existing) return { ok: false, error: "Project not found." };
+  if (existing.project_kind !== "application") {
+    return { ok: false, error: "Only pending applications can be converted to a license." };
+  }
+
+  const { error } = await supabase
+    .from("bis_projects")
+    .update({
+      project_kind: "new_license",
+      cm_l_digits: cmDigits,
+      license_validity_date: trimmedDate,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/bis-new-applications");
+  return { ok: true };
 }

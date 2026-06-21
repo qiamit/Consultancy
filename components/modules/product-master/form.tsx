@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { saveProductMaster } from "@/lib/actions/products-master";
+import { saveProductMaster, executeSaveProductMasterFull } from "@/lib/actions/products-master";
 import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
 import { DialogCloseXButton } from "@/components/modules/client-master/dialog-close-x";
 import {
@@ -34,6 +34,7 @@ export function ProductMasterForm({
   onUpdateField,
   unitOptions,
   gstRateOptions,
+  onEmbeddedSaveSuccess,
 }: {
   visible: boolean;
   overlay?: boolean;
@@ -45,6 +46,7 @@ export function ProductMasterForm({
   onUpdateField: (key: string, value: string) => void;
   unitOptions: AppDropdownOptionRow[];
   gstRateOptions: AppDropdownOptionRow[];
+  onEmbeddedSaveSuccess?: (result: { id: string; name: string; unit_of_item: string; sale_price: number; gst_rate: string }) => void;
 }) {
   if (!visible) return null;
 
@@ -77,7 +79,17 @@ export function ProductMasterForm({
 
       <form
         id="product-master-save-form"
-        action={saveProductMaster}
+        {...(onEmbeddedSaveSuccess
+          ? {
+              onSubmit: async (e: React.FormEvent<HTMLFormElement>) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                const r = await executeSaveProductMasterFull(fd);
+                if (r.ok) onEmbeddedSaveSuccess(r);
+                else window.alert(r.error);
+              },
+            }
+          : { action: saveProductMaster })}
         className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
       >
         <input type="hidden" name="id" value={formValues.id} />

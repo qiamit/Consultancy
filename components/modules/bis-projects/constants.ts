@@ -1,3 +1,4 @@
+import { parseBisProjectLicenseScopeNotes } from "@/lib/bis-project-license-scope-notes";
 import type { BisProjectMasterRow } from "@/lib/types/bis-project-master";
 
 export const BIS_FIELD_LABEL_CLASS =
@@ -50,11 +51,14 @@ export function emptyForm(): Record<string, string> {
     start_date: "",
     target_date: "",
     notes: "",
+    scope_type: "plain",
+    license_scope_rows: "[]",
     title: "",
   };
 }
 
 export function rowToForm(r: BisProjectMasterRow): Record<string, string> {
+  const scope = parseBisProjectLicenseScopeNotes(r.notes);
   return {
     id: r.id,
     project_kind: r.project_kind ?? "new_license",
@@ -75,7 +79,9 @@ export function rowToForm(r: BisProjectMasterRow): Record<string, string> {
     license_number: r.license_number ?? "",
     start_date: r.start_date ?? "",
     target_date: r.target_date ?? "",
-    notes: r.notes ?? "",
+    notes: scope.plainText,
+    scope_type: scope.scopeType,
+    license_scope_rows: JSON.stringify(scope.rows),
     title: r.title ?? "",
   };
 }

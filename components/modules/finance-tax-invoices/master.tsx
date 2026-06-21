@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
+import type { PrintSettings, PrintCompanyInfo } from "@/lib/print/types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
 import type { CompanyTextTemplateRow } from "@/lib/types/company-text-template";
@@ -183,6 +184,8 @@ export function FinanceTaxInvoicesMaster({
   termsTemplates = [],
   scopeTemplates = [],
   prefillFromSalesOrder = null,
+  printSettings,
+  printCompany,
 }: {
   initialRows: FinanceTaxInvoiceRow[];
   fetchError?: string | null;
@@ -197,6 +200,8 @@ export function FinanceTaxInvoicesMaster({
   termsTemplates?: CompanyTextTemplateRow[];
   scopeTemplates?: CompanyTextTemplateRow[];
   prefillFromSalesOrder?: FinanceSalesOrderRow | null;
+  printSettings?: PrintSettings;
+  printCompany?: PrintCompanyInfo;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -719,6 +724,8 @@ export function FinanceTaxInvoicesMaster({
               notesTemplates={notesTemplates}
               termsTemplates={termsTemplates}
               scopeTemplates={scopeTemplates}
+              printSettings={printSettings}
+              printCompany={printCompany}
             />
           </div>
         </div>

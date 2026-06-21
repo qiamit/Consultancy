@@ -211,6 +211,7 @@ export default async function FinanceModulePage({
       breadcrumb={breadcrumb}
       title={item.label}
       description={item.description}
+      slug={item.slug}
     />
   );
 }

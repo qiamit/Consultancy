@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { bisIsCodeDisplayLabel } from "@/lib/bis-project-is-code-label";
+import { buildBisProjectTitle } from "@/lib/bis-project-scope-label";
 import {
   DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY,
   DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND,
@@ -80,8 +81,12 @@ async function buildTitle(
   isCodeId: string | null,
   fallback: string,
 ): Promise<string> {
-  let clientPart = "";
-  let isPart = "";
+  let clientName: string | null = null;
+  let companyName: string | null = null;
+  let isNumber: string | null = null;
+  let revisionYear: number | null = null;
+  let isCodeTitle: string | null = null;
+
   if (clientId) {
     const { data: c } = await supabase
       .from("clients")
@@ -90,9 +95,8 @@ async function buildTitle(
       .maybeSingle();
     if (c) {
       const row = c as { name: string; company_name: string | null };
-      clientPart = row.company_name
-        ? `${row.name} (${row.company_name})`
-        : row.name;
+      clientName = row.name;
+      companyName = row.company_name;
     }
   }
   if (isCodeId) {
@@ -107,17 +111,20 @@ async function buildTitle(
         is_code_title: string;
         revision_year: number | null;
       };
-      const y = row.revision_year;
-      isPart =
-        y != null && Number.isFinite(Number(y))
-          ? `${row.is_number}: ${y}`
-          : `${row.is_number} — ${row.is_code_title}`;
+      isNumber = row.is_number;
+      revisionYear = row.revision_year;
+      isCodeTitle = row.is_code_title;
     }
   }
-  const parts = [clientPart, isPart].filter(Boolean);
-  if (parts.length === 0) return fallback || "BIS new application";
-  const t = parts.join(" / ");
-  return t.length > 500 ? t.slice(0, 497) + "…" : t;
+
+  return buildBisProjectTitle({
+    clientName,
+    companyName,
+    isNumber,
+    revisionYear,
+    isCodeTitle,
+    fallback: fallback || "BIS new application",
+  });
 }
 
 export async function saveBisNewApplicationMaster(formData: FormData) {

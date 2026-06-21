@@ -324,6 +324,11 @@ export function IsCodeMaster({
           selectedIds={selectedIds}
           onToggleRowSelection={toggleRowSelection}
           onToggleSelectPage={toggleSelectPage}
+          onFilesChanged={(isCodeId, files) => {
+            setRows((prev) =>
+              prev.map((r) => r.id === isCodeId ? { ...r, files } : r)
+            );
+          }}
         />
       </div>
 

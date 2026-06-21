@@ -8,6 +8,7 @@ import type {
   FinanceQuotationRow,
   ProductMasterOptionRow,
 } from "@/lib/types/finance-quotation";
+import { printSettingsFromRow, type PrintCompanyInfo } from "@/lib/print/types";
 
 function firstSearchParam(
   sp: Record<string, string | string[] | undefined>,
@@ -64,6 +65,7 @@ export async function FinanceQuotationsServer({
     { data: clientsRaw },
     { data: productsRaw },
     { data: company },
+    { data: appSettings },
     termsTemplates,
     scopeTemplates,
     notesTemplates,
@@ -95,6 +97,7 @@ export async function FinanceQuotationsServer({
         )
         .order("item_code", { ascending: true }),
       supabase.from("company_settings").select("*").eq("id", 1).maybeSingle(),
+      supabase.from("app_settings").select("document_number_prefix").eq("id", 1).maybeSingle(),
       listCompanyTerms(),
       listCompanyScopeOfWork(),
       listCompanyNotesTemplates(),
@@ -130,27 +133,38 @@ export async function FinanceQuotationsServer({
   const defaultBankDetails = buildDefaultBankDetails(
     (company ?? null) as Record<string, unknown> | null,
   );
-  const sealSignImagePath = s(
-    (company ?? null) as Record<string, unknown> | null,
-    "seal_sign_image_path",
-  );
-  const letterheadUpperPath = s(
-    (company ?? null) as Record<string, unknown> | null,
-    "letterhead_upper_path",
-  );
-  const letterheadLowerPath = s(
-    (company ?? null) as Record<string, unknown> | null,
-    "letterhead_lower_path",
-  );
-  const sealSignImageUrl = sealSignImagePath
-    ? await signedImageUrl(supabase, sealSignImagePath)
-    : null;
-  const letterheadUpperImageUrl = letterheadUpperPath
-    ? await signedImageUrl(supabase, letterheadUpperPath)
-    : null;
-  const letterheadLowerImageUrl = letterheadLowerPath
-    ? await signedImageUrl(supabase, letterheadLowerPath)
-    : null;
+  const companyRow = (company ?? null) as Record<string, unknown> | null;
+  const sealSignImagePath = s(companyRow, "seal_sign_image_path");
+  const letterheadUpperPath = s(companyRow, "letterhead_upper_path");
+  const letterheadLowerPath = s(companyRow, "letterhead_lower_path");
+  const logoPath = s(companyRow, "logo_path");
+
+  const [sealSignImageUrl, letterheadUpperImageUrl, letterheadLowerImageUrl, logoImageUrl] =
+    await Promise.all([
+      sealSignImagePath ? signedImageUrl(supabase, sealSignImagePath) : null,
+      letterheadUpperPath ? signedImageUrl(supabase, letterheadUpperPath) : null,
+      letterheadLowerPath ? signedImageUrl(supabase, letterheadLowerPath) : null,
+      logoPath ? signedImageUrl(supabase, logoPath) : null,
+    ]);
+
+  const printSettings = printSettingsFromRow(companyRow);
+  const printCompany: PrintCompanyInfo = {
+    name: s(companyRow, "company_name"),
+    address: s(companyRow, "address"),
+    city: s(companyRow, "company_city"),
+    state: s(companyRow, "company_state"),
+    pin_code: s(companyRow, "company_pin_code"),
+    country: s(companyRow, "company_country"),
+    gst_number: s(companyRow, "gst_number"),
+    email: s(companyRow, "email"),
+    phone: s(companyRow, "phone"),
+    contact_person: s(companyRow, "contact_person_name"),
+    website: s(companyRow, "website"),
+    logo_url: logoImageUrl,
+    letterhead_upper_url: letterheadUpperImageUrl,
+    letterhead_lower_url: letterheadLowerImageUrl,
+    seal_sign_url: sealSignImageUrl,
+  };
 
   return (
     <FinanceQuotationsMaster
@@ -166,6 +180,9 @@ export async function FinanceQuotationsServer({
       termsTemplates={termsTemplates}
       scopeTemplates={scopeTemplates}
       notesTemplates={notesTemplates}
+      printSettings={printSettings}
+      printCompany={printCompany}
+      defaultNumberPrefix={(appSettings as { document_number_prefix?: string } | null)?.document_number_prefix ?? ""}
     />
   );
 }

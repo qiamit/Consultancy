@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { ProductMasterOptionRow } from "@/lib/types/finance-quotation";
 import type { FinanceSalesOrderRow } from "@/lib/types/finance-sales-order";
 import type { FinanceCreditNoteRow } from "@/lib/types/finance-credit-note";
+import { printSettingsFromRow, type PrintCompanyInfo } from "@/lib/print/types";
 
 function firstSearchParam(
   sp: Record<string, string | string[] | undefined>,
@@ -154,6 +155,25 @@ export async function FinanceCreditNotesServer({
     ? await signedImageUrl(supabase, letterheadLowerPath)
     : null;
 
+  const companyRow = (company ?? null) as Record<string, unknown> | null;
+  const printSettings = printSettingsFromRow(companyRow);
+  const printCompany: PrintCompanyInfo = {
+    name: s(companyRow, "company_name"),
+    address: s(companyRow, "address"),
+    city: s(companyRow, "company_city"),
+    state: s(companyRow, "company_state"),
+    pin_code: s(companyRow, "company_pin_code"),
+    country: s(companyRow, "company_country"),
+    gst_number: s(companyRow, "gst_number"),
+    email: s(companyRow, "email"),
+    phone: s(companyRow, "phone"),
+    contact_person: s(companyRow, "contact_person_name"),
+    logo_url: null,
+    letterhead_upper_url: letterheadUpperImageUrl,
+    letterhead_lower_url: letterheadLowerImageUrl,
+    seal_sign_url: sealSignImageUrl,
+  };
+
   const salesOrderIdPrefill = firstSearchParam(sp, "sales_order_id");
   const wantSalesOrderPrefill =
     salesOrderIdPrefill && firstSearchParam(sp, "new") === "1";
@@ -191,6 +211,8 @@ export async function FinanceCreditNotesServer({
       scopeTemplates={scopeTemplates}
       notesTemplates={notesTemplates}
       prefillFromSalesOrder={prefillFromSalesOrder}
+      printSettings={printSettings}
+      printCompany={printCompany}
     />
   );
 }

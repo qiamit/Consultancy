@@ -166,6 +166,67 @@ function rowFromForm(formData: FormData, ctx: SaveCtx) {
   };
 }
 
+export type ExecuteProductSaveResult =
+  | { ok: true; id: string; name: string; unit_of_item: string; sale_price: number; gst_rate: string }
+  | { ok: false; error: string };
+
+export async function executeSaveProductMasterFull(
+  formData: FormData,
+): Promise<ExecuteProductSaveResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const id = nullableStr(formData, "id");
+  const units = await loadUnitSet(supabase);
+  const gsts = await loadGstSet(supabase);
+  const parsed = rowFromForm(formData, { units, gsts });
+  if ("error" in parsed) return { ok: false, error: String(parsed.error) };
+
+  const { payload } = parsed;
+  const row = { ...payload, updated_at: new Date().toISOString() };
+
+  if (await isDuplicateItemCode(supabase, row.item_code as string, id)) {
+    return { ok: false, error: "Duplicate item code." };
+  }
+
+  try {
+    if (id) {
+      const { error } = await supabase.from("product_master_items").update(row).eq("id", id);
+      if (error) return { ok: false, error: error.message };
+      revalidatePath("/dashboard/products");
+      return {
+        ok: true,
+        id,
+        name: String(payload.name),
+        unit_of_item: String(payload.unit_of_item),
+        sale_price: Number(payload.sale_price),
+        gst_rate: String(payload.gst_rate),
+      };
+    } else {
+      const { data, error } = await supabase
+        .from("product_master_items")
+        .insert({ ...row, created_by: user.id })
+        .select("id")
+        .single();
+      if (error) return { ok: false, error: error.message };
+      revalidatePath("/dashboard/products");
+      return {
+        ok: true,
+        id: (data as { id: string }).id,
+        name: String(payload.name),
+        unit_of_item: String(payload.unit_of_item),
+        sale_price: Number(payload.sale_price),
+        gst_rate: String(payload.gst_rate),
+      };
+    }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed." };
+  }
+}
+
 export async function saveProductMaster(formData: FormData) {
   const supabase = await createClient();
   const {
@@ -254,6 +315,56 @@ export async function deleteProductMaster(id: string) {
 
   revalidatePath("/dashboard/products");
   redirect("/dashboard/products");
+}
+
+export async function executeQuickSaveProduct(
+  name: string,
+  category: "product" | "service",
+  gst_rate: string,
+  sale_price: number,
+): Promise<
+  | { ok: true; id: string; name: string; unit_of_item: string; sale_price: number; gst_rate: string }
+  | { ok: false; error: string }
+> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const suffix = Math.random().toString(36).slice(2, 8).toUpperCase();
+  const item_code = `${category === "service" ? "S" : "P"}${suffix}`;
+
+  const row = {
+    category,
+    item_code,
+    name: name.trim(),
+    unit_of_item: DEFAULT_UNIT,
+    gst_rate,
+    mrp: sale_price,
+    sale_price,
+    purchase_price: category === "product" ? 0 : null,
+    created_by: user.id,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from("product_master_items")
+    .insert(row)
+    .select("id")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard/products");
+  return {
+    ok: true,
+    id: (data as { id: string }).id,
+    name: name.trim(),
+    unit_of_item: DEFAULT_UNIT,
+    sale_price,
+    gst_rate,
+  };
 }
 
 export async function deleteProductsMaster(ids: string[]) {

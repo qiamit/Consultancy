@@ -511,6 +511,42 @@ export async function deleteIsCodesMaster(ids: string[]) {
   redirect("/dashboard/is-code-master");
 }
 
+export async function addIsCodeFiles(
+  isCodeId: string,
+  formData: FormData,
+): Promise<{ ok: true; added: number } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const id = isCodeId?.trim();
+  if (!id) return { ok: false, error: "Invalid IS code id." };
+
+  const list = formData.getAll("files");
+  let added = 0;
+  for (const item of list) {
+    if (!(item instanceof File) || item.size === 0) continue;
+    const path = isCodeDocumentStoragePath(user.id, id, item.name);
+    const { error: upErr } = await supabase.storage
+      .from(IS_CODE_DOCUMENTS_BUCKET)
+      .upload(path, item, { upsert: false });
+    if (upErr) return { ok: false, error: upErr.message };
+    const { error: insErr } = await supabase.from("is_code_files").insert({
+      is_code_id: id,
+      storage_path: path,
+      file_name: item.name,
+      created_by: user.id,
+    });
+    if (insErr) return { ok: false, error: insErr.message };
+    added++;
+  }
+
+  revalidatePath("/dashboard/is-code-master");
+  return { ok: true, added };
+}
+
 export async function deleteIsCodeFile(fileId: string) {
   const supabase = await createClient();
   const {

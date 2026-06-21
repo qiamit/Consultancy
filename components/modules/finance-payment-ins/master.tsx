@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
 import type { FinancePaymentInRow } from "@/lib/types/finance-payment-in";
+import type { PrintSettings, PrintCompanyInfo } from "@/lib/print/types";
 import { emptyForm, PAYMENT_IN_LIST_PATH, rowToForm, type PaymentInFormState } from "./constants";
 import { FinancePaymentInForm } from "./form";
 import { FinancePaymentInsHeaderBar } from "./header-bar";
@@ -14,11 +15,15 @@ export function FinancePaymentInsMaster({
   queryId,
   isNew,
   clientRows,
+  printSettings,
+  printCompany,
 }: {
   initialRows: FinancePaymentInRow[];
   queryId: string | null;
   isNew: boolean;
   clientRows: Array<{ id: string; name: string; company_name: string | null }>;
+  printSettings?: PrintSettings;
+  printCompany?: PrintCompanyInfo;
 }) {
   const [rows] = useState(initialRows);
   const [searchQuery, setSearchQuery] = useState("");
@@ -98,6 +103,12 @@ export function FinancePaymentInsMaster({
                 window.history.replaceState(null, "", `${PAYMENT_IN_LIST_PATH}?new=1`);
               }}
               onUpdateField={(k, v) => setForm((f) => ({ ...f, [k]: v }))}
+              selectedClientName={
+                clientRows.find((c) => c.id === form.client_id)?.company_name ||
+                clientRows.find((c) => c.id === form.client_id)?.name || null
+              }
+              printSettings={printSettings}
+              printCompany={printCompany}
             />
           </div>
         </div>

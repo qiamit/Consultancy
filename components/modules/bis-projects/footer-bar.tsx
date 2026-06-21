@@ -62,6 +62,14 @@ export function BisProjectsMasterFooterBar({
               />
               <button
                 type="button"
+                className={`${btn} border-violet-400 bg-violet-50 text-violet-700 hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/40`}
+                title="Open QE Assistant — AI-powered Quality Engineering helper"
+                onClick={() => window.dispatchEvent(new CustomEvent("qe-assistant:open", { detail: { module: "bis-projects" } }))}
+              >
+                QE Assistant
+              </button>
+              <button
+                type="button"
                 className={btn}
                 title="Import rows from CSV (same columns as Export — all form fields)"
                 onClick={() => fileRef.current?.click()}

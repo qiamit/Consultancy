@@ -382,37 +382,53 @@ function rowFromImportRecord(r: Record<string, string>, ctx: SaveCtx) {
     };
   const email = email_normalized ? email_normalized : null;
 
-  const company_type = Nimp(r, "company_type") ?? DEFAULT_COMPANY_TYPE;
-  if (!ctx.companyTypes.has(company_type))
-    return { error: `Invalid company type: ${company_type}` };
+  const companyTypeRaw = Nimp(r, "company_type") ?? DEFAULT_COMPANY_TYPE;
+  const companyTypeMatch = [...ctx.companyTypes].find(
+    (t) => t.toLowerCase() === companyTypeRaw.toLowerCase(),
+  );
+  const company_type = companyTypeMatch ?? DEFAULT_COMPANY_TYPE;
 
-  const company_scale = Nimp(r, "company_scale") ?? DEFAULT_COMPANY_SCALE;
-  if (!ctx.companyScales.has(company_scale))
-    return { error: `Invalid company scale: ${company_scale}` };
+  const companyScaleRaw = Nimp(r, "company_scale") ?? DEFAULT_COMPANY_SCALE;
+  const companyScaleMatch = [...ctx.companyScales].find(
+    (s) => s.toLowerCase() === companyScaleRaw.toLowerCase(),
+  );
+  const company_scale = companyScaleMatch ?? DEFAULT_COMPANY_SCALE;
 
-  const company_status = Simp(r, "company_status") || DEFAULT_COMPANY_STATUS;
-  if (!ctx.companyStatuses.has(company_status))
-    return { error: `Invalid company status: ${company_status}` };
+  const companyStatusRaw = Simp(r, "company_status") || DEFAULT_COMPANY_STATUS;
+  const companyStatusMatch = [...ctx.companyStatuses].find(
+    (s) => s.toLowerCase() === companyStatusRaw.toLowerCase(),
+  );
+  const company_status = companyStatusMatch ?? DEFAULT_COMPANY_STATUS;
 
-  const balance_type = Simp(r, "balance_type") || "Dr";
-  if (!BALANCE_TYPES.has(balance_type))
-    return { error: `Invalid balance type: ${balance_type}` };
+  const balanceTypeRaw = Simp(r, "balance_type") || "Dr";
+  const balance_type = BALANCE_TYPES.has(balanceTypeRaw) ? balanceTypeRaw : "Dr";
 
-  const payment_term = Nimp(r, "payment_term") ?? DEFAULT_PAYMENT_TERM;
-  if (!ctx.paymentTerms.has(payment_term))
-    return { error: `Invalid payment term: ${payment_term}` };
+  const paymentTermRaw = Nimp(r, "payment_term") ?? DEFAULT_PAYMENT_TERM;
+  const paymentTermMatch = [...ctx.paymentTerms].find(
+    (t) => t.toLowerCase() === paymentTermRaw.toLowerCase(),
+  );
+  const payment_term = paymentTermMatch ?? DEFAULT_PAYMENT_TERM;
 
-  const city = Nimp(r, "city") ?? DEFAULT_CITY;
-  if (ctx.cities.size > 0 && !ctx.cities.has(city))
-    return { error: `Invalid city: ${city}` };
+  const cityRaw = Nimp(r, "city") ?? DEFAULT_CITY;
+  const cityMatch =
+    ctx.cities.size > 0
+      ? [...ctx.cities].find((c) => c.toLowerCase() === cityRaw.toLowerCase())
+      : cityRaw;
+  const city = cityMatch ?? DEFAULT_CITY;
 
-  const state = Nimp(r, "state") ?? DEFAULT_STATE;
-  if (ctx.states.size > 0 && !ctx.states.has(state))
-    return { error: `Invalid state: ${state}` };
+  const stateRaw = Nimp(r, "state") ?? DEFAULT_STATE;
+  const stateMatch =
+    ctx.states.size > 0
+      ? [...ctx.states].find((s) => s.toLowerCase() === stateRaw.toLowerCase())
+      : stateRaw;
+  const state = stateMatch ?? DEFAULT_STATE;
 
-  const country = Simp(r, "country") || DEFAULT_COUNTRY;
-  if (!ctx.countries.has(country))
-    return { error: `Invalid country: ${country}` };
+  const countryRaw = Simp(r, "country") || DEFAULT_COUNTRY;
+  // case-insensitive match against allowed list; fall back to default instead of failing
+  const countryMatch = [...ctx.countries].find(
+    (c) => c.toLowerCase() === countryRaw.toLowerCase(),
+  );
+  const country = countryMatch ?? DEFAULT_COUNTRY;
 
   const pin_code = Nimp(r, "pin_code") ?? DEFAULT_PIN_CODE;
   if (ctx.pinCodes.size > 0 && !ctx.pinCodes.has(pin_code))
@@ -430,10 +446,10 @@ function rowFromImportRecord(r: Record<string, string>, ctx: SaveCtx) {
       phoneRaw = m[2] ?? "";
     }
   }
-  if (!ctx.phoneCountryCodes.has(phone_country_code))
-    return {
-      error: `Invalid phone country code: ${phone_country_code}`,
-    };
+  // if phone_country_code not in allowed list, fall back to +91 instead of failing
+  if (!ctx.phoneCountryCodes.has(phone_country_code)) {
+    phone_country_code = "+91";
+  }
 
   const phoneDigits = phoneRaw.replace(/\D/g, "");
   const phone = phoneDigits ? phoneDigits : null;

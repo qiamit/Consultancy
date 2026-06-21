@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   computeLicenseDisplayStatus,
+  isRenewalWindowActive,
   formatCmDisplay,
   licenceValidityDisplayWithWindow90,
   type LicenseDisplayStatus,
@@ -17,6 +18,7 @@ import { bisStandardsWebsiteSearchUrl } from "@/lib/bis-standards-portal";
 import type { BisProjectMasterRow } from "@/lib/types/bis-project-master";
 import { bisIsCodeDisplayLabel } from "@/lib/bis-project-is-code-label";
 import { projectKindLabel } from "./constants";
+import { LicenseScopeViewModal } from "./license-scope-view-modal";
 import {
   BisProjectsMasterFooterBar,
   BIS_PROJECTS_TABLE_COL_COUNT,
@@ -68,9 +70,11 @@ function licenseStatusLineClass(lic: LicenseDisplayStatus): string {
     case "Operative":
       return "font-medium text-green-600 dark:text-green-400";
     case "Deferred":
-      return "font-medium text-amber-600 dark:text-amber-400";
+      return "font-medium text-blue-600 dark:text-blue-400";
     case "Expired":
       return "font-medium text-red-600 dark:text-red-400";
+    case "Stop Marking":
+      return "font-semibold text-orange-600 dark:text-orange-400";
     default:
       return "font-medium text-zinc-500 dark:text-zinc-400";
   }
@@ -111,6 +115,9 @@ function PageSelectAllCheckbox({
   );
 }
 
+const actionBtn =
+  "inline-flex h-8 w-8 items-center justify-center rounded-lg text-base leading-none transition hover:bg-zinc-100 dark:hover:bg-zinc-800";
+
 export function BisProjectsMasterTable({
   rows,
   idParam,
@@ -147,10 +154,21 @@ export function BisProjectsMasterTable({
   const emptyMaster = grandCount === 0;
   const noMatches = !emptyMaster && rows.length === 0;
   const pageRowIds = rows.map((r) => r.id);
+  const [scopeViewRow, setScopeViewRow] = useState<BisProjectMasterRow | null>(null);
 
   return (
-    <div className="overflow-x-auto">
-      <table className="min-w-[860px] w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+    <>
+    <div className="w-full min-w-0 overflow-x-auto">
+      <table className="w-full table-fixed divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
+        <colgroup>
+          <col className="w-11" />
+          <col className="w-[17%]" />
+          <col />
+          <col className="w-[14%]" />
+          <col className="w-[13%]" />
+          <col className="w-[11%]" />
+          <col className="w-[6.75rem]" />
+        </colgroup>
         <thead className="bg-zinc-100 text-left text-xs font-semibold tracking-wide text-zinc-600 dark:bg-zinc-800/80 dark:text-zinc-400">
           <tr>
             <th className="w-11 px-2 py-2 text-center align-middle">
@@ -162,16 +180,16 @@ export function BisProjectsMasterTable({
                 />
               </div>
             </th>
-            <th className="min-w-[200px] px-3 py-2">IS Code & Type</th>
-            <th className="min-w-[160px] px-3 py-2 text-center">
+            <th className="whitespace-nowrap px-3 py-2">IS Code & Type</th>
+            <th className="whitespace-nowrap px-3 py-2 text-center">
               Name of the Client
             </th>
-            <th className="min-w-[130px] px-3 py-2 text-center">CM/L Number</th>
-            <th className="min-w-[110px] px-3 py-2 text-center">
+            <th className="whitespace-nowrap px-3 py-2 text-center">CM/L Number</th>
+            <th className="whitespace-nowrap px-3 py-2 text-center">
               License Validity
             </th>
-            <th className="min-w-[120px] px-3 py-2 text-center">Billing</th>
-            <th className="min-w-[5.5rem] px-2 py-2 text-center">Action</th>
+            <th className="whitespace-nowrap px-3 py-2 text-center">Billing</th>
+            <th className="whitespace-nowrap px-3 py-2 text-center">Action</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-zinc-200 bg-white dark:divide-zinc-800 dark:bg-zinc-950/40">
@@ -201,6 +219,7 @@ export function BisProjectsMasterTable({
               const lic = computeLicenseDisplayStatus(
                 r.project_kind,
                 r.license_validity_date,
+                r.status,
               );
               const cmDisplay = formatCmDisplay(r.project_kind, r.cm_l_digits);
               const cmLicenceLinkable =
@@ -232,7 +251,7 @@ export function BisProjectsMasterTable({
                     </div>
                   </td>
                   <td className="align-top px-3 py-2 text-zinc-800 dark:text-zinc-200">
-                    <div className="max-w-[240px] space-y-1 break-words leading-snug">
+                    <div className="space-y-1 break-words leading-snug">
                       {r.is_codes ? (
                         <a
                           href={bisStandardsWebsiteSearchUrl(isLabel(r))}
@@ -253,12 +272,12 @@ export function BisProjectsMasterTable({
                     </div>
                   </td>
                   <td className="align-top px-3 py-2 text-center text-zinc-700 dark:text-zinc-300">
-                    <div className="mx-auto max-w-[220px] break-words leading-snug">
+                    <div className="break-words leading-snug">
                       {clientLabel(r)}
                     </div>
                   </td>
                   <td className="align-top px-3 py-2 text-center text-zinc-700 dark:text-zinc-300">
-                    <div className="mx-auto min-w-0 max-w-[200px] space-y-1 text-center leading-snug">
+                    <div className="space-y-1 whitespace-nowrap text-center leading-snug">
                       {cmLicenceLinkable ? (
                         <a
                           href={MANAK_ONLINE_APPLICATION_LICENCE_REPORT_URL}
@@ -284,34 +303,38 @@ export function BisProjectsMasterTable({
                     {r.project_kind === "application" ? (
                       "—"
                     ) : renewalWindow ? (
-                      <div className="mx-auto max-w-[11rem] space-y-1.5 text-center text-xs leading-snug">
+                      <div className="space-y-1.5 whitespace-nowrap text-center text-xs leading-snug">
                         <div className="tabular-nums text-sm font-medium text-zinc-900 dark:text-zinc-100">
                           {renewalWindow.main}
                         </div>
-                        <a
-                          href={manakOnlineEbisLoginHref(r.portal_user_id)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={() => copyManakPortalPasswordOnly(r.portal_password)}
-                          className="inline-block font-medium text-red-600 underline-offset-2 hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
-                          title={manakRenewalLinkNativeTitle(
-                            r.portal_user_id,
-                            r.portal_password,
-                          )}
-                          aria-label={manakRenewalLinkAriaLabel(
-                            r.portal_user_id,
-                            r.portal_password,
-                          )}
-                        >
-                          Apply for Renewal
-                        </a>
+                        {isRenewalWindowActive(r.license_validity_date, r.status) ? (
+                          <a
+                            href={manakOnlineEbisLoginHref(r.portal_user_id)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => copyManakPortalPasswordOnly(r.portal_password)}
+                            className="inline-block font-medium text-red-600 underline-offset-2 hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
+                            title={manakRenewalLinkNativeTitle(r.portal_user_id, r.portal_password)}
+                            aria-label={manakRenewalLinkAriaLabel(r.portal_user_id, r.portal_password)}
+                          >
+                            Apply for Renewal
+                          </a>
+                        ) : lic === "Stop Marking" ? (
+                          <span className="inline-block rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:bg-orange-950/40 dark:text-orange-400">
+                            Restore Compliance
+                          </span>
+                        ) : lic === "Expired" ? (
+                          <span className="inline-block rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-950/40 dark:text-red-400">
+                            Fresh Application
+                          </span>
+                        ) : null}
                       </div>
                     ) : (
                       "—"
                     )}
                   </td>
                   <td className="align-top px-3 py-2 text-center text-xs text-zinc-700 dark:text-zinc-300">
-                    <div className="mx-auto min-w-0 max-w-[220px] space-y-1 text-center leading-snug">
+                    <div className="space-y-1 whitespace-nowrap text-center leading-snug">
                       <div className="tabular-nums">{formatInr(r.billing_amount)}</div>
                       <div className="text-zinc-500 dark:text-zinc-400">
                         {dash(r.billing_frequency)}
@@ -320,23 +343,36 @@ export function BisProjectsMasterTable({
                   </td>
                   <td className="align-top px-2 py-2 text-center">
                     <div
-                      className="flex flex-col items-center gap-1.5"
+                      className="flex items-center justify-center gap-1"
                       role="group"
                       aria-label="Row actions"
                     >
                       <button
                         type="button"
-                        onClick={() => onEditRow(r)}
-                        className="text-sm font-medium text-sky-600 hover:underline dark:text-sky-400"
+                        onClick={() => setScopeViewRow(r)}
+                        className={actionBtn}
+                        title="View licence scope"
+                        aria-label="View licence scope"
                       >
-                        Edit
+                        📋
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => onEditRow(r)}
+                        className={actionBtn}
+                        title="Edit"
+                        aria-label="Edit"
+                      >
+                        ✏️
                       </button>
                       <button
                         type="button"
                         onClick={() => onDeleteRow(r)}
-                        className="text-sm font-medium text-red-600 hover:underline dark:text-red-400"
+                        className={actionBtn}
+                        title="Delete"
+                        aria-label="Delete"
                       >
-                        Delete
+                        🗑️
                       </button>
                     </div>
                   </td>
@@ -358,5 +394,9 @@ export function BisProjectsMasterTable({
         />
       </table>
     </div>
+    {scopeViewRow && (
+      <LicenseScopeViewModal row={scopeViewRow} onClose={() => setScopeViewRow(null)} />
+    )}
+    </>
   );
 }

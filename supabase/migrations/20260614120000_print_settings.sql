@@ -1,0 +1,21 @@
+-- Print & page settings for all finance documents.
+alter table public.company_settings
+  add column if not exists print_paper_size        text    default 'A4',
+  add column if not exists print_orientation       text    default 'portrait',
+  add column if not exists print_margin_top        integer default 12,
+  add column if not exists print_margin_bottom     integer default 12,
+  add column if not exists print_margin_left       integer default 12,
+  add column if not exists print_margin_right      integer default 12,
+  add column if not exists print_font_family       text    default 'Arial',
+  add column if not exists print_primary_color     text    default '#1e3a8a',
+  add column if not exists print_show_letterhead   boolean default true,
+  add column if not exists print_letterhead_layout text    default 'logo-left',
+  add column if not exists print_letterhead_tagline text,
+  add column if not exists print_letterhead_show_address boolean default true,
+  add column if not exists print_letterhead_show_contact boolean default true,
+  add column if not exists print_letterhead_show_gst     boolean default true,
+  add column if not exists print_footer_left       text,
+  add column if not exists print_footer_center     text,
+  add column if not exists print_footer_right      text    default 'Page {page} of {total}',
+  add column if not exists print_show_page_numbers boolean default true,
+  add column if not exists print_show_footer_line  boolean default true;

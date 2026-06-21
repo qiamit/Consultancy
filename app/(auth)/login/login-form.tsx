@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { AuthShell } from "@/components/auth/AuthShell";
@@ -46,10 +45,7 @@ export function LoginForm() {
   }
 
   return (
-    <AuthShell
-      title="Sign in"
-      subtitle="Clients approaching you for new licenses or renewals are tracked here alongside ISO and finance workflows."
-    >
+    <AuthShell title="Sign in">
       {!configured && <ConfigBanner />}
       <form onSubmit={onSubmit} className="space-y-5">
         <div className="space-y-2">
@@ -102,13 +98,7 @@ export function LoginForm() {
         </button>
       </form>
       <p className="text-center text-sm text-zinc-600 dark:text-zinc-400">
-        No account?{" "}
-        <Link
-          href="/signup"
-          className="font-medium text-sky-600 underline-offset-4 hover:underline dark:text-sky-400"
-        >
-          Create one
-        </Link>
+        Need access? Ask your administrator to add you in User Management.
       </p>
     </AuthShell>
   );

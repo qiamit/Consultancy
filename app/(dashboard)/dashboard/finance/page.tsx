@@ -3,127 +3,157 @@ import {
   FINANCE_SECTIONS,
   financeItemPath,
 } from "@/components/modules/finance";
-import { createClient } from "@/lib/supabase/server";
+import { FinanceQEButton } from "@/components/modules/finance/finance-qe-button";
 
-export default async function FinanceOverviewPage() {
-  const supabase = await createClient();
+const SECTION_META: Record<
+  string,
+  { icon: string; accent: string; cardBg: string; cardBorder: string; cardHover: string; iconBg: string; titleColor: string; badgeBg: string; arrowColor: string }
+> = {
+  sales: {
+    icon: "💰",
+    accent: "from-sky-900/60 to-sky-950/80 border-sky-800/60",
+    cardBg: "bg-sky-950/20 dark:bg-sky-950/30",
+    cardBorder: "border-sky-800/40",
+    cardHover: "hover:bg-sky-900/30 hover:border-sky-700/60",
+    iconBg: "bg-sky-900/50",
+    titleColor: "text-sky-300",
+    badgeBg: "bg-sky-900/60 text-sky-200 ring-sky-700/50",
+    arrowColor: "text-sky-500",
+  },
+  purchase: {
+    icon: "🛒",
+    accent: "from-violet-900/60 to-violet-950/80 border-violet-800/60",
+    cardBg: "bg-violet-950/20 dark:bg-violet-950/30",
+    cardBorder: "border-violet-800/40",
+    cardHover: "hover:bg-violet-900/30 hover:border-violet-700/60",
+    iconBg: "bg-violet-900/50",
+    titleColor: "text-violet-300",
+    badgeBg: "bg-violet-900/60 text-violet-200 ring-violet-700/50",
+    arrowColor: "text-violet-500",
+  },
+  accounting: {
+    icon: "📒",
+    accent: "from-emerald-900/60 to-emerald-950/80 border-emerald-800/60",
+    cardBg: "bg-emerald-950/20 dark:bg-emerald-950/30",
+    cardBorder: "border-emerald-800/40",
+    cardHover: "hover:bg-emerald-900/30 hover:border-emerald-700/60",
+    iconBg: "bg-emerald-900/50",
+    titleColor: "text-emerald-300",
+    badgeBg: "bg-emerald-900/60 text-emerald-200 ring-emerald-700/50",
+    arrowColor: "text-emerald-500",
+  },
+  reports: {
+    icon: "📊",
+    accent: "from-amber-900/60 to-amber-950/80 border-amber-800/60",
+    cardBg: "bg-amber-950/20 dark:bg-amber-950/30",
+    cardBorder: "border-amber-800/40",
+    cardHover: "hover:bg-amber-900/30 hover:border-amber-700/60",
+    iconBg: "bg-amber-900/50",
+    titleColor: "text-amber-300",
+    badgeBg: "bg-amber-900/60 text-amber-200 ring-amber-700/50",
+    arrowColor: "text-amber-500",
+  },
+  taxation: {
+    icon: "🧾",
+    accent: "from-rose-900/60 to-rose-950/80 border-rose-800/60",
+    cardBg: "bg-rose-950/20 dark:bg-rose-950/30",
+    cardBorder: "border-rose-800/40",
+    cardHover: "hover:bg-rose-900/30 hover:border-rose-700/60",
+    iconBg: "bg-rose-900/50",
+    titleColor: "text-rose-300",
+    badgeBg: "bg-rose-900/60 text-rose-200 ring-rose-700/50",
+    arrowColor: "text-rose-500",
+  },
+};
 
-  const [inbound, outbound, allTx] = await Promise.all([
-    supabase
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("payment_flow", "in"),
-    supabase
-      .from("transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("payment_flow", "out"),
-    supabase.from("transactions").select("id", { count: "exact", head: true }),
-  ]);
+const MODULE_ICONS: Record<string, string> = {
+  "quotation-estimate": "📋",
+  "sales-order": "📦",
+  "proforma-invoice": "🧾",
+  "tax-invoice": "🏷️",
+  "credit-note": "↩️",
+  "payment-in": "⬇️",
+  "customer-statement": "📄",
+  "purchase-requisition": "📝",
+  "purchase-order": "🛍️",
+  "purchase-invoice": "🧾",
+  "debit-note": "📌",
+  "payment-out": "⬆️",
+  "expense-management": "💸",
+  "chart-of-accounts": "🗂️",
+  "journal-entries": "📓",
+  "general-ledger": "📚",
+  "bank-reconciliation": "🏦",
+  "cash-bank-book": "💵",
+  "trial-balance": "⚖️",
+  "profit-and-loss": "📈",
+  "balance-sheet": "🏛️",
+  "accounts-receivable": "📥",
+  "accounts-payable": "📤",
+  "cash-flow-statement": "🌊",
+  "gst-vat-reports": "🧮",
+  "tds-tcs-management": "📑",
+  "audit-logs": "🔍",
+};
 
-  const nIn = inbound.count ?? 0;
-  const nOut = outbound.count ?? 0;
-  const nAll = allTx.count ?? 0;
-
+export default function FinanceOverviewPage() {
   return (
     <div className="space-y-8">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-zinc-50">
-          Finance Management Dashboard
+      {/* Page header */}
+      <div className="flex items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold tracking-tight text-zinc-100">
+          Finance Management
         </h1>
+        <FinanceQEButton />
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <Link
-          href={financeItemPath("sales", "payment-in")}
-          className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-sky-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-sky-700"
-        >
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Payment IN
-          </p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-            {nIn}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">Receipts recorded</p>
-        </Link>
-        <Link
-          href={financeItemPath("purchase", "payment-out")}
-          className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-sky-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-sky-700"
-        >
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Payment OUT
-          </p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-            {nOut}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">Payments recorded</p>
-        </Link>
-        <Link
-          href={financeItemPath("accounting", "cash-bank-book")}
-          className="rounded-lg border border-zinc-200 bg-white p-4 shadow-sm transition hover:border-sky-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-sky-700"
-        >
-          <p className="text-xs font-medium uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-            Cash / Bank book
-          </p>
-          <p className="mt-2 text-2xl font-semibold tabular-nums text-zinc-900 dark:text-zinc-50">
-            {nAll}
-          </p>
-          <p className="mt-1 text-xs text-zinc-500">All movements</p>
-        </Link>
-      </div>
-
-      <div className="space-y-6">
-        {FINANCE_SECTIONS.map((section) => (
-          <section
-            key={section.id}
-            className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900"
-          >
-            <header className="border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/80 sm:px-5">
-              <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-50">
+      {/* Section blocks */}
+      {FINANCE_SECTIONS.map((section) => {
+        const meta = SECTION_META[section.id];
+        return (
+          <div key={section.id} className="space-y-3">
+            {/* Section header */}
+            <div className="flex items-center gap-3">
+              <span className="text-2xl leading-none">{meta.icon}</span>
+              <h2 className={`text-base font-bold ${meta.titleColor}`}>
                 {section.title}
               </h2>
-              <p className="mt-0.5 text-sm text-zinc-600 dark:text-zinc-400">
-                {section.subtitle}
-              </p>
-            </header>
-            <ul className="divide-y divide-zinc-200 dark:divide-zinc-800">
+              <span
+                className={`ml-auto rounded-full px-2.5 py-0.5 text-[10px] font-semibold ring-1 ${meta.badgeBg}`}
+              >
+                {section.items.length} modules
+              </span>
+            </div>
+
+            {/* Module cards grid */}
+            <div className="grid gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
               {section.items.map((item) => {
                 const href = financeItemPath(section.id, item.slug);
+                const moduleIcon = MODULE_ICONS[item.slug] ?? "📄";
                 return (
-                  <li key={item.slug}>
-                    <Link
-                      href={href}
-                      className="flex flex-col gap-1 px-4 py-3 transition hover:bg-zinc-50 sm:flex-row sm:items-center sm:justify-between sm:px-5 dark:hover:bg-zinc-800/50"
+                  <Link
+                    key={item.slug}
+                    href={href}
+                    className={`group flex items-center gap-2.5 rounded-lg border px-3 py-2.5 shadow-sm transition ${meta.cardBg} ${meta.cardBorder} ${meta.cardHover}`}
+                  >
+                    <span
+                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-sm ${meta.iconBg}`}
                     >
-                      <div className="min-w-0">
-                        <p className="font-medium text-zinc-900 dark:text-zinc-100">
-                          {item.label}
-                        </p>
-                        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                          {item.description}
-                        </p>
-                      </div>
-                      <div className="flex shrink-0 items-center gap-2">
-                        {item.implemented ? (
-                          <span className="rounded-md bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-900 dark:bg-emerald-950/50 dark:text-emerald-200">
-                            Live
-                          </span>
-                        ) : (
-                          <span className="rounded-md bg-zinc-100 px-2 py-1 text-xs font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400">
-                            Coming soon
-                          </span>
-                        )}
-                        <span className="text-sky-600 text-sm font-medium dark:text-sky-400">
-                          Open →
-                        </span>
-                      </div>
-                    </Link>
-                  </li>
+                      {moduleIcon}
+                    </span>
+                    <p className="min-w-0 flex-1 truncate text-xs font-semibold text-zinc-100">
+                      {item.label}
+                    </p>
+                    <span className={`shrink-0 text-xs font-bold transition group-hover:translate-x-0.5 ${meta.arrowColor}`}>
+                      →
+                    </span>
+                  </Link>
                 );
               })}
-            </ul>
-          </section>
-        ))}
-      </div>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }

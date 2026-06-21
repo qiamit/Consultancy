@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { bisStandardsWebsiteSearchUrl } from "@/lib/bis-standards-portal";
-import type { IsCodeMasterRow } from "@/lib/types/is-code-master";
+import type { IsCodeFileRow, IsCodeMasterRow } from "@/lib/types/is-code-master";
 import { formatReaffirmationDisplay } from "./constants";
 import { IsCodeMasterFooterBar } from "./footer-bar";
+import { FileManagerModal } from "./file-manager-modal";
 
 const COL_COUNT = 7;
 
@@ -111,6 +112,7 @@ export function IsCodeMasterTable({
   selectedIds,
   onToggleRowSelection,
   onToggleSelectPage,
+  onFilesChanged,
 }: {
   rows: IsCodeMasterRow[];
   idParam: string | null;
@@ -127,10 +129,12 @@ export function IsCodeMasterTable({
   selectedIds: ReadonlySet<string>;
   onToggleRowSelection: (id: string) => void;
   onToggleSelectPage: () => void;
+  onFilesChanged: (isCodeId: string, files: IsCodeFileRow[]) => void;
 }) {
   const emptyMaster = grandCount === 0;
   const noMatches = !emptyMaster && rows.length === 0;
   const pageRowIds = rows.map((r) => r.id);
+  const [fileManagerRow, setFileManagerRow] = useState<IsCodeMasterRow | null>(null);
 
   return (
     <div className="overflow-x-auto">
@@ -262,17 +266,18 @@ export function IsCodeMasterTable({
                   <td className="align-top px-3 py-2 text-center text-zinc-700 dark:text-zinc-300">
                     <div className="space-y-1 text-sm leading-snug">
                       <StackLine className="text-xs text-zinc-600 dark:text-zinc-400">
-                        {nFiles === 0 ? (
-                          "—"
-                        ) : (
-                          <span
-                            title={(c.files ?? [])
-                              .map((f) => f.file_name ?? "")
-                              .join(", ")}
-                          >
-                            {nFiles} file{nFiles === 1 ? "" : "s"}
-                          </span>
-                        )}
+                        <button
+                          type="button"
+                          onClick={() => setFileManagerRow(c)}
+                          className="font-medium text-sky-600 hover:underline dark:text-sky-400"
+                          title={nFiles === 0
+                            ? "No files — click to add"
+                            : (c.files ?? []).map((f) => f.file_name ?? "").join(", ")}
+                        >
+                          {nFiles === 0
+                            ? "Add Files"
+                            : `View Files (${nFiles})`}
+                        </button>
                       </StackLine>
                       <StackLine muted>{dash(c.unit_of_is)}</StackLine>
                       <StackLine className="tabular-nums text-[11px]">
@@ -320,6 +325,16 @@ export function IsCodeMasterTable({
           deleteDisabled={deleteDisabled}
         />
       </table>
+
+      {fileManagerRow && (
+        <FileManagerModal
+          row={fileManagerRow}
+          onClose={() => setFileManagerRow(null)}
+          onFilesChanged={(isCodeId, files) => {
+            onFilesChanged(isCodeId, files);
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -21,6 +21,7 @@
 /.next/
 /out/
 .swc/
+.turbo/
 
 # production
 /build
@@ -30,6 +31,7 @@
 .DS_Store
 *.pem
 .cursor/
+.claude/
 ~$*
 
 # debug
@@ -71,3 +73,6 @@ Desktop.ini
 
 # local documents
 Instructions.docx
+
+# tooling caches
+.cache/

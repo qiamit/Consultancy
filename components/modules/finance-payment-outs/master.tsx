@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
 import type { FinancePaymentOutRow } from "@/lib/types/finance-payment-out";
+import type { PrintSettings, PrintCompanyInfo } from "@/lib/print/types";
 import { emptyForm, PAYMENT_OUT_LIST_PATH, rowToForm, type PaymentInFormState } from "./constants";
 import { FinancePaymentOutForm } from "./form";
 import { FinancePaymentOutsHeaderBar } from "./header-bar";
@@ -14,11 +15,15 @@ export function FinancePaymentOutsMaster({
   queryId,
   isNew,
   clientRows,
+  printSettings,
+  printCompany,
 }: {
   initialRows: FinancePaymentOutRow[];
   queryId: string | null;
   isNew: boolean;
   clientRows: Array<{ id: string; name: string; company_name: string | null }>;
+  printSettings?: PrintSettings;
+  printCompany?: PrintCompanyInfo;
 }) {
   const [rows] = useState(initialRows);
   const [searchQuery, setSearchQuery] = useState("");
@@ -98,6 +103,12 @@ export function FinancePaymentOutsMaster({
                 window.history.replaceState(null, "", `${PAYMENT_OUT_LIST_PATH}?new=1`);
               }}
               onUpdateField={(k, v) => setForm((f) => ({ ...f, [k]: v }))}
+              selectedClientName={
+                clientRows.find((c) => c.id === form.client_id)?.company_name ||
+                clientRows.find((c) => c.id === form.client_id)?.name || null
+              }
+              printSettings={printSettings}
+              printCompany={printCompany}
             />
           </div>
         </div>

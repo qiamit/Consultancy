@@ -6,6 +6,7 @@ import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
 import type { CompanyTextTemplateRow } from "@/lib/types/company-text-template";
 import type { FinanceQuotationRow } from "@/lib/types/finance-quotation";
 import type { ProductMasterOptionRow } from "@/lib/types/finance-quotation";
+import { DEFAULT_PRINT_SETTINGS, type PrintCompanyInfo, type PrintSettings } from "@/lib/print/types";
 import {
   deleteFinanceQuotation,
   deleteFinanceQuotations,
@@ -138,6 +139,9 @@ export function FinanceQuotationsMaster({
   notesTemplates = [],
   termsTemplates = [],
   scopeTemplates = [],
+  printSettings = DEFAULT_PRINT_SETTINGS,
+  printCompany = {} as PrintCompanyInfo,
+  defaultNumberPrefix = "",
 }: {
   initialRows: FinanceQuotationRow[];
   fetchError?: string | null;
@@ -151,6 +155,9 @@ export function FinanceQuotationsMaster({
   notesTemplates?: CompanyTextTemplateRow[];
   termsTemplates?: CompanyTextTemplateRow[];
   scopeTemplates?: CompanyTextTemplateRow[];
+  printSettings?: PrintSettings;
+  printCompany?: PrintCompanyInfo;
+  defaultNumberPrefix?: string;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -158,6 +165,17 @@ export function FinanceQuotationsMaster({
   const [form, setForm] = useState<QuotationFormState>(() =>
     emptyForm(defaultBankDetails),
   );
+  const [localNumberPrefix, setLocalNumberPrefix] = useState(defaultNumberPrefix);
+
+  useEffect(() => {
+    try {
+      const entries: Array<{ name: string; prefix: string }> =
+        JSON.parse(localStorage.getItem("app_named_prefix_suffix_entries") ?? "[]");
+      const match = entries.find((e) => e.name.trim().toLowerCase().includes("quotation"));
+      if (match?.prefix) setLocalNumberPrefix(match.prefix);
+      else if (defaultNumberPrefix) setLocalNumberPrefix(defaultNumberPrefix);
+    } catch {}
+  }, [defaultNumberPrefix]);
   const [searchQuery, setSearchQuery] = useState("");
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
@@ -203,7 +221,7 @@ export function FinanceQuotationsMaster({
         const prevPrefix = prev.quotation_number_prefix.trim();
         const nextNumber = getNextQuotationNumberParts(
           initialRows,
-          prevPrefix || undefined,
+          prevPrefix || localNumberPrefix || undefined,
         );
         const fromUrl = searchParams.get("client_id")?.trim() ?? "";
         if (fromUrl) return { ...base, ...nextNumber, client_id: fromUrl };
@@ -647,6 +665,8 @@ export function FinanceQuotationsMaster({
               notesTemplates={notesTemplates}
               termsTemplates={termsTemplates}
               scopeTemplates={scopeTemplates}
+              printSettings={printSettings}
+              printCompany={printCompany}
             />
           </div>
         </div>

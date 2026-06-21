@@ -70,6 +70,8 @@ export function AppDropdownCombobox({
   emptySelectLabel = "— Select —",
   overlayZIndexClass = "z-[112]",
   listZIndexClass = "z-[105]",
+  /** Render the typeahead list in a portal so it is not clipped by overflow containers. */
+  portalList = true,
   includeEmptyOption = true,
   searchPlaceholder = "Type to search…",
   hideLabel = false,
@@ -77,8 +79,9 @@ export function AppDropdownCombobox({
   /** When set, the + button runs this instead of opening the manage-labels dialog. */
   onSuffixButtonClick,
   suffixButtonClassName,
-  /** When true and value is "", the text input stays empty (list still shows `emptySelectLabel`). */
   blankInputWhenNoSelection = false,
+  onOptionAdded,
+  onOptionDeleted,
 }: {
   optionKey: string;
   name: string;
@@ -96,6 +99,7 @@ export function AppDropdownCombobox({
   emptySelectLabel?: string;
   overlayZIndexClass?: string;
   listZIndexClass?: string;
+  portalList?: boolean;
   includeEmptyOption?: boolean;
   searchPlaceholder?: string;
   /** When true, no visible label; combobox uses `label` as `aria-label`. */
@@ -105,12 +109,15 @@ export function AppDropdownCombobox({
   onSuffixButtonClick?: () => void;
   suffixButtonClassName?: string;
   blankInputWhenNoSelection?: boolean;
+  onOptionAdded?: () => void;
+  onOptionDeleted?: () => void;
 }) {
   const router = useRouter();
   const titleId = useId();
   const listboxId = useId();
   const inputId = `${name}_input`;
   const inputRef = useRef<HTMLInputElement>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const mergedOptions = useMemo(() => {
@@ -158,6 +165,11 @@ export function AppDropdownCombobox({
   );
   const [listOpen, setListOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  const [listPosition, setListPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
 
   const typeRows = useMemo(
     () => selectOptions.filter((o) => o.value !== ""),
@@ -214,6 +226,31 @@ export function AppDropdownCombobox({
     [],
   );
 
+  const updateListPosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    setListPosition({
+      top: rect.bottom + 2,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!listOpen || !portalList) {
+      setListPosition(null);
+      return;
+    }
+    updateListPosition();
+    window.addEventListener("resize", updateListPosition);
+    window.addEventListener("scroll", updateListPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateListPosition);
+      window.removeEventListener("scroll", updateListPosition, true);
+    };
+  }, [listOpen, portalList, updateListPosition, filtered.length]);
+
   const pick = useCallback(
     (row: { value: string; label: string }) => {
       onChange(row.value);
@@ -240,6 +277,7 @@ export function AppDropdownCombobox({
   function handleInputFocus() {
     clearBlurTimer();
     setListOpen(true);
+    if (portalList) updateListPosition();
   }
 
   function handleInputBlur() {
@@ -310,6 +348,7 @@ export function AppDropdownCombobox({
       }
       setDraft("");
       router.refresh();
+      if (onOptionAdded) onOptionAdded();
     } finally {
       setBusy(false);
     }
@@ -326,6 +365,7 @@ export function AppDropdownCombobox({
       }
       if (selectedValue === v) onClearSelection();
       router.refresh();
+      if (onOptionDeleted) onOptionDeleted();
     } finally {
       setBusy(false);
     }
@@ -339,7 +379,7 @@ export function AppDropdownCombobox({
         </label>
       )}
       <input type="hidden" name={name} value={value} />
-      <div className={fieldWrap}>
+      <div ref={anchorRef} className={fieldWrap}>
         <div className={inputRowShellClassName}>
           <input
             ref={inputRef}
@@ -360,6 +400,7 @@ export function AppDropdownCombobox({
             onChange={(e) => {
               setQuery(e.target.value);
               setListOpen(true);
+              if (portalList) updateListPosition();
             }}
             onFocus={handleInputFocus}
             onBlur={handleInputBlur}
@@ -385,7 +426,7 @@ export function AppDropdownCombobox({
             +
           </button>
         </div>
-        {listOpen && filtered.length > 0 ? (
+        {listOpen && filtered.length > 0 && !portalList ? (
           <ul
             id={listboxId}
             role="listbox"
@@ -412,6 +453,41 @@ export function AppDropdownCombobox({
           </ul>
         ) : null}
       </div>
+      {mounted && listOpen && filtered.length > 0 && portalList && listPosition
+        ? createPortal(
+            <ul
+              id={listboxId}
+              role="listbox"
+              style={{
+                position: "fixed",
+                top: listPosition.top,
+                left: listPosition.left,
+                width: listPosition.width,
+              }}
+              className={`max-h-48 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-900 ${listZIndexClass}`}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              {filtered.map((o, i) => (
+                <li
+                  key={o.value || "__empty__"}
+                  id={`${listboxId}-opt-${i}`}
+                  role="option"
+                  aria-selected={i === highlight}
+                  className={`cursor-pointer px-3 py-2 text-sm ${
+                    i === highlight
+                      ? "bg-sky-100 text-zinc-900 dark:bg-sky-900/40 dark:text-zinc-100"
+                      : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  }`}
+                  onMouseEnter={() => setHighlight(i)}
+                  onMouseDown={() => pick(o)}
+                >
+                  {o.label || o.value || emptySelectLabel}
+                </li>
+              ))}
+            </ul>,
+            document.body,
+          )
+        : null}
       {mounted && open
         ? createPortal(
             <div

@@ -1,20 +1,10 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { signOut } from "@/lib/actions/auth";
+import { ensureProfileAccess, isSuperAdminEmail } from "@/lib/auth/ensure-access";
 import { SidebarAside } from "./sidebar-aside";
 import { SidebarToggleButton } from "./sidebar-toggle-button";
-
-const nav = [
-  { href: "/dashboard", label: "Dashboard" },
-  { href: "/dashboard/clients", label: "Client Master" },
-  { href: "/dashboard/finance", label: "Finance Management" },
-  { href: "/dashboard/bis-projects", label: "BIS Existing Licenses" },
-  { href: "/dashboard/bis-new-applications", label: "BIS New Application" },
-  { href: "/dashboard/is-code-master", label: "IS Code Master" },
-  { href: "/dashboard/products", label: "Product & Services" },
-  { href: "/dashboard/settings/company", label: "Company Settings" },
-  { href: "/dashboard/settings/app", label: "App Settings" },
-];
+import { SidebarNav } from "./sidebar-nav";
+import { SidebarFooterNav } from "./sidebar-footer-nav";
 
 export async function Sidebar() {
   const supabase = await createClient();
@@ -22,46 +12,49 @@ export async function Sidebar() {
     data: { user },
   } = await supabase.auth.getUser();
 
+  const access = user ? await ensureProfileAccess(supabase, user) : null;
+  const isAdmin = Boolean(access?.isAdmin || (user && isSuperAdminEmail(user.email)));
+
   return (
     <SidebarAside>
-      <div className="flex items-start gap-2 border-b border-zinc-200 px-5 py-5 dark:border-zinc-800">
-        <div className="min-w-0 flex-1">
-          <Link
-            href="/dashboard"
-            className="block text-[15px] font-semibold leading-snug text-zinc-900 dark:text-zinc-50"
-          >
-            Smart Consultancy Manager
-          </Link>
-        </div>
+      <div className="flex items-center justify-between border-b border-zinc-100 px-5 py-5 dark:border-zinc-800/60">
+        <Link href="/dashboard" className="flex min-w-0 items-center gap-2.5">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-tr from-sky-600 to-indigo-600 shadow-md">
+            <svg
+              className="h-4.5 w-4.5 text-white"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+              />
+            </svg>
+          </div>
+          <span className="truncate text-[15px] font-extrabold tracking-tight text-zinc-950 dark:text-white">
+            Smart Consultancy
+          </span>
+        </Link>
         <SidebarToggleButton />
       </div>
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-4 text-sm">
-        {nav.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="block rounded-md px-3 py-2 text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800 dark:hover:text-white"
-          >
-            {item.label}
-          </Link>
-        ))}
-      </nav>
-      <div className="border-t border-zinc-200 p-3 dark:border-zinc-800">
-        <p
-          className="mb-3 truncate px-1 text-xs text-zinc-500 dark:text-zinc-400"
-          title={user?.email ?? ""}
-        >
-          {user?.email ?? "—"}
-        </p>
-        <form action={signOut}>
-          <button
-            type="submit"
-            className="w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-left text-sm font-medium text-zinc-800 shadow-sm transition hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:bg-zinc-800"
-          >
-            Sign out
-          </button>
-        </form>
-      </div>
+
+      <SidebarNav
+        isAdmin={isAdmin}
+        allowedModules={access?.modules}
+      />
+
+      <SidebarFooterNav
+        userName={
+          access?.profile.full_name?.trim() ||
+          user?.email?.split("@")[0] ||
+          "User"
+        }
+        userEmail={user?.email ?? ""}
+        isAdmin={isAdmin}
+      />
     </SidebarAside>
   );
 }
