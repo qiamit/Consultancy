@@ -90,22 +90,22 @@ const INDUSTRIES = ["Manufacturing", "Electronics & IT", "Testing Labs", "Jewell
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen xl:h-screen flex flex-col xl:overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950 xl:h-screen xl:overflow-hidden">
       <SiteNavbar />
 
-      {/* Main fills remaining height exactly */}
-      <main className="flex-1 pt-[65px] flex flex-col xl:overflow-hidden">
-        <div className="flex-1 flex flex-col xl:overflow-hidden">
+      {/* Main fills remaining height on desktop; scroll naturally on mobile/tablet */}
+      <main className="flex min-h-0 flex-1 flex-col pt-[65px] xl:overflow-hidden">
+        <div className="flex min-h-0 flex-1 flex-col xl:overflow-hidden">
 
           {/* ── 3-COLUMN LAYOUT: Left brand | Center services | Right news ── */}
-          <div className="flex-1 grid grid-cols-1 xl:grid-cols-[25%_1fr_25%] gap-0 xl:overflow-hidden">
+          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2 xl:grid-cols-[minmax(240px,28%)_minmax(0,1fr)_minmax(240px,28%)] gap-0 xl:overflow-hidden">
 
             {/* ── COL 1: Brand & Stats ── */}
-            <div className="relative flex flex-col justify-between px-5 py-6 border-b xl:border-b-0 xl:border-r border-zinc-200 dark:border-zinc-800 bg-gradient-to-b from-zinc-100 dark:from-zinc-900 via-white dark:via-zinc-900 to-zinc-50 dark:to-zinc-950">
+            <div className="relative flex flex-col justify-between px-4 py-5 sm:px-5 sm:py-6 border-b lg:border-b-0 lg:border-r border-zinc-200 dark:border-zinc-800 bg-gradient-to-b from-zinc-100 dark:from-zinc-900 via-white dark:via-zinc-900 to-zinc-50 dark:to-zinc-950">
               <div className="absolute w-72 h-72 bg-blue-600/10 rounded-full -left-20 -top-10 blur-3xl pointer-events-none" />
               <div className="absolute w-48 h-48 bg-emerald-500/8 rounded-full -right-10 bottom-24 blur-3xl pointer-events-none" />
 
-              <div className="relative flex flex-col items-center justify-center text-center w-full max-w-[400px] xl:max-w-[320px] mx-auto gap-3 py-2">
+              <div className="relative flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto gap-3 py-2 xl:max-w-[320px]">
                 {/* Company name */}
                 <div>
                   <h1 className="text-3xl xl:text-[2rem] font-bold text-zinc-900 dark:text-zinc-50 leading-tight tracking-tight">
@@ -187,7 +187,7 @@ export default function HomePage() {
             </div>
 
             {/* ── COL 2: Services KPI Grid ── */}
-            <div className="flex flex-col px-5 py-5 xl:overflow-y-auto bg-gradient-to-br from-zinc-50 dark:from-zinc-950 to-zinc-100 dark:to-zinc-900 border-b xl:border-b-0 border-zinc-200 dark:border-zinc-800">
+            <div className="flex flex-col px-4 py-5 sm:px-5 sm:py-6 lg:overflow-y-auto xl:overflow-y-auto bg-gradient-to-br from-zinc-50 dark:from-zinc-950 to-zinc-100 dark:to-zinc-900 border-b lg:border-b-0 xl:border-b-0 border-zinc-200 dark:border-zinc-800">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-zinc-900 dark:text-zinc-50 font-bold text-base">Certification Solutions</p>
@@ -407,8 +407,8 @@ export default function HomePage() {
               </div>
             </div>
 
-            {/* ── COL 3: News (30%) ── */}
-            <div className="flex flex-col border-t xl:border-t-0 xl:border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 min-h-[400px] xl:min-h-0 xl:overflow-hidden">
+            {/* ── COL 3: News ── */}
+            <div className="flex flex-col lg:col-span-2 xl:col-span-1 border-t lg:border-t xl:border-t-0 xl:border-l border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 min-h-[360px] sm:min-h-[400px] xl:min-h-0 xl:overflow-hidden">
               <Suspense fallback={<LatestUpdatesSkeleton />}>
                 <LatestUpdatesPanel limit={8} />
               </Suspense>
@@ -418,9 +418,9 @@ export default function HomePage() {
         </div>
 
         {/* Footer strip */}
-        <footer className="flex-shrink-0 border-t border-zinc-200 dark:border-zinc-800 py-2 px-6 bg-white dark:bg-zinc-900 flex items-center justify-between">
-          <p className="text-zinc-500 dark:text-zinc-400 text-[10px]">© 2026 Quality Engineering · Plot No 7A, Avinash Logistic Park, SKS Road, Siltara Industrial Area Phase 2, Raipur – 493221, CG</p>
-          <div className="flex items-center gap-3 text-[10px]">
+        <footer className="flex-shrink-0 border-t border-zinc-200 dark:border-zinc-800 py-3 px-4 sm:px-6 bg-white dark:bg-zinc-900 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-zinc-500 dark:text-zinc-400 text-[10px] leading-relaxed">© 2026 Quality Engineering · Plot No 7A, Avinash Logistic Park, SKS Road, Siltara Industrial Area Phase 2, Raipur – 493221, CG</p>
+          <div className="flex flex-wrap items-center gap-3 text-[10px]">
             <a href="mailto:info@qengineering.in" className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">info@qengineering.in</a>
             <span className="text-zinc-300 dark:text-zinc-600">·</span>
             <a href="https://www.qengineering.in" className="text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">www.qengineering.in</a>

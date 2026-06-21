@@ -5,6 +5,16 @@ import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import { OslSampleRequirementsTableEditor } from "@/components/dashboard/osl-sample-requirements-table-editor";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  SplitModalPaneTabs,
+  type SplitModalPane,
+} from "@/components/dashboard/modals/split-modal-pane-tabs";
+import {
+  splitModalBodyClass,
+  splitModalEditorPaneClass,
+  splitModalPreviewPaneClass,
+  splitModalSettingsPaneClass,
+} from "@/components/dashboard/modals/split-modal-layout";
 import { ClientMasterEmbedModal } from "@/components/modules/finance/client-master-embed-modal";
 import { createClient } from "@/lib/supabase/client";
 import {
@@ -91,6 +101,7 @@ export function OslSampleRequirementsModal({
     () => [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
   );
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
+  const [mobilePane, setMobilePane] = useState<SplitModalPane>("editor");
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
   const [addClientForRowId, setAddClientForRowId] = useState<string | null>(null);
@@ -289,12 +300,15 @@ export function OslSampleRequirementsModal({
           </div>
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-x-auto">
-          <div
-            className={`flex min-h-0 min-w-0 flex-col border-r border-zinc-800 bg-zinc-900 ${
-              settingsPanel ? "w-[calc((100%-18rem)/2)]" : "w-1/2"
-            }`}
-          >
+        <SplitModalPaneTabs
+          active={mobilePane}
+          onChange={setMobilePane}
+          editorLabel="Sample Requirements"
+          previewLabel="Print Preview"
+        />
+
+        <div className={splitModalBodyClass()}>
+          <div className={splitModalEditorPaneClass(mobilePane, Boolean(settingsPanel))}>
             <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -330,23 +344,19 @@ export function OslSampleRequirementsModal({
             </div>
           </div>
 
-          <div
-            className={`flex min-w-0 flex-col bg-zinc-600 ${
-              settingsPanel ? "w-[calc((100%-18rem)/2)]" : "w-1/2"
-            }`}
-          >
+          <div className={splitModalPreviewPaneClass(mobilePane, Boolean(settingsPanel))}>
             <div className="border-b border-zinc-700/80 px-4 py-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
                 Print Preview
               </p>
             </div>
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
               <iframe
                 ref={iframeRef}
                 title={labels.iframeTitle}
-                className="mx-auto border-0 bg-white shadow-2xl"
+                className="mx-auto max-w-full border-0 bg-white shadow-2xl"
                 style={{
-                  width: `${iframeSize.widthMm}mm`,
+                  width: `min(100%, ${iframeSize.widthMm}mm)`,
                   minHeight: `${iframeSize.heightMm}mm`,
                 }}
               />
@@ -354,7 +364,7 @@ export function OslSampleRequirementsModal({
           </div>
 
           {settingsPanel && (
-            <div className="w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-4">
+            <div className={splitModalSettingsPaneClass()}>
               <DocumentPrintSettingsPanel
                 mode={settingsPanel}
                 settings={printSettings}

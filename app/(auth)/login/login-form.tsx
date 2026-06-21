@@ -5,7 +5,7 @@ import { useState } from "react";
 import { AuthShell } from "@/components/auth/AuthShell";
 import { ConfigBanner } from "@/components/auth/ConfigBanner";
 import { createClient } from "@/lib/supabase/client";
-import { isSupabaseConfigured } from "@/lib/env";
+import { isSupabaseConfigured, formatAuthError } from "@/lib/env";
 
 export function LoginForm() {
   const router = useRouter();
@@ -37,7 +37,7 @@ export function LoginForm() {
     });
     setLoading(false);
     if (signInError) {
-      setError(signInError.message);
+      setError(formatAuthError(signInError.message));
       return;
     }
     router.replace(next);

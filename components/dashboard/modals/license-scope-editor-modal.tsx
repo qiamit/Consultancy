@@ -7,6 +7,16 @@ import {
   LicenseScopeTableEditor,
 } from "@/components/modules/bis-projects/license-scope-table-editor";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  SplitModalPaneTabs,
+  type SplitModalPane,
+} from "@/components/dashboard/modals/split-modal-pane-tabs";
+import {
+  splitModalBodyClass,
+  splitModalEditorPaneClass,
+  splitModalPreviewPaneClass,
+  splitModalSettingsPaneClass,
+} from "@/components/dashboard/modals/split-modal-layout";
 import type { LicenseScopeFormat } from "@/lib/application-checklist-notes";
 import {
   defaultLicenseScopeRows,
@@ -92,6 +102,7 @@ export function LicenseScopeEditorModal({
     defaultDeclarationPrintSettings(),
   );
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
+  const [mobilePane, setMobilePane] = useState<SplitModalPane>("editor");
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -264,12 +275,15 @@ export function LicenseScopeEditorModal({
           </button>
         </div>
 
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-x-auto">
-          <div
-            className={`flex min-w-0 flex-col border-r border-zinc-800 bg-zinc-900 ${
-              settingsPanel ? "w-[calc((100%-18rem)/2)]" : "w-1/2"
-            }`}
-          >
+        <SplitModalPaneTabs
+          active={mobilePane}
+          onChange={setMobilePane}
+          editorLabel="License Scope"
+          previewLabel="Print Preview"
+        />
+
+        <div className={splitModalBodyClass()}>
+          <div className={splitModalEditorPaneClass(mobilePane, Boolean(settingsPanel))}>
             <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -314,18 +328,14 @@ export function LicenseScopeEditorModal({
             </div>
           </div>
 
-          <div
-            className={`flex min-w-0 flex-col bg-zinc-600 ${
-              settingsPanel ? "w-[calc((100%-18rem)/2)]" : "w-1/2"
-            }`}
-          >
-            <div className="flex-1 overflow-y-auto p-6">
+          <div className={splitModalPreviewPaneClass(mobilePane, Boolean(settingsPanel))}>
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
               <iframe
                 ref={iframeRef}
                 title="Declaration print preview"
-                className="mx-auto border-0 bg-white shadow-2xl"
+                className="mx-auto max-w-full border-0 bg-white shadow-2xl"
                 style={{
-                  width: `${iframeSize.widthMm}mm`,
+                  width: `min(100%, ${iframeSize.widthMm}mm)`,
                   minHeight: `${iframeSize.heightMm}mm`,
                 }}
               />
@@ -333,7 +343,7 @@ export function LicenseScopeEditorModal({
           </div>
 
           {settingsPanel && (
-            <div className="w-72 shrink-0 overflow-y-auto border-l border-zinc-800 bg-zinc-900 p-4">
+            <div className={splitModalSettingsPaneClass()}>
               <DocumentPrintSettingsPanel
                 mode={settingsPanel}
                 settings={printSettings}
