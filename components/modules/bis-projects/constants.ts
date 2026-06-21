@@ -17,13 +17,8 @@ export const BILLING_FREQUENCIES = [
   "Based on Work",
 ] as const;
 
-export const PROJECT_KIND_OPTIONS: { value: string; label: string }[] = [
-  { value: "new_license", label: "License" },
-  { value: "application", label: "Application" },
-  { value: "inclusion", label: "Inclusion" },
-  { value: "renewal", label: "Renewal (legacy)" },
-  { value: "maintenance", label: "Maintenance (legacy)" },
-];
+/** No built-in project kinds — manage via BIS Projects form dropdown (+). */
+export const PROJECT_KIND_OPTIONS: { value: string; label: string }[] = [];
 
 export function projectKindLabel(value: string): string {
   return (
@@ -35,7 +30,7 @@ export function projectKindLabel(value: string): string {
 export function emptyForm(): Record<string, string> {
   return {
     id: "",
-    project_kind: "new_license",
+    project_kind: "",
     client_id: "",
     is_code_id: "",
     cm_l_digits: "",
@@ -61,7 +56,7 @@ export function rowToForm(r: BisProjectMasterRow): Record<string, string> {
   const scope = parseBisProjectLicenseScopeNotes(r.notes);
   return {
     id: r.id,
-    project_kind: r.project_kind ?? "new_license",
+    project_kind: r.project_kind ?? "",
     client_id: r.client_id ?? "",
     is_code_id: r.is_code_id ?? "",
     cm_l_digits: r.cm_l_digits ?? "",

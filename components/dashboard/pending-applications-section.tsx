@@ -4,7 +4,13 @@ import React from "react";
 import { useMemo, useState, useEffect, useTransition, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
+import { uploadTechnicalStaffDocument } from "@/lib/storage/technical-staff-documents";
 import { updateBisProjectTargetDate, updateBisProjectNotes } from "@/lib/actions/bis-projects";
+import {
+  updateBisNewApplicationNotes,
+  updateBisNewApplicationTargetDate,
+} from "@/lib/actions/bis-new-applications";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { ClientSnapshotModal } from "@/components/dashboard/modals/client-snapshot-modal";
 import { ClientEditModal } from "@/components/dashboard/modals/client-edit-modal";
@@ -12,6 +18,7 @@ import { ConvertToLicenseModal } from "@/components/dashboard/modals/convert-to-
 import { LicenseScopeEditorModal } from "@/components/dashboard/modals/license-scope-editor-modal";
 import { OslSampleRequirementsModal } from "@/components/dashboard/modals/osl-sample-requirements-modal";
 import { TopManagementModal } from "@/components/dashboard/modals/top-management-modal";
+import { TechnicalStaffModal } from "@/components/dashboard/modals/technical-staff-modal";
 import { IsCodeEditModal } from "@/components/dashboard/modals/is-code-edit-modal";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import {
@@ -26,6 +33,8 @@ import {
 import { parseBisProjectLicenseScopeNotes } from "@/lib/bis-project-license-scope-notes";
 import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
 import type { TopManagementStored } from "@/lib/top-management";
+import { isApplicationProjectKind, isPendingApplicationRow, type BisApplicationSource } from "@/lib/bis-project-kind";
+import type { TechnicalStaffStored } from "@/lib/technical-staff";
 import type { LicenseScopeSavePayload } from "@/components/dashboard/modals/license-scope-editor-modal";
 import {
   BIS_APPLICATION_DROPDOWN_KEYS,
@@ -116,6 +125,7 @@ type ApplicationRow = {
   is_code_title: string | null;
   is_code_id: string | null;
   notes: string | null;
+  source?: BisApplicationSource;
 };
 
 type ChecklistRow = {
@@ -170,14 +180,12 @@ function ParticularCell({
       try {
         const supabase = createClient();
         const path = `bis-projects/${projectId}/${item.id}/${file.name}`;
-        const { data, error } = await supabase.storage
-          .from("project-documents")
-          .upload(path, file, { upsert: true });
-        if (error) { window.alert("Upload failed: " + error.message); return; }
-        const { data: urlData } = supabase.storage
-          .from("project-documents")
-          .getPublicUrl(data.path);
-        onUpdate({ content: urlData.publicUrl });
+        const result = await uploadTechnicalStaffDocument(supabase, path, file);
+        if ("error" in result) {
+          window.alert("Upload failed: " + result.error);
+          return;
+        }
+        onUpdate({ content: result.ref });
       } finally {
         setUploading(false);
         e.target.value = "";
@@ -201,18 +209,19 @@ function ParticularCell({
           <input type="file" className="hidden" onChange={(e) => void handleFile(e)} disabled={uploading || item.done} />
         </label>
         {item.content && (
-          <a
-            href={item.content}
-            target="_blank"
-            rel="noopener noreferrer"
+          <StorageDocumentLink
+            value={item.content}
             className="inline-flex items-center gap-1 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1.5 text-xs font-medium text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-            View
-          </a>
+            label={
+              <>
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                </svg>
+                View
+              </>
+            }
+          />
         )}
       </div>
     );
@@ -526,6 +535,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [showOslSampleRequirements, setShowOslSampleRequirements] = useState(false);
   const [showPiSampleRequirements, setShowPiSampleRequirements] = useState(false);
   const [showTopManagement, setShowTopManagement] = useState(false);
+  const [showTechnicalStaff, setShowTechnicalStaff] = useState(false);
   const [licenseScope, setLicenseScope] = useState(() =>
     initialScope.scopeType === "plain"
       ? initialScope.plainText || initialNotes.licenseScope
@@ -546,8 +556,46 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [topManagement, setTopManagement] = useState<TopManagementStored[]>(
     initialNotes.topManagement,
   );
+  const [technicalStaff, setTechnicalStaff] = useState<TechnicalStaffStored[]>(
+    initialNotes.technicalStaff,
+  );
   const [applicationMeta, setApplicationMeta] = useState<ApplicationMeta>(initialNotes.meta);
   const [saving, startSave] = useTransition();
+  const saveNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingNotesSaveRef = useRef<{
+    items?: ChecklistRow[];
+    meta?: ApplicationMeta;
+    licenseScope?: string;
+    licenseScopeFormat?: LicenseScopeFormat;
+    licenseScopeRows?: LicenseScopeTableRow[];
+    oslSampleRequirements?: OslSampleRequirementStored[];
+    piSampleRequirements?: OslSampleRequirementStored[];
+    topManagement?: TopManagementStored[];
+    technicalStaff?: TechnicalStaffStored[];
+  }>({});
+
+  const flushNotesSave = useCallback(() => {
+    const overrides = pendingNotesSaveRef.current;
+    pendingNotesSaveRef.current = {};
+    startSave(async () => {
+      const payload = buildApplicationChecklistPayload({
+        items: overrides.items ?? items,
+        licenseScope: overrides.licenseScope ?? licenseScope,
+        licenseScopeFormat: overrides.licenseScopeFormat ?? licenseScopeFormat,
+        licenseScopeRows: overrides.licenseScopeRows ?? licenseScopeRows,
+        oslSampleRequirements: overrides.oslSampleRequirements ?? oslSampleRequirements,
+        piSampleRequirements: overrides.piSampleRequirements ?? piSampleRequirements,
+        topManagement: overrides.topManagement ?? topManagement,
+        technicalStaff: overrides.technicalStaff ?? technicalStaff,
+        meta: overrides.meta ?? applicationMeta,
+      });
+      if (row.source === "bis_new_applications") {
+        await updateBisNewApplicationNotes(row.id, payload);
+      } else {
+        await updateBisProjectNotes(row.id, payload);
+      }
+    });
+  }, [row.id, row.source, items, licenseScope, licenseScopeFormat, licenseScopeRows, oslSampleRequirements, piSampleRequirements, topManagement, technicalStaff, applicationMeta]);
 
   const saveNotesToDb = useCallback(
     (overrides?: {
@@ -559,23 +607,34 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       oslSampleRequirements?: OslSampleRequirementStored[];
       piSampleRequirements?: OslSampleRequirementStored[];
       topManagement?: TopManagementStored[];
+      technicalStaff?: TechnicalStaffStored[];
     }) => {
-      startSave(async () => {
-        const payload = buildApplicationChecklistPayload({
-          items: overrides?.items ?? items,
-          licenseScope: overrides?.licenseScope ?? licenseScope,
-          licenseScopeFormat: overrides?.licenseScopeFormat ?? licenseScopeFormat,
-          licenseScopeRows: overrides?.licenseScopeRows ?? licenseScopeRows,
-          oslSampleRequirements: overrides?.oslSampleRequirements ?? oslSampleRequirements,
-          piSampleRequirements: overrides?.piSampleRequirements ?? piSampleRequirements,
-          topManagement: overrides?.topManagement ?? topManagement,
-          meta: overrides?.meta ?? applicationMeta,
-        });
-        await updateBisProjectNotes(row.id, payload);
-      });
+      pendingNotesSaveRef.current = {
+        ...pendingNotesSaveRef.current,
+        ...overrides,
+      };
+      if (saveNotesTimerRef.current) {
+        clearTimeout(saveNotesTimerRef.current);
+      }
+      saveNotesTimerRef.current = setTimeout(() => {
+        saveNotesTimerRef.current = null;
+        flushNotesSave();
+      }, 500);
     },
-    [row.id, items, licenseScope, licenseScopeFormat, licenseScopeRows, oslSampleRequirements, piSampleRequirements, topManagement, applicationMeta],
+    [flushNotesSave],
   );
+
+  useEffect(() => {
+    return () => {
+      if (saveNotesTimerRef.current) {
+        clearTimeout(saveNotesTimerRef.current);
+        saveNotesTimerRef.current = null;
+      }
+      if (Object.keys(pendingNotesSaveRef.current).length > 0) {
+        flushNotesSave();
+      }
+    };
+  }, [flushNotesSave]);
 
   const reloadOptions = useCallback(async () => {
     const supabase = createClient();
@@ -633,6 +692,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
             setOslSampleRequirements(parsed.oslSampleRequirements);
             setPiSampleRequirements(parsed.piSampleRequirements);
             setTopManagement(parsed.topManagement);
+            setTechnicalStaff(parsed.technicalStaff);
             setApplicationMeta(parsed.meta);
           }),
       );
@@ -724,6 +784,11 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   function saveTopManagement(rows: TopManagementStored[]) {
     setTopManagement(rows);
     saveNotesToDb({ topManagement: rows });
+  }
+
+  function saveTechnicalStaff(rows: TechnicalStaffStored[]) {
+    setTechnicalStaff(rows);
+    saveNotesToDb({ technicalStaff: rows });
   }
 
   function buildDeclarationData() {
@@ -1076,6 +1141,20 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
                 Top Management
               </span>
             </button>
+            <button
+              type="button"
+              onClick={() => setShowTechnicalStaff(true)}
+              className="group inline-flex max-w-[200px] flex-col items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-center shadow-sm transition hover:border-teal-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-teal-600"
+            >
+              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+                </svg>
+              </div>
+              <span className="text-[11px] font-semibold leading-tight text-zinc-800 dark:text-zinc-100">
+                Technical Staff
+              </span>
+            </button>
           </div>
 
           <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
@@ -1299,6 +1378,19 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         />
       )}
 
+      {showTechnicalStaff && (
+        <TechnicalStaffModal
+          projectId={row.id}
+          letterData={buildDeclarationData()}
+          isCodeNumber={isCode?.is_number ?? row.is_number}
+          isCodeId={row.is_code_id}
+          revisionYear={isCode?.revision_year ?? row.is_revision_year}
+          rows={technicalStaff}
+          onSave={saveTechnicalStaff}
+          onClose={() => setShowTechnicalStaff(false)}
+        />
+      )}
+
     </div>
   );
 }
@@ -1322,10 +1414,12 @@ function toInputDate(dateStr: string | null): string {
 function TargetDateCell({
   projectId,
   targetDate,
+  source = "bis_projects",
   onUpdate,
 }: {
   projectId: string;
   targetDate: string | null;
+  source?: BisApplicationSource;
   onUpdate: (id: string, date: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
@@ -1344,7 +1438,10 @@ function TargetDateCell({
     }
     setError(null);
     startSave(async () => {
-      const res = await updateBisProjectTargetDate(projectId, value);
+      const res =
+        source === "bis_new_applications"
+          ? await updateBisNewApplicationTargetDate(projectId, value)
+          : await updateBisProjectTargetDate(projectId, value);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -1418,7 +1515,13 @@ function TargetDateCell({
   );
 }
 
-export function PendingApplicationsSection({ rows }: { rows: ApplicationRow[] }) {
+export function PendingApplicationsSection({
+  rows,
+  variant = "pending_applications",
+}: {
+  rows: ApplicationRow[];
+  variant?: "pending_applications" | "expired_licenses";
+}) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
@@ -1431,10 +1534,13 @@ export function PendingApplicationsSection({ rows }: { rows: ApplicationRow[] })
   const [targetDates, setTargetDates] = useState<Record<string, string>>({});
   const [convertedIds, setConvertedIds] = useState<ReadonlySet<string>>(() => new Set());
 
-  const visibleRows = useMemo(
-    () => rows.filter((r) => !convertedIds.has(r.id)),
-    [rows, convertedIds],
-  );
+  const visibleRows = useMemo(() => {
+    const base =
+      variant === "pending_applications"
+        ? rows.filter(isPendingApplicationRow)
+        : rows.filter((r) => !isApplicationProjectKind(r.project_kind));
+    return base.filter((r) => !convertedIds.has(r.id));
+  }, [rows, convertedIds, variant]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -1456,7 +1562,9 @@ export function PendingApplicationsSection({ rows }: { rows: ApplicationRow[] })
     <section className="rounded-2xl border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       {/* Section header */}
       <div className="flex items-center gap-3 border-b border-zinc-200 px-6 py-4 dark:border-zinc-800">
-        <h2 className="flex-1 text-base font-bold text-zinc-900 dark:text-white">Pending Applications</h2>
+        <h2 className="flex-1 text-base font-bold text-zinc-900 dark:text-white">
+          {variant === "expired_licenses" ? "Expired Licenses" : "Pending Applications"}
+        </h2>
         <button
           type="button"
           onClick={() => setChatOpen(true)}
@@ -1526,27 +1634,33 @@ export function PendingApplicationsSection({ rows }: { rows: ApplicationRow[] })
       <div className="max-h-80 overflow-y-auto overflow-x-auto">
         {visibleRows.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-zinc-500">
-            No pending applications or projects.
+            {variant === "expired_licenses"
+              ? "No expired licenses found."
+              : "No pending applications or projects."}
           </p>
         ) : filtered.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-zinc-500">
             No applications match your search.
           </p>
         ) : (
-          <table className="dashboard-section-table w-full min-w-[820px] text-sm">
+          <table className="dashboard-section-table w-full min-w-[980px] text-sm">
             <thead className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/60">
               <tr>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Client Name</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">IS Number</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Start Date</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Target Date</th>
+                {variant === "expired_licenses" && (
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">License Validity</th>
+                )}
                 <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Convert to License</th>
                 <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {paginated.map((r) => {
-                const isApplication = r.project_kind === "application";
+                const convertMode =
+                  variant === "expired_licenses" ? "update_license" : "convert_application";
                 return (
                 <tr key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
                   <td className="px-4 py-3 text-left">
@@ -1578,40 +1692,38 @@ export function PendingApplicationsSection({ rows }: { rows: ApplicationRow[] })
                     <TargetDateCell
                       projectId={r.id}
                       targetDate={targetDates[r.id] ?? r.target_date}
+                      source={r.source}
                       onUpdate={(id, date) => setTargetDates((prev) => ({ ...prev, [id]: date }))}
                     />
                   </td>
+                  {variant === "expired_licenses" && (
+                    <td className="px-4 py-3 text-xs text-zinc-700 dark:text-zinc-300">
+                      {formatDate(r.license_validity_date)}
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-center">
-                    {isApplication ? (
-                      <button
-                        type="button"
-                        onClick={() => setConvertRow(r)}
-                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                        </svg>
-                        Convert
-                      </button>
-                    ) : (
-                      <span className="text-xs text-zinc-400">—</span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setConvertRow(r)}
+                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                      {convertMode === "update_license" ? "Renew" : "Convert"}
+                    </button>
                   </td>
                   <td className="px-4 py-3 text-center">
-                    {isApplication ? (
-                      <button
-                        type="button"
-                        onClick={() => setApplyRow(r)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 dark:bg-sky-700 dark:hover:bg-sky-600"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                        </svg>
-                        Apply
-                      </button>
-                    ) : (
-                      <span className="text-xs text-zinc-400">—</span>
-                    )}
+                    <button
+                      type="button"
+                      onClick={() => setApplyRow(r)}
+                      className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 dark:bg-sky-700 dark:hover:bg-sky-600"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                      </svg>
+                      Apply
+                    </button>
                   </td>
                 </tr>
               );
@@ -1634,6 +1746,8 @@ export function PendingApplicationsSection({ rows }: { rows: ApplicationRow[] })
             ? `${convertRow.is_number}${convertRow.is_revision_year ? `: ${convertRow.is_revision_year}` : ""}`
             : "—"
         }
+        mode={variant === "expired_licenses" ? "update_license" : "convert_application"}
+        source={convertRow.source ?? "bis_projects"}
         onClose={() => setConvertRow(null)}
         onConverted={() => {
           setConvertedIds((prev) => new Set(prev).add(convertRow.id));

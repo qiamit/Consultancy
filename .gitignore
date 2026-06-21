@@ -33,6 +33,11 @@
 .cursor/
 .claude/
 ~$*
+*.local
+
+# local-only Cursor agent artifacts
+agent-transcripts/
+mcps/
 
 # debug
 npm-debug.log*
@@ -53,6 +58,7 @@ supabase/.env
 
 # vercel
 .vercel
+.vercelignore.local
 
 # typescript
 *.tsbuildinfo

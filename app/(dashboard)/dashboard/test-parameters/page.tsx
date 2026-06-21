@@ -2,13 +2,14 @@ import { Suspense } from "react";
 import { TestParameterMaster } from "@/components/modules/test-parameter-master";
 import { formatIsCodeRevisionLabel } from "@/components/modules/test-parameter-master/constants";
 import type { IsCodeComboboxOption } from "@/components/modules/bis-projects/is-code-combobox";
+import { loadIsCodeFormDropdownOptions } from "@/lib/data/is-code-form-dropdowns";
 import { createClient } from "@/lib/supabase/server";
 import type { IsCodeMasterRow } from "@/lib/types/is-code-master";
 import type { TestParameterMasterRow } from "@/lib/types/test-parameter-master";
 
 function MasterFallback() {
   return (
-    <div className="mx-auto max-w-[1400px] animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="w-full animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
       Loading Test Parameter…
     </div>
   );
@@ -31,8 +32,11 @@ export default async function TestParametersPage({
   const sp = await searchParams;
   const supabase = await createClient();
 
-  const [{ data: parameters, error: paramError }, { data: codes }] =
-    await Promise.all([
+  const [
+    { data: parameters, error: paramError },
+    { data: codes },
+    isCodeFormDropdowns,
+  ] = await Promise.all([
       supabase
         .from("test_parameters")
         .select(
@@ -43,6 +47,7 @@ export default async function TestParametersPage({
         .from("is_codes")
         .select("id, is_number, revision_year, is_code_title")
         .order("is_number", { ascending: true }),
+      loadIsCodeFormDropdownOptions(supabase),
     ]);
 
   type ParamDb = Omit<TestParameterMasterRow, "is_codes"> & {
@@ -89,6 +94,7 @@ export default async function TestParametersPage({
         dbErrorCode={firstSearchParam(sp, "db_code")}
         dbErrorHint={firstSearchParam(sp, "db_hint")}
         isCodeOptions={isCodeOptions}
+        isCodeFormDropdowns={isCodeFormDropdowns}
       />
     </Suspense>
   );

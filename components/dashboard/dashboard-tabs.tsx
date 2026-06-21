@@ -52,6 +52,7 @@ type ApplicationRow = {
   is_code_title: string | null;
   is_code_id: string | null;
   notes: string | null;
+  source?: "bis_projects" | "bis_new_applications";
 };
 
 type BisRow = {
@@ -666,10 +667,11 @@ export function DashboardTabs({
 
         {activeTab === "expired" && (
           <PendingApplicationsSection
+            variant="expired_licenses"
             rows={expiredRows.map((r) => ({
               ...r,
               created_at: r.license_validity_date,
-              notes: null,
+              source: "bis_projects" as const,
             }))}
           />
         )}

@@ -26,6 +26,9 @@ export const DROPDOWN_KEY_IS_CODE_ASPECT = "is_code_master.aspect_of_is" as cons
 
 export const DROPDOWN_KEY_IS_CODE_UNIT = "is_code_master.unit" as const;
 
+export const DROPDOWN_KEY_TEST_PARAMETER_TEST_METHOD =
+  "test_parameter_master.test_method" as const;
+
 export const DROPDOWN_KEY_PRODUCT_UNIT = "product_master.unit" as const;
 
 export const DROPDOWN_KEY_PRODUCT_GST_RATE = "product_master.gst_rate" as const;
@@ -117,6 +120,16 @@ export const DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE =
 export const DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE =
   "bis_application.packaging_clause" as const;
 
+/** Technical Staff form — managed dropdown catalogs. */
+export const DROPDOWN_KEY_TECHNICAL_STAFF_DESIGNATION =
+  "technical_staff.designation" as const;
+
+export const DROPDOWN_KEY_TECHNICAL_STAFF_QUALIFICATION =
+  "technical_staff.educational_qualification" as const;
+
+export const DROPDOWN_KEY_TECHNICAL_STAFF_EXPERIENCE =
+  "technical_staff.experience_years" as const;
+
 export const BIS_APPLICATION_DROPDOWN_KEYS = [
   DROPDOWN_KEY_BIS_APPLICATION_BRANCH,
   DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_NAME,
@@ -128,4 +141,10 @@ export const BIS_APPLICATION_DROPDOWN_KEYS = [
   DROPDOWN_KEY_BIS_APPLICATION_NATURE_OF_INSPECTION,
   DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE,
   DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE,
+] as const;
+
+export const TECHNICAL_STAFF_DROPDOWN_KEYS = [
+  DROPDOWN_KEY_TECHNICAL_STAFF_DESIGNATION,
+  DROPDOWN_KEY_TECHNICAL_STAFF_QUALIFICATION,
+  DROPDOWN_KEY_TECHNICAL_STAFF_EXPERIENCE,
 ] as const;

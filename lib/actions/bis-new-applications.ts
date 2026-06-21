@@ -8,6 +8,10 @@ import {
   DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY,
   DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND,
 } from "@/lib/dropdown-keys";
+import {
+  isApplicationProjectKind,
+  licenseProjectKindDbValue,
+} from "@/lib/bis-project-kind";
 import { createClient } from "@/lib/supabase/server";
 
 function str(formData: FormData, key: string) {
@@ -32,13 +36,7 @@ function parseMoney(raw: string): number | null {
   return Math.round(n * 100) / 100;
 }
 
-const KINDS = new Set([
-  "new_license",
-  "application",
-  "inclusion",
-  "renewal",
-  "maintenance",
-]);
+const KINDS = new Set<string>();
 
 const STATUSES = new Set([
   "lead",
@@ -140,6 +138,15 @@ export async function saveBisNewApplicationMaster(formData: FormData) {
     allowedDropdownValues(supabase, DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND, KINDS),
     allowedDropdownValues(supabase, DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY, BILLING),
   ]);
+  if (id) {
+    const { data: existing } = await supabase
+      .from("bis_new_applications")
+      .select("project_kind")
+      .eq("id", id)
+      .maybeSingle();
+    const existingKind = (existing?.project_kind ?? "").trim();
+    if (existingKind) allowedKinds.add(existingKind);
+  }
   if (!allowedKinds.has(project_kind))
     redirect(`/dashboard/bis-new-applications?error=${encodeURIComponent("kind")}`);
 
@@ -615,4 +622,127 @@ export async function importBisNewApplicationsMaster(
 
   revalidatePath("/dashboard/bis-new-applications");
   return { ok: true, inserted: builtRows.length };
+}
+
+export async function updateBisNewApplicationNotes(
+  applicationId: string,
+  notes: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = applicationId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid application" };
+
+  const { error } = await supabase
+    .from("bis_new_applications")
+    .update({ notes, updated_at: new Date().toISOString() })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function updateBisNewApplicationTargetDate(
+  applicationId: string,
+  targetDate: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = applicationId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid application" };
+
+  const trimmedDate = targetDate?.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+    return { ok: false, error: "Invalid date" };
+  }
+
+  const { error } = await supabase
+    .from("bis_new_applications")
+    .update({ target_date: trimmedDate, updated_at: new Date().toISOString() })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+  return { ok: true };
+}
+
+export async function convertBisNewApplicationToLicense(
+  applicationId: string,
+  cmLDigits: string,
+  licenseValidityDate: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = applicationId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid application" };
+
+  const cmDigits = (cmLDigits ?? "").replace(/\D/g, "");
+  if (cmDigits.length !== 10) {
+    return { ok: false, error: "CM/L number must be exactly 10 digits." };
+  }
+
+  const trimmedDate = licenseValidityDate?.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+    return { ok: false, error: "Pick a valid license validity date." };
+  }
+
+  const { data: app, error: fetchError } = await supabase
+    .from("bis_new_applications")
+    .select("*")
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!app) return { ok: false, error: "Application not found." };
+  if (!isApplicationProjectKind(app.project_kind)) {
+    return { ok: false, error: "Only pending applications can be converted to a license." };
+  }
+
+  const licenseKind = await licenseProjectKindDbValue(supabase);
+
+  const { error: insertError } = await supabase.from("bis_projects").insert({
+    client_id: app.client_id,
+    project_kind: licenseKind,
+    title: app.title,
+    status: app.status,
+    license_number: app.license_number,
+    start_date: app.start_date,
+    target_date: app.target_date,
+    notes: app.notes,
+    is_code_id: app.is_code_id,
+    cm_l_digits: cmDigits,
+    license_validity_date: trimmedDate,
+    case_handled_by: app.case_handled_by,
+    case_referred_by: app.case_referred_by,
+    billing_amount: app.billing_amount,
+    billing_frequency: app.billing_frequency,
+    portal_user_id: app.portal_user_id,
+    portal_password: app.portal_password,
+    created_by: app.created_by ?? user.id,
+  });
+
+  if (insertError) return { ok: false, error: insertError.message };
+
+  const { error: deleteError } = await supabase
+    .from("bis_new_applications")
+    .delete()
+    .eq("id", trimmedId);
+
+  if (deleteError) return { ok: false, error: deleteError.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/bis-new-applications");
+  return { ok: true };
 }

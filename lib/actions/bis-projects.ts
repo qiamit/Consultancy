@@ -12,6 +12,10 @@ import {
   DROPDOWN_KEY_BIS_BILLING_FREQUENCY,
   DROPDOWN_KEY_BIS_PROJECT_KIND,
 } from "@/lib/dropdown-keys";
+import {
+  isApplicationProjectKind,
+  licenseProjectKindDbValue,
+} from "@/lib/bis-project-kind";
 import { createClient } from "@/lib/supabase/server";
 
 function str(formData: FormData, key: string) {
@@ -36,13 +40,7 @@ function parseMoney(raw: string): number | null {
   return Math.round(n * 100) / 100;
 }
 
-const KINDS = new Set([
-  "new_license",
-  "application",
-  "inclusion",
-  "renewal",
-  "maintenance",
-]);
+const KINDS = new Set<string>();
 
 const STATUSES = new Set([
   "lead",
@@ -145,6 +143,15 @@ export async function saveBisProjectMaster(formData: FormData) {
     allowedDropdownValues(supabase, DROPDOWN_KEY_BIS_PROJECT_KIND, KINDS),
     allowedDropdownValues(supabase, DROPDOWN_KEY_BIS_BILLING_FREQUENCY, BILLING),
   ]);
+  if (id) {
+    const { data: existing } = await supabase
+      .from("bis_projects")
+      .select("project_kind")
+      .eq("id", id)
+      .maybeSingle();
+    const existingKind = (existing?.project_kind ?? "").trim();
+    if (existingKind) allowedKinds.add(existingKind);
+  }
   if (!allowedKinds.has(project_kind))
     redirect(`/dashboard/bis-projects?error=${encodeURIComponent("kind")}`);
 
@@ -690,9 +697,7 @@ export async function updateBisProjectTargetDate(
 
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/bis-projects");
-  revalidatePath("/dashboard/bis-new-applications");
+  // Target date is edited inline; avoid revalidating the whole dashboard.
   return { ok: true };
 }
 
@@ -716,9 +721,8 @@ export async function updateBisProjectNotes(
 
   if (error) return { ok: false, error: error.message };
 
-  revalidatePath("/dashboard");
-  revalidatePath("/dashboard/bis-projects");
-  revalidatePath("/dashboard/bis-new-applications");
+  // Notes are saved frequently from the application checklist modal; skip
+  // revalidatePath so the dashboard and open modals are not refreshed.
   return { ok: true };
 }
 
@@ -754,14 +758,16 @@ export async function convertApplicationToLicense(
 
   if (fetchError) return { ok: false, error: fetchError.message };
   if (!existing) return { ok: false, error: "Project not found." };
-  if (existing.project_kind !== "application") {
+  if (!isApplicationProjectKind(existing.project_kind)) {
     return { ok: false, error: "Only pending applications can be converted to a license." };
   }
+
+  const licenseKind = await licenseProjectKindDbValue(supabase);
 
   const { error } = await supabase
     .from("bis_projects")
     .update({
-      project_kind: "new_license",
+      project_kind: licenseKind,
       cm_l_digits: cmDigits,
       license_validity_date: trimmedDate,
       updated_at: new Date().toISOString(),
@@ -773,5 +779,46 @@ export async function convertApplicationToLicense(
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/bis-projects");
   revalidatePath("/dashboard/bis-new-applications");
+  return { ok: true };
+}
+
+/** Update CM/L and validity on an existing license (e.g. after re-application on expired row). */
+export async function updateBisProjectLicenseDetails(
+  projectId: string,
+  cmLDigits: string,
+  licenseValidityDate: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = projectId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid project" };
+
+  const cmDigits = (cmLDigits ?? "").replace(/\D/g, "");
+  if (cmDigits.length !== 10) {
+    return { ok: false, error: "CM/L number must be exactly 10 digits." };
+  }
+
+  const trimmedDate = licenseValidityDate?.trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
+    return { ok: false, error: "Pick a valid license validity date." };
+  }
+
+  const { error } = await supabase
+    .from("bis_projects")
+    .update({
+      cm_l_digits: cmDigits,
+      license_validity_date: trimmedDate,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-projects");
   return { ok: true };
 }

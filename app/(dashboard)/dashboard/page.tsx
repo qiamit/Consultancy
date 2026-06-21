@@ -1,10 +1,18 @@
 import { createClient } from "@/lib/supabase/server";
 import { DashboardTabs } from "@/components/dashboard/dashboard-tabs";
+import {
+  applicationProjectKindDbValues,
+  isPendingApplicationRow,
+  supabaseInFilter,
+  type BisApplicationSource,
+} from "@/lib/bis-project-kind";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardHomePage() {
   const supabase = await createClient();
+  const applicationKinds = await applicationProjectKindDbValues(supabase);
+  const applicationKindFilter = supabaseInFilter(applicationKinds);
 
   const today = new Date().toISOString().split("T")[0];
   const plus90Days  = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
@@ -36,17 +44,18 @@ export default async function DashboardHomePage() {
       .from("bis_projects")
       .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
-      .neq("project_kind", "application")
+      .not("project_kind", "in", applicationKindFilter)
       .gte("license_validity_date", today)
       .lte("license_validity_date", plus90Days)
       .or("status.is.null,status.eq.in_progress")
       .order("license_validity_date", { ascending: true })
       .limit(100),
-    // Pending applications: project_kind = 'application', active
+    // Pending applications: Application type only, not yet converted to a license
     supabase
       .from("bis_projects")
       .select("id, title, status, project_kind, created_at, target_date, client_id, cm_l_digits, license_validity_date, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
-      .eq("project_kind", "application")
+      .in("project_kind", applicationKinds)
+      .is("license_validity_date", null)
       .or("status.is.null,status.eq.in_progress")
       .order("created_at", { ascending: false })
       .limit(100),
@@ -55,7 +64,7 @@ export default async function DashboardHomePage() {
       .from("bis_projects")
       .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
-      .neq("project_kind", "application")
+      .not("project_kind", "in", applicationKindFilter)
       .lt("license_validity_date", today)
       .gte("license_validity_date", minus90Days)
       .or("status.is.null,status.eq.in_progress")
@@ -80,7 +89,7 @@ export default async function DashboardHomePage() {
       .from("bis_projects")
       .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
-      .neq("project_kind", "application")
+      .not("project_kind", "in", applicationKindFilter)
       .lt("license_validity_date", before90Days)
       .or("status.is.null,status.eq.in_progress")
       .order("license_validity_date", { ascending: false })
@@ -119,10 +128,18 @@ export default async function DashboardHomePage() {
   }
 
   const renewalRows = (renewalsRes.data ?? []).map(mapBisRow);
-  const applicationRows = (applicationsRes.data ?? []).map((r) => ({
-    ...mapBisRow(r as Record<string, unknown>),
-    created_at: r.created_at as string | null,
-  }));
+  const applicationRows = (applicationsRes.data ?? [])
+    .map((r) => ({
+      ...mapBisRow(r as Record<string, unknown>),
+      created_at: r.created_at as string | null,
+      source: "bis_projects" as BisApplicationSource,
+    }))
+    .filter(isPendingApplicationRow)
+    .sort((a, b) => {
+      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return tb - ta;
+    });
   const deferredRows = (deferredRes.data ?? []).map(mapBisRow);
   const stopMarkingRows = (stopMarkingRes.data ?? []).map(mapBisRow);
   const cancelledRows = (cancelledRes.data ?? []).map(mapBisRow);

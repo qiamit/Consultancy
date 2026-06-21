@@ -1,18 +1,74 @@
 "use client";
 
+import { useMemo } from "react";
 import { saveTestParameter } from "@/lib/actions/test-parameters";
 import { DialogCloseXButton } from "@/components/modules/client-master/dialog-close-x";
+import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
 import {
   IsCodeCombobox,
   type IsCodeComboboxOption,
 } from "@/components/modules/bis-projects/is-code-combobox";
+import { DROPDOWN_KEY_IS_CODE_UNIT } from "@/lib/dropdown-keys";
+import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
 import { TP_FIELD_LABEL_CLASS } from "./constants";
+import { SpecifiedValueField } from "./specified-value-field";
 
 const fieldInputRowShellClass =
   "flex overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950";
 
 const fieldInputInnerClass =
   "min-w-0 flex-1 border-0 bg-transparent py-2 pl-3 pr-2 text-sm text-zinc-900 outline-none ring-0 focus:ring-0 dark:bg-transparent dark:text-zinc-100";
+
+function isCodeIdFromStoredLabel(
+  stored: string,
+  options: IsCodeComboboxOption[],
+): string {
+  const trimmed = stored.trim();
+  if (!trimmed) return "";
+  const exact = options.find((o) => o.label === stored);
+  if (exact) return exact.id;
+  const byNumber = options.find((o) => {
+    const num = o.label.split(":")[0]?.trim();
+    return num === trimmed || o.label.startsWith(trimmed);
+  });
+  return byNumber?.id ?? "";
+}
+
+function TestMethodIsCodeField({
+  value,
+  options,
+  onChange,
+  onRequestQuickAddIsCode,
+}: {
+  value: string;
+  options: IsCodeComboboxOption[];
+  onChange: (label: string) => void;
+  onRequestQuickAddIsCode?: () => void;
+}) {
+  const selectedId = useMemo(
+    () => isCodeIdFromStoredLabel(value, options),
+    [value, options],
+  );
+
+  return (
+    <>
+      <input type="hidden" name="test_method" value={value} />
+      <IsCodeCombobox
+        name="test_method_picker"
+        label="Test Method"
+        value={selectedId}
+        onChange={(id) => {
+          const label = options.find((o) => o.id === id)?.label ?? "";
+          onChange(label);
+        }}
+        options={options}
+        listZIndexClass="z-[118]"
+        onAddClick={onRequestQuickAddIsCode}
+        addButtonAriaLabel="Add new IS code"
+      />
+    </>
+  );
+}
 
 function Field({
   label,
@@ -60,9 +116,11 @@ export function TestParameterMasterForm({
   isNewParam,
   idParam,
   isCodeOptions,
+  unitOptions,
   onClose,
   onAddNew,
   onUpdateField,
+  onRequestQuickAddIsCode,
 }: {
   visible: boolean;
   overlay?: boolean;
@@ -70,9 +128,11 @@ export function TestParameterMasterForm({
   isNewParam: boolean;
   idParam: string | null;
   isCodeOptions: IsCodeComboboxOption[];
+  unitOptions: AppDropdownOptionRow[];
   onClose: () => void;
   onAddNew: () => void;
   onUpdateField: (key: string, value: string) => void;
+  onRequestQuickAddIsCode?: () => void;
 }) {
   if (!visible) return null;
 
@@ -103,52 +163,73 @@ export function TestParameterMasterForm({
       >
         <input type="hidden" name="id" value={formValues.id} />
 
-        <div className="sm:col-span-2 lg:col-span-3">
-          <IsCodeCombobox
-            name="is_code_id"
-            label="IS Code"
-            value={formValues.is_code_id}
-            onChange={(id) => onUpdateField("is_code_id", id)}
-            options={isCodeOptions}
-            listZIndexClass="z-[118]"
-          />
+        <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-3 lg:grid-cols-4">
+          <div className="min-w-0">
+            <IsCodeCombobox
+              name="is_code_id"
+              label="IS Code"
+              value={formValues.is_code_id}
+              onChange={(id) => onUpdateField("is_code_id", id)}
+              options={isCodeOptions}
+              listZIndexClass="z-[118]"
+              onAddClick={onRequestQuickAddIsCode}
+              addButtonAriaLabel="Add new IS code"
+            />
+          </div>
+
+          <div className="min-w-0">
+            <TestMethodIsCodeField
+              value={formValues.test_method}
+              options={isCodeOptions}
+              onChange={(v) => onUpdateField("test_method", v)}
+              onRequestQuickAddIsCode={onRequestQuickAddIsCode}
+            />
+          </div>
+
+          <div className="min-w-0">
+            <Field
+              label="Clause No"
+              name="clause_no"
+              value={formValues.clause_no}
+              onChange={(v) => onUpdateField("clause_no", v)}
+            />
+          </div>
+
+          <div className="min-w-0">
+            <ClientDropdownField
+              optionKey={DROPDOWN_KEY_IS_CODE_UNIT}
+              name="unit"
+              label="Unit"
+              dialogTitle="Units"
+              addPlaceholder="New unit"
+              manageAriaLabel="Add or remove units"
+              value={formValues.unit}
+              onChange={(v) => onUpdateField("unit", v)}
+              options={unitOptions}
+              selectedValue={formValues.unit}
+              onClearSelection={() => onUpdateField("unit", "")}
+              overlayZIndexClass="z-[127]"
+              listZIndexClass="z-[118]"
+              blankInputWhenNoSelection
+            />
+          </div>
         </div>
 
-        <Field
-          label="Name of the Test"
-          name="test_name"
-          required
-          value={formValues.test_name}
-          onChange={(v) => onUpdateField("test_name", v)}
-        />
+        <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-3">
+          <Field
+            label="Name of the Test"
+            name="test_name"
+            required
+            value={formValues.test_name}
+            onChange={(v) => onUpdateField("test_name", v)}
+          />
 
-        <Field
-          label="Clause No"
-          name="clause_no"
-          value={formValues.clause_no}
-          onChange={(v) => onUpdateField("clause_no", v)}
-        />
-
-        <Field
-          label="Test Method"
-          name="test_method"
-          value={formValues.test_method}
-          onChange={(v) => onUpdateField("test_method", v)}
-        />
-
-        <Field
-          label="Unit"
-          name="unit"
-          value={formValues.unit}
-          onChange={(v) => onUpdateField("unit", v)}
-        />
-
-        <Field
-          label="Specified Value"
-          name="specified_value"
-          value={formValues.specified_value}
-          onChange={(v) => onUpdateField("specified_value", v)}
-        />
+          <SpecifiedValueField
+            name="specified_value"
+            value={formValues.specified_value}
+            onChange={(v) => onUpdateField("specified_value", v)}
+          />
+        </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3 sm:col-span-2 lg:col-span-3">
           <button

@@ -7,6 +7,9 @@ import { TestParameterMasterFooterBar } from "./footer-bar";
 const chk =
   "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500 dark:border-zinc-600 dark:bg-zinc-900";
 
+const centerCell = "px-3 py-2 align-top text-center";
+const centerHead = "px-3 py-2 text-center";
+
 const COL_COUNT = 8;
 
 function dash(v: string | null | undefined): string {
@@ -42,10 +45,42 @@ function PageSelectAllCheckbox({
   );
 }
 
+function isIsReferenceText(value: string | null | undefined): boolean {
+  return /^IS\s*\d/i.test((value ?? "").trim());
+}
+
+function IsCodeLinkButton({
+  row,
+  label,
+  onViewIsCode,
+  className,
+}: {
+  row: TestParameterMasterRow;
+  label: string;
+  onViewIsCode: (r: TestParameterMasterRow) => void;
+  className: string;
+}) {
+  const canOpen = !!row.is_code_id && label !== "—";
+  if (!canOpen) {
+    return <span className={className}>{label}</span>;
+  }
+  return (
+    <button
+      type="button"
+      onClick={() => onViewIsCode(row)}
+      className={`block w-full ${className} hover:underline`}
+      title="View IS code details"
+    >
+      {label}
+    </button>
+  );
+}
+
 export function TestParameterMasterTable({
   rows,
   idParam,
   onEditRow,
+  onViewIsCode,
   matchedCount,
   grandCount,
   searchActive,
@@ -61,6 +96,7 @@ export function TestParameterMasterTable({
   rows: TestParameterMasterRow[];
   idParam: string | null;
   onEditRow: (r: TestParameterMasterRow) => void;
+  onViewIsCode: (r: TestParameterMasterRow) => void;
   matchedCount: number;
   grandCount: number;
   searchActive: boolean;
@@ -92,11 +128,11 @@ export function TestParameterMasterTable({
               </div>
             </th>
             <th className="min-w-[140px] px-3 py-2">IS Code</th>
-            <th className="min-w-[160px] px-3 py-2">Name of the Test</th>
-            <th className="min-w-[100px] px-3 py-2">Clause No</th>
-            <th className="min-w-[140px] px-3 py-2">Test Method</th>
-            <th className="min-w-[80px] px-3 py-2">Unit</th>
-            <th className="min-w-[120px] px-3 py-2">Specified Value</th>
+            <th className={`min-w-[160px] ${centerHead}`}>Name of the Test</th>
+            <th className={`min-w-[100px] ${centerHead}`}>Clause No</th>
+            <th className={`min-w-[140px] ${centerHead}`}>Test Method</th>
+            <th className={`min-w-[80px] ${centerHead}`}>Unit</th>
+            <th className={`min-w-[120px] ${centerHead}`}>Specified Value</th>
             <th className="min-w-[5.5rem] px-2 py-2 text-center">Action</th>
           </tr>
         </thead>
@@ -147,13 +183,29 @@ export function TestParameterMasterTable({
                     </div>
                   </td>
                   <td className="px-3 py-2 align-top font-medium text-sky-700 dark:text-sky-400">
-                    {isCodeLabelFromRow(r)}
+                    <IsCodeLinkButton
+                      row={r}
+                      label={isCodeLabelFromRow(r)}
+                      onViewIsCode={onViewIsCode}
+                      className="text-left font-medium text-sky-700 dark:text-sky-400"
+                    />
                   </td>
-                  <td className="px-3 py-2 align-top">{dash(r.test_name)}</td>
-                  <td className="px-3 py-2 align-top">{dash(r.clause_no)}</td>
-                  <td className="px-3 py-2 align-top">{dash(r.test_method)}</td>
-                  <td className="px-3 py-2 align-top">{dash(r.unit)}</td>
-                  <td className="px-3 py-2 align-top">
+                  <td className={centerCell}>{dash(r.test_name)}</td>
+                  <td className={centerCell}>{dash(r.clause_no)}</td>
+                  <td className={centerCell}>
+                    {isIsReferenceText(r.test_method) ? (
+                      <IsCodeLinkButton
+                        row={r}
+                        label={dash(r.test_method)}
+                        onViewIsCode={onViewIsCode}
+                        className="text-center text-zinc-900 dark:text-zinc-100"
+                      />
+                    ) : (
+                      dash(r.test_method)
+                    )}
+                  </td>
+                  <td className={centerCell}>{dash(r.unit)}</td>
+                  <td className={centerCell}>
                     {dash(r.specified_value)}
                   </td>
                   <td className="align-top px-2 py-2 text-center">

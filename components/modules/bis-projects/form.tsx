@@ -251,7 +251,7 @@ export function BisProjectsMasterForm({
                   name="project_kind"
                   label="Project Type"
                   dialogTitle="Project types"
-                  addPlaceholder="Stored value (e.g. new_license, application)"
+                  addPlaceholder="Add project type…"
                   manageAriaLabel="Add or remove project types"
                   value={formValues.project_kind}
                   onChange={(v) => {
@@ -260,7 +260,7 @@ export function BisProjectsMasterForm({
                   }}
                   options={projectKindOptions}
                   selectedValue={formValues.project_kind}
-                  onClearSelection={() => onUpdateField("project_kind", "new_license")}
+                  onClearSelection={() => onUpdateField("project_kind", "")}
                   includeEmptyOption={false}
                   searchPlaceholder="Search project type…"
                   overlayZIndexClass="z-[119]"

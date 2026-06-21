@@ -8,6 +8,7 @@ export async function sendAiMessage(
   messages: ChatMessage[],
   systemPrompt: string,
   selectedModelId?: string,
+  maxTokens = 1024,
 ): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
   const supabase = await createClient();
 
@@ -47,7 +48,7 @@ export async function sendAiMessage(
         },
         body: JSON.stringify({
           model: model_id,
-          max_tokens: 1024,
+          max_tokens: maxTokens,
           system: systemPrompt,
           messages: messages.map((m) => ({ role: m.role, content: m.content })),
         }),
@@ -71,6 +72,7 @@ export async function sendAiMessage(
         },
         body: JSON.stringify({
           model: model_id,
+          max_tokens: maxTokens,
           messages: [
             { role: "system", content: systemPrompt },
             ...messages.map((m) => ({ role: m.role, content: m.content })),
@@ -100,6 +102,7 @@ export async function sendAiMessage(
           body: JSON.stringify({
             systemInstruction: { parts: [{ text: systemPrompt }] },
             contents,
+            generationConfig: { maxOutputTokens: maxTokens },
           }),
         },
       );
@@ -125,6 +128,7 @@ export async function sendAiMessage(
       },
       body: JSON.stringify({
         model: model_id,
+        max_tokens: maxTokens,
         messages: [
           { role: "system", content: systemPrompt },
           ...messages.map((m) => ({ role: m.role, content: m.content })),

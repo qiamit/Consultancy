@@ -80,6 +80,8 @@ export function AppDropdownCombobox({
   onSuffixButtonClick,
   suffixButtonClassName,
   blankInputWhenNoSelection = false,
+  /** When true, typed text is saved as the value on blur if not picked from the list. */
+  commitOnBlur = false,
   onOptionAdded,
   onOptionDeleted,
 }: {
@@ -109,6 +111,7 @@ export function AppDropdownCombobox({
   onSuffixButtonClick?: () => void;
   suffixButtonClassName?: string;
   blankInputWhenNoSelection?: boolean;
+  commitOnBlur?: boolean;
   onOptionAdded?: () => void;
   onOptionDeleted?: () => void;
 }) {
@@ -154,6 +157,7 @@ export function AppDropdownCombobox({
   selectOptionsRef.current = selectOptions;
   const valueRef = useRef(value);
   valueRef.current = value;
+  const queryRef = useRef("");
 
   const [open, setOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
@@ -163,6 +167,7 @@ export function AppDropdownCombobox({
   const [query, setQuery] = useState(() =>
     displayLabelForInput(value, selectOptions, blankInputWhenNoSelection),
   );
+  queryRef.current = query;
   const [listOpen, setListOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
   const [listPosition, setListPosition] = useState<{
@@ -280,12 +285,44 @@ export function AppDropdownCombobox({
     if (portalList) updateListPosition();
   }
 
+  function resolveCommittedValue(rawQuery: string): string {
+    const q = rawQuery.trim();
+    if (!q) return valueRef.current;
+    const opts = selectOptionsRef.current;
+    const byValue = opts.find((o) => o.value === q);
+    if (byValue) return byValue.value;
+    const byLabel = opts.find(
+      (o) => (o.label || o.value).trim().toLowerCase() === q.toLowerCase(),
+    );
+    if (byLabel) return byLabel.value;
+    return q;
+  }
+
+  function commitQueryOnBlur(): string {
+    if (!commitOnBlur) return valueRef.current;
+    const q = queryRef.current.trim();
+    if (!q) return valueRef.current;
+    const display = displayLabelForInput(
+      valueRef.current,
+      selectOptionsRef.current,
+      blankInputWhenNoSelection,
+    );
+    if (q === display.trim()) return valueRef.current;
+    const next = resolveCommittedValue(q);
+    if (next !== valueRef.current) {
+      onChange(next);
+      valueRef.current = next;
+    }
+    return next;
+  }
+
   function handleInputBlur() {
+    const committed = commitQueryOnBlur();
     blurTimer.current = setTimeout(() => {
       setListOpen(false);
       setQuery(
         displayLabelForInput(
-          valueRef.current,
+          committed,
           selectOptionsRef.current,
           blankInputWhenNoSelection,
         ),
@@ -347,8 +384,11 @@ export function AppDropdownCombobox({
         return;
       }
       setDraft("");
-      router.refresh();
-      if (onOptionAdded) onOptionAdded();
+      if (onOptionAdded) {
+        onOptionAdded();
+      } else {
+        router.refresh();
+      }
     } finally {
       setBusy(false);
     }
@@ -364,8 +404,11 @@ export function AppDropdownCombobox({
         return;
       }
       if (selectedValue === v) onClearSelection();
-      router.refresh();
-      if (onOptionDeleted) onOptionDeleted();
+      if (onOptionDeleted) {
+        onOptionDeleted();
+      } else {
+        router.refresh();
+      }
     } finally {
       setBusy(false);
     }

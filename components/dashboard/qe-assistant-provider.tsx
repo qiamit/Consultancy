@@ -1,7 +1,9 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
+import { TestParameterQeAssistantModal } from "@/components/modules/test-parameter-master/qe-assistant-modal";
 
 type QEModule = "bis-projects" | "is-codes" | "products" | "clients" | string;
 
@@ -54,12 +56,18 @@ You help with:
 - Clause numbers, test methods, units, and specified values
 - Mapping lab tests to IS code requirements
 - BIS certification testing scope and compliance
+
+IMPORTANT ACTION:
+When the user asks to add/import test parameters for an IS number (e.g. "Add test parameters for IS 6988:2017"),
+the app reads the uploaded IS document from IS Code Master and bulk-adds extracted parameters automatically.
+Tell users they can say: "Add test parameters for IS 3025:2022" after uploading the IS PDF in IS Code Master.
+
 Be concise, practical, and use Indian BIS/ISI certification context.`,
     starters: [
+      "Add test parameters for IS 6988:2017",
       "How do I add a test parameter for an IS code?",
       "What is a clause number in IS standards?",
-      "How are specified values used in BIS testing?",
-      "What test methods are common for product certification?",
+      "Import all tests from an IS document",
     ],
   },
   "products": {
@@ -262,8 +270,20 @@ Be concise, practical, and use Indian BIS/ISI certification context.`,
 };
 
 export function QEAssistantProvider() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [module, setModule] = useState<QEModule>("bis-projects");
+
+  useEffect(() => {
+    function handleRefresh() {
+      if (window.location.pathname.includes("/dashboard/test-parameters")) {
+        router.refresh();
+      }
+    }
+    window.addEventListener("test-parameters:refresh", handleRefresh);
+    return () =>
+      window.removeEventListener("test-parameters:refresh", handleRefresh);
+  }, [router]);
 
   useEffect(() => {
     function handleOpen(e: Event) {
@@ -276,6 +296,10 @@ export function QEAssistantProvider() {
   }, []);
 
   if (!open) return null;
+
+  if (module === "test-parameters") {
+    return <TestParameterQeAssistantModal onClose={() => setOpen(false)} />;
+  }
 
   const cfg = MODULE_CONFIG[module] ?? DEFAULT_CONFIG;
 

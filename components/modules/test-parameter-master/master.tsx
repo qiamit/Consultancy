@@ -1,14 +1,25 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   deleteTestParameter,
   deleteTestParameters,
 } from "@/lib/actions/test-parameters";
+import {
+  clearTestParameterFormDraft,
+  currentTestParameterFormMode,
+  getStoredTestParameterOpenMode,
+  loadTestParameterFormDraft,
+  saveTestParameterFormDraft,
+} from "@/lib/test-parameter-form-draft";
+import { emptyForm as isCodeEmptyForm } from "@/components/modules/is-code-master/constants";
+import { IsCodeMasterForm } from "@/components/modules/is-code-master/form";
+import type { IsCodeFormDropdownOptions } from "@/lib/data/is-code-form-dropdowns";
+import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import type { TestParameterMasterRow } from "@/lib/types/test-parameter-master";
 import type { IsCodeComboboxOption } from "@/components/modules/bis-projects/is-code-combobox";
-import { emptyForm, rowToForm } from "./constants";
+import { emptyForm, rowToForm, formatIsCodeRevisionLabel } from "./constants";
 import { TestParameterMasterForm } from "./form";
 import { TestParameterMasterHeaderBar } from "./header-bar";
 import {
@@ -28,6 +39,7 @@ export function TestParameterMaster({
   dbErrorCode,
   dbErrorHint,
   isCodeOptions,
+  isCodeFormDropdowns,
 }: {
   initialRows: TestParameterMasterRow[];
   fetchError?: string | null;
@@ -35,6 +47,7 @@ export function TestParameterMaster({
   dbErrorCode?: string;
   dbErrorHint?: string;
   isCodeOptions: IsCodeComboboxOption[];
+  isCodeFormDropdowns: IsCodeFormDropdownOptions;
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -44,34 +57,93 @@ export function TestParameterMaster({
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
+  const [embedIsCodeOpen, setEmbedIsCodeOpen] = useState(false);
+  const [embedIsCodeForm, setEmbedIsCodeForm] = useState(() =>
+    isCodeEmptyForm(),
+  );
+  const [isCodeView, setIsCodeView] = useState<{
+    id: string;
+    is_number: string | null;
+    revision_year: number | null;
+  } | null>(null);
+
+  function viewIsCodeFromRow(r: TestParameterMasterRow) {
+    if (!r.is_code_id) return;
+    setIsCodeView({
+      id: r.is_code_id,
+      is_number: r.is_codes?.is_number ?? null,
+      revision_year: r.is_codes?.revision_year ?? null,
+    });
+  }
 
   const idParam = searchParams.get("id");
   const isNewParam = searchParams.get("new") === "1";
+  const savedRecently = searchParams.get("saved") === "1";
+  const storedOpenMode = getStoredTestParameterOpenMode();
   const editRow =
     idParam && !isNewParam
       ? (rows.find((r) => r.id === idParam) ?? undefined)
       : undefined;
-  const formVisible = isNewParam || !!editRow;
+  const formVisible =
+    !savedRecently &&
+    (isNewParam ||
+      !!editRow ||
+      storedOpenMode === "new" ||
+      (!!storedOpenMode && storedOpenMode !== "new"));
+  const restoredUrlRef = useRef(false);
 
   useEffect(() => {
     setRows(initialRows);
   }, [initialRows]);
 
   useEffect(() => {
+    if (searchParams.get("saved") !== "1") return;
+    clearTestParameterFormDraft();
+    router.replace("/dashboard/test-parameters", { scroll: false });
+  }, [searchParams, router]);
+
+  useEffect(() => {
+    if (restoredUrlRef.current) return;
+    if (isNewParam || idParam) {
+      restoredUrlRef.current = true;
+      return;
+    }
+    const stored = getStoredTestParameterOpenMode();
+    if (!stored) return;
+    restoredUrlRef.current = true;
+    if (stored === "new") {
+      router.replace("/dashboard/test-parameters?new=1", { scroll: false });
+      return;
+    }
+    router.replace(
+      `/dashboard/test-parameters?id=${encodeURIComponent(stored)}`,
+      { scroll: false },
+    );
+  }, [idParam, isNewParam, router]);
+
+  useEffect(() => {
     const id = searchParams.get("id");
     const isNew = searchParams.get("new");
     if (isNew === "1") {
-      setForm(emptyForm());
+      const draft = loadTestParameterFormDraft("new");
+      setForm(draft ?? emptyForm());
       return;
     }
     if (id) {
+      const draft = loadTestParameterFormDraft(id);
+      if (draft) {
+        setForm(draft);
+        return;
+      }
       const row = initialRows.find((r) => r.id === id);
       if (row) {
         setForm(rowToForm(row));
         return;
       }
     }
-    setForm(emptyForm());
+    if (!getStoredTestParameterOpenMode()) {
+      setForm(emptyForm());
+    }
   }, [searchParams, initialRows]);
 
   const filteredRows = useMemo(
@@ -137,19 +209,32 @@ export function TestParameterMaster({
   }, [paginatedRows]);
 
   function selectRow(r: TestParameterMasterRow) {
+    const next = rowToForm(r);
+    setForm(next);
+    saveTestParameterFormDraft(r.id, next);
     router.replace(`/dashboard/test-parameters?id=${r.id}`, { scroll: false });
   }
 
   function addNew() {
+    clearTestParameterFormDraft();
+    const next = emptyForm();
+    setForm(next);
+    saveTestParameterFormDraft("new", next);
     router.replace("/dashboard/test-parameters?new=1", { scroll: false });
   }
 
   function closeForm() {
+    clearTestParameterFormDraft();
     router.replace("/dashboard/test-parameters", { scroll: false });
   }
 
   function updateField(key: string, value: string) {
-    setForm((f) => ({ ...f, [key]: value }));
+    setForm((f) => {
+      const next = { ...f, [key]: value };
+      const mode = currentTestParameterFormMode(idParam, isNewParam);
+      if (mode) saveTestParameterFormDraft(mode, next);
+      return next;
+    });
   }
 
   function handleExport() {
@@ -241,7 +326,7 @@ export function TestParameterMaster({
           : (fetchError ?? null);
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-0">
+    <div className="w-full space-y-0">
       {errMsg && (
         <p className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
           {errMsg}
@@ -272,6 +357,7 @@ export function TestParameterMaster({
           rows={paginatedRows}
           idParam={idParam}
           onEditRow={selectRow}
+          onViewIsCode={viewIsCodeFromRow}
           matchedCount={filteredTotal}
           grandCount={grandTotal}
           searchActive={searchActive}
@@ -308,12 +394,76 @@ export function TestParameterMaster({
               isNewParam={isNewParam}
               idParam={idParam}
               isCodeOptions={isCodeOptions}
+              unitOptions={isCodeFormDropdowns.unitOptions}
               onClose={closeForm}
               onAddNew={addNew}
               onUpdateField={updateField}
+              onRequestQuickAddIsCode={() => {
+                setEmbedIsCodeForm(isCodeEmptyForm());
+                setEmbedIsCodeOpen(true);
+              }}
             />
           </div>
         </div>
+      ) : null}
+
+      {embedIsCodeOpen ? (
+        <div
+          className="fixed inset-0 z-[127] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55"
+          role="presentation"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setEmbedIsCodeOpen(false);
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="is-code-master-form-title"
+            className="mb-10 w-full max-w-5xl rounded-xl border-[4mm] border-zinc-300 bg-zinc-50 shadow-2xl dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-black/40"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <IsCodeMasterForm
+              visible
+              overlay
+              formValues={embedIsCodeForm}
+              isNewParam
+              idParam={null}
+              existingFiles={[]}
+              onClose={() => setEmbedIsCodeOpen(false)}
+              onAddNew={() => setEmbedIsCodeForm(isCodeEmptyForm())}
+              onUpdateField={(key, value) =>
+                setEmbedIsCodeForm((f) => ({ ...f, [key]: value }))
+              }
+              aspectOptions={isCodeFormDropdowns.aspectOptions}
+              unitOptions={isCodeFormDropdowns.unitOptions}
+              embeddedInBis
+              onEmbeddedSaveSuccess={(id) => {
+                updateField("is_code_id", id);
+                const savedLabel =
+                  isCodeOptions.find((o) => o.id === id)?.label ??
+                  formatIsCodeRevisionLabel(
+                    embedIsCodeForm.is_number,
+                    embedIsCodeForm.revision_year
+                      ? Number(embedIsCodeForm.revision_year)
+                      : undefined,
+                  );
+                updateField("test_method", savedLabel);
+                setEmbedIsCodeOpen(false);
+                router.refresh();
+              }}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      {isCodeView ? (
+        <IsCodeViewModal
+          isCodeId={isCodeView.id}
+          isNumber={isCodeView.is_number}
+          revisionYear={isCodeView.revision_year}
+          onClose={() => setIsCodeView(null)}
+          overlayZIndexClass="z-[120]"
+        />
       ) : null}
     </div>
   );

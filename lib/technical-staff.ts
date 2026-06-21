@@ -1,0 +1,101 @@
+export type TechnicalStaffStored = {
+  person_name: string;
+  designation: string;
+  educational_qualification: string;
+  experience_years: string;
+  appointment_letter: string;
+  educational_certificate: string;
+  photo: string;
+};
+
+export type TechnicalStaffRow = TechnicalStaffStored & { id: string };
+
+export function defaultTechnicalStaffEntry(): TechnicalStaffStored {
+  return {
+    person_name: "",
+    designation: "",
+    educational_qualification: "",
+    experience_years: "",
+    appointment_letter: "",
+    educational_certificate: "",
+    photo: "",
+  };
+}
+
+let techStaffRowSeq = 0;
+
+export function createTechnicalStaffRow(): TechnicalStaffRow {
+  techStaffRowSeq += 1;
+  return {
+    id: `tech-staff-${Date.now()}-${techStaffRowSeq}`,
+    ...defaultTechnicalStaffEntry(),
+  };
+}
+
+export function defaultTechnicalStaffRows(): TechnicalStaffRow[] {
+  return [createTechnicalStaffRow()];
+}
+
+export function rowHasContent(row: TechnicalStaffStored): boolean {
+  return (
+    row.person_name.trim().length > 0 ||
+    row.designation.trim().length > 0 ||
+    row.educational_qualification.trim().length > 0 ||
+    row.experience_years.trim().length > 0 ||
+    row.appointment_letter.trim().length > 0 ||
+    row.educational_certificate.trim().length > 0 ||
+    row.photo.trim().length > 0
+  );
+}
+
+export function parseTechnicalStaff(raw: unknown): TechnicalStaffStored[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const r = item as Record<string, unknown>;
+      return {
+        person_name: String(r.person_name ?? "").trim(),
+        designation: String(r.designation ?? "").trim(),
+        educational_qualification: String(r.educational_qualification ?? "").trim(),
+        experience_years: String(r.experience_years ?? "").trim(),
+        appointment_letter: String(r.appointment_letter ?? "").trim(),
+        educational_certificate: String(r.educational_certificate ?? "").trim(),
+        photo: String(r.photo ?? "").trim(),
+      };
+    })
+    .filter((r): r is TechnicalStaffStored => r !== null);
+}
+
+export function editorRowsFromStored(
+  stored: TechnicalStaffStored[],
+): TechnicalStaffRow[] {
+  return stored.filter(rowHasContent).map((r, i) => ({
+    id: `tech-staff-loaded-${i}`,
+    ...r,
+  }));
+}
+
+export function storedFromEditor(rows: TechnicalStaffRow[]): TechnicalStaffStored[] {
+  return rows
+    .map(
+      ({
+        person_name,
+        designation,
+        educational_qualification,
+        experience_years,
+        appointment_letter,
+        educational_certificate,
+        photo,
+      }) => ({
+        person_name,
+        designation,
+        educational_qualification,
+        experience_years,
+        appointment_letter,
+        educational_certificate,
+        photo,
+      }),
+    )
+    .filter(rowHasContent);
+}

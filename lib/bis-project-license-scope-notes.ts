@@ -107,6 +107,7 @@ export function buildBisProjectLicenseScopeNotes(
           oslSampleRequirements: checklist.oslSampleRequirements,
           piSampleRequirements: checklist.piSampleRequirements,
           topManagement: checklist.topManagement,
+          technicalStaff: checklist.technicalStaff,
         });
       }
     } catch {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { sendAiMessage, type ChatMessage } from "@/lib/actions/ai-chat";
 import { fetchActiveAiModels, type ActiveModelOption } from "@/lib/actions/ai-models";
 
@@ -59,6 +59,10 @@ export function AiChatModal({
   accentColor,
   onClose,
   overlayZIndexClass = "z-[200]",
+  onCustomSend,
+  beforeInput,
+  inputPlaceholder,
+  onModelChange,
 }: {
   title: string;
   subtitle: string;
@@ -67,6 +71,14 @@ export function AiChatModal({
   accentColor: AccentColor;
   onClose: () => void;
   overlayZIndexClass?: string;
+  onCustomSend?: (
+    text: string,
+    messages: ChatMessage[],
+    modelId: string | undefined,
+  ) => Promise<{ reply: string; refreshPage?: boolean } | null>;
+  beforeInput?: React.ReactNode;
+  inputPlaceholder?: string;
+  onModelChange?: (modelId: string) => void;
 }) {
   const accent = ACCENT[accentColor];
 
@@ -91,6 +103,10 @@ export function AiChatModal({
     });
   }, []);
 
+  useEffect(() => {
+    onModelChange?.(selectedModelId);
+  }, [selectedModelId, onModelChange]);
+
   function handleSend() {
     const text = input.trim();
     if (!text || sending) return;
@@ -112,6 +128,28 @@ export function AiChatModal({
     setMessages(next);
 
     startSend(async () => {
+      if (onCustomSend) {
+        const custom = await onCustomSend(
+          content,
+          next,
+          selectedModelId || undefined,
+        );
+        if (custom) {
+          setMessages((prev) => [
+            ...prev,
+            { role: "assistant", content: custom.reply },
+          ]);
+          if (custom.refreshPage) {
+            window.dispatchEvent(new CustomEvent("test-parameters:refresh"));
+          }
+          setTimeout(
+            () => bottomRef.current?.scrollIntoView({ behavior: "smooth" }),
+            50,
+          );
+          return;
+        }
+      }
+
       const res = await sendAiMessage(next, systemPrompt, selectedModelId || undefined);
       if (!res.ok) { setError(res.error); return; }
       setMessages((prev) => [...prev, { role: "assistant", content: res.reply }]);
@@ -287,6 +325,8 @@ export function AiChatModal({
         {/* ── Input area ────────────────────────────────────────────────────── */}
         <div className="border-t border-zinc-200 bg-zinc-50 px-4 py-3 dark:border-zinc-700 dark:bg-zinc-900/80">
 
+          {beforeInput}
+
           {/* Attached file chips */}
           {attachedFiles.length > 0 && (
             <div className="mb-2 flex flex-wrap gap-1.5">
@@ -308,7 +348,10 @@ export function AiChatModal({
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKey}
-              placeholder="Type your question… (Enter to send, Shift+Enter for new line)"
+              placeholder={
+                inputPlaceholder ??
+                "Type your question… (Enter to send, Shift+Enter for new line)"
+              }
               rows={3}
               disabled={sending}
               className="w-full resize-none bg-transparent px-3 pt-3 pb-1 text-sm text-zinc-800 placeholder-zinc-400 outline-none disabled:opacity-50 dark:text-zinc-100"

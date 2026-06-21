@@ -6,6 +6,12 @@ import { createClient } from "@/lib/supabase/server";
 
 const BASE_PATH = "/dashboard/test-parameters";
 
+function formReturnPath(formData: FormData): string {
+  const id = nullableStr(formData, "id");
+  if (id) return `${BASE_PATH}?id=${encodeURIComponent(id)}`;
+  return `${BASE_PATH}?new=1`;
+}
+
 function nullableStr(formData: FormData, key: string): string | null {
   const v = formData.get(key);
   if (v == null) return null;
@@ -142,21 +148,22 @@ export async function saveTestParameter(formData: FormData) {
 
   const r = await executeSaveTestParameter(formData);
   if (!r.ok) {
+    const returnPath = formReturnPath(formData);
     if (r.redirectCode === "db" && (r.dbHint || r.dbCode)) {
       const hint = encodeURIComponent((r.dbHint ?? r.error).slice(0, 280));
       redirect(
-        `${BASE_PATH}?error=db&db_code=${encodeURIComponent(r.dbCode ?? "")}&db_hint=${hint}`,
+        `${returnPath}&error=db&db_code=${encodeURIComponent(r.dbCode ?? "")}&db_hint=${hint}`,
       );
     }
     if (r.redirectCode) {
       redirect(
-        `${BASE_PATH}?error=${encodeURIComponent(r.redirectCode)}`,
+        `${returnPath}&error=${encodeURIComponent(r.redirectCode)}`,
       );
     }
-    redirect(`${BASE_PATH}?error=db`);
+    redirect(`${returnPath}&error=db`);
   }
 
-  redirect(BASE_PATH);
+  redirect(`${BASE_PATH}?saved=1`);
 }
 
 export async function deleteTestParameter(id: string) {

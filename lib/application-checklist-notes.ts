@@ -1,6 +1,11 @@
 import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
 import { parseOslSampleRequirements, rowHasContent } from "@/lib/osl-sample-requirements";
 import {
+  parseTechnicalStaff,
+  rowHasContent as technicalStaffRowHasContent,
+  type TechnicalStaffStored,
+} from "@/lib/technical-staff";
+import {
   parseTopManagement,
   rowHasContent as topManagementRowHasContent,
   type TopManagementStored,
@@ -128,6 +133,7 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
   oslSampleRequirements: OslSampleRequirementStored[];
   piSampleRequirements: OslSampleRequirementStored[];
   topManagement: TopManagementStored[];
+  technicalStaff: TechnicalStaffStored[];
   meta: ApplicationMeta;
 } {
   const raw = (notes ?? "").trim();
@@ -140,6 +146,7 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       oslSampleRequirements: [],
       piSampleRequirements: [],
       topManagement: [],
+      technicalStaff: [],
       meta: defaultApplicationMeta(),
     };
   }
@@ -153,6 +160,7 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       osl_sample_requirements?: unknown;
       pi_sample_requirements?: unknown;
       top_management?: unknown;
+      technical_staff?: unknown;
       meta?: unknown;
     };
     if (parsed.type !== "application_checklist") {
@@ -164,6 +172,7 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
         oslSampleRequirements: [],
         piSampleRequirements: [],
         topManagement: [],
+        technicalStaff: [],
         meta: defaultApplicationMeta(),
       };
     }
@@ -187,6 +196,7 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       oslSampleRequirements: parseOslSampleRequirements(parsed.osl_sample_requirements),
       piSampleRequirements: parseOslSampleRequirements(parsed.pi_sample_requirements),
       topManagement: parseTopManagement(parsed.top_management),
+      technicalStaff: parseTechnicalStaff(parsed.technical_staff),
       meta: parseApplicationMeta(parsed.meta),
     };
   } catch {
@@ -198,6 +208,7 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       oslSampleRequirements: [],
       piSampleRequirements: [],
       topManagement: [],
+      technicalStaff: [],
       meta: defaultApplicationMeta(),
     };
   }
@@ -215,6 +226,12 @@ function nonEmptyTopManagementRows(
   return (rows ?? []).filter((r) => topManagementRowHasContent(r));
 }
 
+function nonEmptyTechnicalStaffRows(
+  rows: TechnicalStaffStored[] | undefined,
+): TechnicalStaffStored[] {
+  return (rows ?? []).filter((r) => technicalStaffRowHasContent(r));
+}
+
 export function buildApplicationChecklistPayload(input: {
   items: unknown[];
   licenseScope?: string;
@@ -223,6 +240,7 @@ export function buildApplicationChecklistPayload(input: {
   oslSampleRequirements?: OslSampleRequirementStored[];
   piSampleRequirements?: OslSampleRequirementStored[];
   topManagement?: TopManagementStored[];
+  technicalStaff?: TechnicalStaffStored[];
   meta?: ApplicationMeta;
 }): string {
   const payload: Record<string, unknown> = {
@@ -246,6 +264,8 @@ export function buildApplicationChecklistPayload(input: {
   if (piRows.length > 0) payload.pi_sample_requirements = piRows;
   const topMgmtRows = nonEmptyTopManagementRows(input.topManagement);
   if (topMgmtRows.length > 0) payload.top_management = topMgmtRows;
+  const techStaffRows = nonEmptyTechnicalStaffRows(input.technicalStaff);
+  if (techStaffRows.length > 0) payload.technical_staff = techStaffRows;
   return JSON.stringify(payload);
 }
 

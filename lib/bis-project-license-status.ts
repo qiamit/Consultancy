@@ -1,5 +1,10 @@
 /** Licence display status — combines validity date AND db compliance status. */
 
+import {
+  cmPrefixForProjectKind,
+  isApplicationProjectKind,
+} from "@/lib/bis-project-kind";
+
 export type LicenseDisplayStatus =
   | "Operative"
   | "Deferred"
@@ -40,7 +45,7 @@ export function computeLicenseDisplayStatus(
   dbStatus?: string | null,
   now: Date = new Date(),
 ): LicenseDisplayStatus {
-  if (projectKind === "application") return "N/A";
+  if (isApplicationProjectKind(projectKind)) return "N/A";
   if (dbStatus === "stop_marking") return "Stop Marking";
   const vRaw = (validityDateYmd ?? "").trim();
   if (!vRaw) return "N/A";
@@ -80,10 +85,7 @@ export function canApplyForRenewal(lic: LicenseDisplayStatus): boolean {
   return lic === "Operative" || lic === "Deferred";
 }
 
-/** CM/L before digits for licence & inclusion; CM/A for application. */
-export function cmPrefixForProjectKind(projectKind: string): "CM/L" | "CM/A" {
-  return projectKind === "application" ? "CM/A" : "CM/L";
-}
+export { cmPrefixForProjectKind };
 
 export function formatCmDisplay(
   projectKind: string,

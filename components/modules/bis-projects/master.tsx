@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emptyForm as clientMasterEmptyForm } from "@/components/modules/client-master/constants";
 import { ClientMasterForm } from "@/components/modules/client-master/form";
 import { emptyForm as isCodeEmptyForm } from "@/components/modules/is-code-master/constants";
@@ -100,6 +100,7 @@ export function BisProjectsMaster({
       ? rows.find((r) => r.id === idParam) ?? undefined
       : undefined;
   const formVisible = isNewParam || !!editRow;
+  const loadedFormKeyRef = useRef<string | null>(null);
 
   const clientOptions: AppDropdownOptionRow[] = useMemo(
     () =>
@@ -127,8 +128,36 @@ export function BisProjectsMaster({
   );
 
   useEffect(() => {
+    if (formVisible) return;
     setRows(initialRows);
-  }, [initialRows]);
+  }, [initialRows, formVisible]);
+
+  useEffect(() => {
+    if (!formVisible) loadedFormKeyRef.current = null;
+  }, [formVisible]);
+
+  useEffect(() => {
+    const id = searchParams.get("id");
+    const isNew = searchParams.get("new");
+    if (isNew === "1") {
+      if (loadedFormKeyRef.current !== "new") {
+        setForm(emptyForm());
+        loadedFormKeyRef.current = "new";
+      }
+      return;
+    }
+    if (id) {
+      if (loadedFormKeyRef.current === id) return;
+      const row = initialRows.find((r) => r.id === id);
+      if (row) {
+        setForm(rowToForm(row));
+        loadedFormKeyRef.current = id;
+        return;
+      }
+    }
+    loadedFormKeyRef.current = null;
+    if (!formVisible) setForm(emptyForm());
+  }, [searchParams, initialRows, formVisible]);
 
   useEffect(() => {
     if (!formVisible) {
@@ -136,23 +165,6 @@ export function BisProjectsMaster({
       setEmbedIsCodeOpen(false);
     }
   }, [formVisible]);
-
-  useEffect(() => {
-    const id = searchParams.get("id");
-    const isNew = searchParams.get("new");
-    if (isNew === "1") {
-      setForm(emptyForm());
-      return;
-    }
-    if (id) {
-      const row = initialRows.find((r) => r.id === id);
-      if (row) {
-        setForm(rowToForm(row));
-        return;
-      }
-    }
-    setForm(emptyForm());
-  }, [searchParams, initialRows]);
 
   const filteredRows = useMemo(
     () => filterBisProjectsBySearch(rows, searchQuery),

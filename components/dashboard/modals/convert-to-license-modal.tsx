@@ -1,18 +1,27 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { convertApplicationToLicense } from "@/lib/actions/bis-projects";
+import {
+  convertApplicationToLicense,
+  updateBisProjectLicenseDetails,
+} from "@/lib/actions/bis-projects";
+import { convertBisNewApplicationToLicense } from "@/lib/actions/bis-new-applications";
+import type { BisApplicationSource } from "@/lib/bis-project-kind";
 
 export function ConvertToLicenseModal({
   projectId,
   clientName,
   isNumber,
+  mode = "convert_application",
+  source = "bis_projects",
   onClose,
   onConverted,
 }: {
   projectId: string;
   clientName: string;
   isNumber: string;
+  mode?: "convert_application" | "update_license";
+  source?: BisApplicationSource;
   onClose: () => void;
   onConverted: () => void;
 }) {
@@ -20,6 +29,13 @@ export function ConvertToLicenseModal({
   const [validityDate, setValidityDate] = useState("");
   const [saving, startSave] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  const isRenewal = mode === "update_license";
+  const title = isRenewal ? "Update License" : "Convert to License";
+  const submitLabel = isRenewal ? "Update License" : "Convert to License";
+  const description = isRenewal
+    ? "Enter the renewed CM/L number and license validity for this record."
+    : "Enter the issued CM/L number and license validity. This application will move to BIS All Projects as a license.";
 
   function handleConvert() {
     if (cmDigits.length !== 10) {
@@ -32,7 +48,11 @@ export function ConvertToLicenseModal({
     }
     setError(null);
     startSave(async () => {
-      const res = await convertApplicationToLicense(projectId, cmDigits, validityDate);
+      const res = isRenewal
+        ? await updateBisProjectLicenseDetails(projectId, cmDigits, validityDate)
+        : source === "bis_new_applications"
+          ? await convertBisNewApplicationToLicense(projectId, cmDigits, validityDate)
+          : await convertApplicationToLicense(projectId, cmDigits, validityDate);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -66,7 +86,7 @@ export function ConvertToLicenseModal({
               </div>
               <div>
                 <h2 id="convert-to-license-title" className="text-sm font-bold text-zinc-900 dark:text-zinc-100">
-                  Convert to License
+                  {title}
                 </h2>
                 <p className="text-xs text-zinc-500 dark:text-zinc-400">
                   {clientName}
@@ -93,8 +113,7 @@ export function ConvertToLicenseModal({
 
         <div className="space-y-4 px-6 py-5">
           <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            Enter the issued CM/L number and license validity. This application will move to BIS All Projects as a
-            license.
+            {description}
           </p>
 
           <div>
@@ -154,7 +173,7 @@ export function ConvertToLicenseModal({
             disabled={saving || cmDigits.length !== 10 || !validityDate}
             className="flex-1 rounded-lg bg-sky-600 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-40"
           >
-            {saving ? "Converting…" : "Convert to License"}
+            {saving ? (isRenewal ? "Updating…" : "Converting…") : submitLabel}
           </button>
         </div>
       </div>

@@ -18,6 +18,7 @@ import {
   DROPDOWN_KEY_CLIENT_STATE,
   DROPDOWN_KEY_IS_CODE_ASPECT,
   DROPDOWN_KEY_IS_CODE_UNIT,
+  DROPDOWN_KEY_TEST_PARAMETER_TEST_METHOD,
   DROPDOWN_KEY_PRODUCT_GST_RATE,
   DROPDOWN_KEY_PRODUCT_UNIT,
 } from "@/lib/dropdown-keys";
@@ -54,14 +55,10 @@ const BIS_NEW_APPLICATIONS_USAGE_COLUMN: Partial<Record<string, string>> = {
   [DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY]: "billing_frequency",
 };
 
-/** Seeded BIS catalog values (keep in sync with `bis-projects-dropdowns` + migrations). */
-const BIS_PROTECTED_SEEDED_PROJECT_KINDS = new Set([
-  "new_license",
-  "application",
-  "inclusion",
-  "renewal",
-  "maintenance",
-]);
+const TEST_PARAMETER_USAGE_COLUMN: Partial<Record<string, string>> = {
+  [DROPDOWN_KEY_TEST_PARAMETER_TEST_METHOD]: "test_method",
+};
+
 const BIS_PROTECTED_SEEDED_BILLING = new Set([
   "Monthly",
   "Quarterly",
@@ -113,6 +110,9 @@ export async function addAppDropdownOption(
   if (optionKey.startsWith("product_master.")) {
     revalidatePath("/dashboard/products");
   }
+  if (optionKey.startsWith("test_parameter_master.")) {
+    revalidatePath("/dashboard/test-parameters");
+  }
   if (
     optionKey === DROPDOWN_KEY_BIS_PROJECT_KIND ||
     optionKey === DROPDOWN_KEY_BIS_BILLING_FREQUENCY
@@ -140,17 +140,6 @@ export async function deleteAppDropdownOption(
   if (!user) return { ok: false, error: "Not signed in." };
 
   const trimmedValue = value.trim();
-  if (
-    (optionKey === DROPDOWN_KEY_BIS_PROJECT_KIND ||
-      optionKey === DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND) &&
-    BIS_PROTECTED_SEEDED_PROJECT_KINDS.has(trimmedValue)
-  ) {
-    return {
-      ok: false,
-      error:
-        "Built-in project types cannot be deleted. Add a new type instead of removing these.",
-    };
-  }
   if (
     (optionKey === DROPDOWN_KEY_BIS_BILLING_FREQUENCY ||
       optionKey === DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY) &&
@@ -238,6 +227,21 @@ export async function deleteAppDropdownOption(
     }
   }
 
+  const testParamCol = TEST_PARAMETER_USAGE_COLUMN[optionKey];
+  if (testParamCol) {
+    const { count, error: tErr } = await supabase
+      .from("test_parameters")
+      .select("id", { count: "exact", head: true })
+      .eq(testParamCol, value);
+    if (tErr) return { ok: false, error: tErr.message };
+    if ((count ?? 0) > 0) {
+      return {
+        ok: false,
+        error: `Cannot delete "${value}" — it is used by one or more test parameters. Update those records first.`,
+      };
+    }
+  }
+
   const { error } = await supabase
     .from("app_dropdown_options")
     .delete()
@@ -252,6 +256,9 @@ export async function deleteAppDropdownOption(
   }
   if (optionKey.startsWith("product_master.")) {
     revalidatePath("/dashboard/products");
+  }
+  if (optionKey.startsWith("test_parameter_master.")) {
+    revalidatePath("/dashboard/test-parameters");
   }
   if (
     optionKey === DROPDOWN_KEY_BIS_PROJECT_KIND ||
