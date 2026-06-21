@@ -80,7 +80,9 @@ export type DashboardModuleKey = (typeof DASHBOARD_MODULES)[number]["key"];
 
 export const ALL_MODULE_KEYS: DashboardModuleKey[] = DASHBOARD_MODULES.map((m) => m.key);
 
-export const STAFF_ASSIGNABLE_MODULES = DASHBOARD_MODULES.filter((m) => !m.adminOnly);
+export const STAFF_ASSIGNABLE_MODULES = DASHBOARD_MODULES.filter(
+  (m) => !("adminOnly" in m && m.adminOnly),
+);
 
 export function normalizeModuleAccess(raw: unknown): DashboardModuleKey[] {
   if (!Array.isArray(raw)) return ["dashboard"];

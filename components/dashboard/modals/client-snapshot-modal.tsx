@@ -85,7 +85,7 @@ export function ClientSnapshotModal({ row, onClose }: { row: ClientSnapshotRow; 
     async function loadDetails() {
       setLoading(true);
 
-      const tasks: Promise<void>[] = [
+      const tasks: PromiseLike<void>[] = [
         supabase
           .from("bis_projects")
           .select("notes")

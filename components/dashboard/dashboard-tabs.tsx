@@ -33,6 +33,7 @@ type RenewalRow = {
   is_revision_year: number | null;
   is_code_title: string | null;
   is_code_id: string | null;
+  notes: string | null;
 };
 
 type ApplicationRow = {

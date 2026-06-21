@@ -1,6 +1,6 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import { publicHero } from "@/components/public/public-theme";
+import { publicHero, publicBreadcrumb } from "@/components/public/public-theme";
 
 export function PublicHero({
   badge,

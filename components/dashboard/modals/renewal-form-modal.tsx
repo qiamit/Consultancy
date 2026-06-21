@@ -43,6 +43,7 @@ function FInput({
   label,
   value,
   onChange,
+  onBlur,
   type = "text",
   className = "",
   readOnly = false,
@@ -50,6 +51,7 @@ function FInput({
   label: string;
   value: string;
   onChange?: (v: string) => void;
+  onBlur?: () => void;
   type?: string;
   className?: string;
   readOnly?: boolean;
@@ -62,6 +64,7 @@ function FInput({
         value={value}
         readOnly={readOnly}
         onChange={onChange ? (e) => onChange(e.target.value) : undefined}
+        onBlur={onBlur}
         className={`mt-0.5 w-full rounded-lg border px-3 py-1.5 text-sm outline-none ${
           readOnly
             ? "border-zinc-100 bg-zinc-100 text-zinc-600 dark:border-zinc-800 dark:bg-zinc-800 dark:text-zinc-400"
@@ -295,7 +298,7 @@ export function RenewalFormModal({
               {step === "fee" && (
                 <SectionCard title="Marking Fee Details">
                   <FInput label="Rate per Unit (₹)" value={f("marking_fee_rate")} onChange={setNum("marking_fee_rate")} type="number"
-                    onBlur={autoCalcTotal as never} />
+                    onBlur={autoCalcTotal} />
                   <FInput label="Quantity (units)" value={f("marking_fee_quantity")} onChange={setNum("marking_fee_quantity")} type="number" />
                   <FInput label="Total Marking Fee (₹)" value={f("marking_fee_total")} onChange={setNum("marking_fee_total")} type="number" />
                   <FSelect label="Payment Mode" value={f("fee_payment_mode")} onChange={set("fee_payment_mode")}

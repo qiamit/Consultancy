@@ -112,12 +112,16 @@ export function QEAssistant() {
   }, [loading, messages]);
 
   const startVoice = () => {
-    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+    const SR =
+      typeof window !== "undefined"
+        ? window.SpeechRecognition ?? window.webkitSpeechRecognition
+        : undefined;
+
+    if (!SR) {
       alert("Voice input is not supported in your browser. Please use Chrome.");
       return;
     }
-    const SR = (window as Window & { webkitSpeechRecognition?: typeof SpeechRecognition; SpeechRecognition?: typeof SpeechRecognition }).SpeechRecognition ||
-               (window as Window & { webkitSpeechRecognition?: typeof SpeechRecognition }).webkitSpeechRecognition;
+
     const rec = new SR();
     rec.lang = "hi-IN,en-IN";
     rec.continuous = false;

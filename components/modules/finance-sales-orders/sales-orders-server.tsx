@@ -166,6 +166,7 @@ export async function FinanceSalesOrdersServer({
     email: s(companyRow, "email"),
     phone: s(companyRow, "phone"),
     contact_person: s(companyRow, "contact_person_name"),
+    website: s(companyRow, "website"),
     logo_url: null,
     letterhead_upper_url: letterheadUpperImageUrl,
     letterhead_lower_url: letterheadLowerImageUrl,

@@ -640,7 +640,7 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
     openPrintPreview({
       buildDoc: (settings, company) => {
         const { styles, docInner } = buildQuotationDocumentParts(settings);
-        const extraStyles = styles.replace(/@page\s*\{[^}]*\}/s, "").trim();
+        const extraStyles = styles.replace(/@page\s*\{[\s\S]*?\}/, "").trim();
         return buildPrintDocument({
           title: `Quotation ${quotationNumber || ""}`,
           bodyHtml: docInner,

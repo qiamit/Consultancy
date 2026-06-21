@@ -613,7 +613,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     let cancelled = false;
 
     async function loadDetails() {
-      const tasks: Promise<void>[] = [];
+      const tasks: PromiseLike<void>[] = [];
 
       tasks.push(
         supabase
@@ -757,6 +757,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       address: updated.address,
       city: updated.city,
       state: updated.state,
+      country: updated.country,
       pin_code: updated.pin_code,
       gst_number: updated.gst_number,
       company_type: updated.company_type,

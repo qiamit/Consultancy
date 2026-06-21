@@ -314,7 +314,7 @@ export async function fetchMessageAttachment(
       const lock = await client.getMailboxLock(folder);
       try {
         const msg = await client.fetchOne(String(uid), { source: true }, { uid: true });
-        if (!msg || msg === false || !("source" in msg) || !msg.source) return null;
+        if (!msg || !("source" in msg) || !msg.source) return null;
         const parsed = await simpleParser(msg.source);
         const attachment = parsed.attachments?.[index];
         if (!attachment?.content) return null;
