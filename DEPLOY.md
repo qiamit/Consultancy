@@ -16,6 +16,10 @@
    |------|--------|
    | `NEXT_PUBLIC_SUPABASE_URL` | From Supabase → Settings → API |
    | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase → Settings → API (anon public) |
+   | `SUPABASE_SERVICE_ROLE_KEY` | Server-only — User Management |
+   | `SUPER_ADMIN_EMAIL` | e.g. `qicoding1@gmail.com` |
+
+   **Important:** The browser login uses **`NEXT_PUBLIC_*`** variables only. Updating `SUPABASE_URL` / `SUPABASE_ANON_KEY` (Vercel Supabase integration names) is **not enough** — you must set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, then **redeploy**. After changing env vars, verify the live bundle no longer references an old project ref (e.g. open DevTools → Network on `/login`).
 
 3. Deploy. Every push to the connected branch triggers a new deployment.
 
