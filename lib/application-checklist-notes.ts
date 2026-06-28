@@ -1,5 +1,7 @@
-import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
+import type { FactoryTestReportStored } from "@/lib/factory-test-report";
+import { parseFactoryTestReports, ftrReportHasContent } from "@/lib/factory-test-report";
 import { parseOslSampleRequirements, rowHasContent } from "@/lib/osl-sample-requirements";
+import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
 import {
   parseTechnicalStaff,
   rowHasContent as technicalStaffRowHasContent,
@@ -10,6 +12,50 @@ import {
   rowHasContent as topManagementRowHasContent,
   type TopManagementStored,
 } from "@/lib/top-management";
+import {
+  documentHasContent as subcontractedTestsDocumentHasContent,
+  parseSubcontractedTests,
+  parseSubcontractedTestsDocument,
+  rowHasContent as subcontractedTestRowHasContent,
+  type SubcontractedTestStored,
+  type SubcontractedTestsDocumentStored,
+  defaultSubcontractedTestsDocument,
+} from "@/lib/subcontracted-tests";
+import {
+  parseCmpf305Machinery,
+  rowHasContent as cmpf305RowHasContent,
+  type Cmpf305MachineryStored,
+} from "@/lib/cmpf-305";
+import {
+  defaultCmpf306Document,
+  documentHasContent as cmpf306DocumentHasContent,
+  parseCmpf306,
+  type Cmpf306Stored,
+} from "@/lib/cmpf-306";
+import {
+  defaultCmpf307Document,
+  documentHasContent as cmpf307DocumentHasContent,
+  parseCmpf307,
+  type Cmpf307Stored,
+} from "@/lib/cmpf-307";
+import {
+  defaultCmpf310Document,
+  documentHasContent as cmpf310DocumentHasContent,
+  parseCmpf310,
+  type Cmpf310Stored,
+} from "@/lib/cmpf-310";
+import {
+  defaultCmpf311Document,
+  documentHasContent as cmpf311DocumentHasContent,
+  parseCmpf311,
+  type Cmpf311Stored,
+} from "@/lib/cmpf-311";
+import {
+  defaultUndertakingOption2Document,
+  documentHasContent as undertakingOption2DocumentHasContent,
+  parseUndertakingOption2,
+  type UndertakingOption2Stored,
+} from "@/lib/undertaking-option-2";
 
 export const APPLICATION_NUMBER_PREFIX = "CM/A-" as const;
 
@@ -134,6 +180,15 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
   piSampleRequirements: OslSampleRequirementStored[];
   topManagement: TopManagementStored[];
   technicalStaff: TechnicalStaffStored[];
+  factoryTestReports: FactoryTestReportStored[];
+  subcontractedTests: SubcontractedTestStored[];
+  subcontractedTestsDocument: SubcontractedTestsDocumentStored;
+  cmpf305Machinery: Cmpf305MachineryStored[];
+  cmpf306: Cmpf306Stored;
+  cmpf307: Cmpf307Stored;
+  cmpf310: Cmpf310Stored;
+  cmpf311: Cmpf311Stored;
+  undertakingOption2: UndertakingOption2Stored;
   meta: ApplicationMeta;
 } {
   const raw = (notes ?? "").trim();
@@ -147,6 +202,15 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       piSampleRequirements: [],
       topManagement: [],
       technicalStaff: [],
+      factoryTestReports: [],
+      subcontractedTests: [],
+      subcontractedTestsDocument: defaultSubcontractedTestsDocument(),
+      cmpf305Machinery: [],
+      cmpf306: defaultCmpf306Document(),
+      cmpf307: defaultCmpf307Document(),
+      cmpf310: defaultCmpf310Document(),
+      cmpf311: defaultCmpf311Document(),
+      undertakingOption2: defaultUndertakingOption2Document(),
       meta: defaultApplicationMeta(),
     };
   }
@@ -161,6 +225,15 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       pi_sample_requirements?: unknown;
       top_management?: unknown;
       technical_staff?: unknown;
+      factory_test_reports?: unknown;
+      subcontracted_tests?: unknown;
+      subcontracted_tests_document?: unknown;
+      cmpf_305_machinery?: unknown;
+      cmpf_306?: unknown;
+      cmpf_307?: unknown;
+      cmpf_310?: unknown;
+      cmpf_311?: unknown;
+      undertaking_option_2?: unknown;
       meta?: unknown;
     };
     if (parsed.type !== "application_checklist") {
@@ -173,6 +246,15 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
         piSampleRequirements: [],
         topManagement: [],
         technicalStaff: [],
+        factoryTestReports: [],
+        subcontractedTests: [],
+        subcontractedTestsDocument: defaultSubcontractedTestsDocument(),
+        cmpf305Machinery: [],
+        cmpf306: defaultCmpf306Document(),
+        cmpf307: defaultCmpf307Document(),
+        cmpf310: defaultCmpf310Document(),
+        cmpf311: defaultCmpf311Document(),
+        undertakingOption2: defaultUndertakingOption2Document(),
         meta: defaultApplicationMeta(),
       };
     }
@@ -197,6 +279,17 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       piSampleRequirements: parseOslSampleRequirements(parsed.pi_sample_requirements),
       topManagement: parseTopManagement(parsed.top_management),
       technicalStaff: parseTechnicalStaff(parsed.technical_staff),
+      factoryTestReports: parseFactoryTestReports(parsed.factory_test_reports),
+      subcontractedTests: parseSubcontractedTests(parsed.subcontracted_tests),
+      subcontractedTestsDocument: parseSubcontractedTestsDocument(
+        parsed.subcontracted_tests_document,
+      ),
+      cmpf305Machinery: parseCmpf305Machinery(parsed.cmpf_305_machinery),
+      cmpf306: parseCmpf306(parsed.cmpf_306),
+      cmpf307: parseCmpf307(parsed.cmpf_307),
+      cmpf310: parseCmpf310(parsed.cmpf_310),
+      cmpf311: parseCmpf311(parsed.cmpf_311),
+      undertakingOption2: parseUndertakingOption2(parsed.undertaking_option_2),
       meta: parseApplicationMeta(parsed.meta),
     };
   } catch {
@@ -209,6 +302,15 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       piSampleRequirements: [],
       topManagement: [],
       technicalStaff: [],
+      factoryTestReports: [],
+      subcontractedTests: [],
+      subcontractedTestsDocument: defaultSubcontractedTestsDocument(),
+      cmpf305Machinery: [],
+      cmpf306: defaultCmpf306Document(),
+      cmpf307: defaultCmpf307Document(),
+      cmpf310: defaultCmpf310Document(),
+      cmpf311: defaultCmpf311Document(),
+      undertakingOption2: defaultUndertakingOption2Document(),
       meta: defaultApplicationMeta(),
     };
   }
@@ -232,6 +334,58 @@ function nonEmptyTechnicalStaffRows(
   return (rows ?? []).filter((r) => technicalStaffRowHasContent(r));
 }
 
+function nonEmptyFtrReports(
+  rows: FactoryTestReportStored[] | undefined,
+): FactoryTestReportStored[] {
+  return (rows ?? []).filter((r) => ftrReportHasContent(r));
+}
+
+function nonEmptySubcontractedTests(
+  rows: SubcontractedTestStored[] | undefined,
+): SubcontractedTestStored[] {
+  return (rows ?? []).filter((r) => subcontractedTestRowHasContent(r));
+}
+
+function nonEmptyCmpf305Machinery(
+  rows: Cmpf305MachineryStored[] | undefined,
+): Cmpf305MachineryStored[] {
+  return (rows ?? []).filter((r) => cmpf305RowHasContent(r));
+}
+
+function nonEmptyCmpf306(doc: Cmpf306Stored | undefined): Cmpf306Stored | null {
+  if (!doc || !cmpf306DocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyCmpf307(doc: Cmpf307Stored | undefined): Cmpf307Stored | null {
+  if (!doc || !cmpf307DocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyCmpf310(doc: Cmpf310Stored | undefined): Cmpf310Stored | null {
+  if (!doc || !cmpf310DocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyCmpf311(doc: Cmpf311Stored | undefined): Cmpf311Stored | null {
+  if (!doc || !cmpf311DocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptySubcontractedTestsDocument(
+  doc: SubcontractedTestsDocumentStored | undefined,
+): SubcontractedTestsDocumentStored | null {
+  if (!doc || !subcontractedTestsDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyUndertakingOption2(
+  doc: UndertakingOption2Stored | undefined,
+): UndertakingOption2Stored | null {
+  if (!doc || !undertakingOption2DocumentHasContent(doc)) return null;
+  return doc;
+}
+
 export function buildApplicationChecklistPayload(input: {
   items: unknown[];
   licenseScope?: string;
@@ -241,6 +395,15 @@ export function buildApplicationChecklistPayload(input: {
   piSampleRequirements?: OslSampleRequirementStored[];
   topManagement?: TopManagementStored[];
   technicalStaff?: TechnicalStaffStored[];
+  factoryTestReports?: FactoryTestReportStored[];
+  subcontractedTests?: SubcontractedTestStored[];
+  subcontractedTestsDocument?: SubcontractedTestsDocumentStored;
+  cmpf305Machinery?: Cmpf305MachineryStored[];
+  cmpf306?: Cmpf306Stored;
+  cmpf307?: Cmpf307Stored;
+  cmpf310?: Cmpf310Stored;
+  cmpf311?: Cmpf311Stored;
+  undertakingOption2?: UndertakingOption2Stored;
   meta?: ApplicationMeta;
 }): string {
   const payload: Record<string, unknown> = {
@@ -266,6 +429,24 @@ export function buildApplicationChecklistPayload(input: {
   if (topMgmtRows.length > 0) payload.top_management = topMgmtRows;
   const techStaffRows = nonEmptyTechnicalStaffRows(input.technicalStaff);
   if (techStaffRows.length > 0) payload.technical_staff = techStaffRows;
+  const ftrRows = nonEmptyFtrReports(input.factoryTestReports);
+  if (ftrRows.length > 0) payload.factory_test_reports = ftrRows;
+  const subTestRows = nonEmptySubcontractedTests(input.subcontractedTests);
+  if (subTestRows.length > 0) payload.subcontracted_tests = subTestRows;
+  const subTestDoc = nonEmptySubcontractedTestsDocument(input.subcontractedTestsDocument);
+  if (subTestDoc) payload.subcontracted_tests_document = subTestDoc;
+  const cmpf305Rows = nonEmptyCmpf305Machinery(input.cmpf305Machinery);
+  if (cmpf305Rows.length > 0) payload.cmpf_305_machinery = cmpf305Rows;
+  const cmpf306Doc = nonEmptyCmpf306(input.cmpf306);
+  if (cmpf306Doc) payload.cmpf_306 = cmpf306Doc;
+  const cmpf307Doc = nonEmptyCmpf307(input.cmpf307);
+  if (cmpf307Doc) payload.cmpf_307 = cmpf307Doc;
+  const cmpf310Doc = nonEmptyCmpf310(input.cmpf310);
+  if (cmpf310Doc) payload.cmpf_310 = cmpf310Doc;
+  const cmpf311Doc = nonEmptyCmpf311(input.cmpf311);
+  if (cmpf311Doc) payload.cmpf_311 = cmpf311Doc;
+  const undertakingOption2Doc = nonEmptyUndertakingOption2(input.undertakingOption2);
+  if (undertakingOption2Doc) payload.undertaking_option_2 = undertakingOption2Doc;
   return JSON.stringify(payload);
 }
 

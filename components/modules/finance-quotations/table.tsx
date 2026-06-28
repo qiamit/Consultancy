@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { SALES_ORDER_LIST_PATH } from "@/components/modules/finance-sales-orders/constants";
 import { TAX_INVOICE_LIST_PATH } from "@/components/modules/finance-tax-invoices/constants";
 import type { FinanceQuotationRow } from "@/lib/types/finance-quotation";
+import { formatDateField } from "@/lib/format-date";
 import { FinanceQuotationsFooterBar } from "./footer-bar";
 
 const COL_COUNT = 7;
@@ -211,7 +212,7 @@ export function FinanceQuotationsTable({
                     <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">
                       {r.quotation_number}
                     </div>
-                    <StackLine muted>Date: {dash(r.quotation_date)}</StackLine>
+                    <StackLine muted>Date: {formatDateField(r.quotation_date)}</StackLine>
                   </GroupCell>
 
                   <GroupCell textCenter>

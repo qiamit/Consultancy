@@ -1,3 +1,4 @@
+import { formatDisplayDate, formatPrintTimestamp } from "@/lib/format-date";
 import type { FinanceProformaInvoiceRow } from "@/lib/types/finance-proforma-invoice";
 
 function esc(s: string): string {
@@ -62,7 +63,7 @@ function listTableHtml(rows: FinanceProformaInvoiceRow[]): string {
   const body = rows
     .map(
       (r, i) =>
-        `<tr><td>${i + 1}</td><td class="mono">${esc(r.proforma_invoice_number)}</td><td>${esc(r.proforma_date)}</td><td>${esc(r.valid_until_date)}</td><td class="mono">${esc(r.finance_sales_orders?.sales_order_number ?? "—")}</td><td>${esc(clientLabel(r))}</td><td>${esc(r.invoice_type)}</td><td class="num">${esc(
+        `<tr><td>${i + 1}</td><td class="mono">${esc(r.proforma_invoice_number)}</td><td>${esc(formatDisplayDate(r.proforma_date))}</td><td>${esc(formatDisplayDate(r.valid_until_date))}</td><td class="mono">${esc(r.finance_sales_orders?.sales_order_number ?? "—")}</td><td>${esc(clientLabel(r))}</td><td>${esc(r.invoice_type)}</td><td class="num">${esc(
           Number(r.grand_total).toLocaleString("en-IN", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
@@ -240,10 +241,7 @@ function openPrintWindow(html: string): void {
 export function printFinanceProformaInvoicesList(rows: FinanceProformaInvoiceRow[]): void {
   if (rows.length === 0) return;
 
-  const now = new Date().toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const now = formatPrintTimestamp();
   const subtitle = `${rows.length} record(s) · Generated ${now}`;
   const html = wrapPrintDocument(
     "Proforma invoice — print",

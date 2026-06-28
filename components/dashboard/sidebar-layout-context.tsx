@@ -4,9 +4,9 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useMemo,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -18,6 +18,15 @@ type SidebarLayoutValue = {
 
 const SidebarLayoutContext = createContext<SidebarLayoutValue | null>(null);
 
+function subscribeViewport(onStoreChange: () => void) {
+  window.addEventListener("resize", onStoreChange);
+  return () => window.removeEventListener("resize", onStoreChange);
+}
+
+function getDesktopOpen() {
+  return window.innerWidth >= 1024;
+}
+
 export function useSidebarLayout() {
   const ctx = useContext(SidebarLayoutContext);
   if (!ctx) {
@@ -27,23 +36,21 @@ export function useSidebarLayout() {
 }
 
 export function SidebarLayoutProvider({ children }: { children: ReactNode }) {
-  // SSR-safe: start open (desktop default), correct after hydration
-  const [open, setOpen] = useState(true);
+  const desktopOpen = useSyncExternalStore(subscribeViewport, getDesktopOpen, () => true);
+  const [manualOpen, setManualOpen] = useState<boolean | null>(null);
+  const open = manualOpen ?? desktopOpen;
 
-  useEffect(() => {
-    const isDesktop = window.innerWidth >= 1024;
-    setOpen(isDesktop);
+  const toggle = useCallback(() => {
+    setManualOpen((prev) => !(prev ?? desktopOpen));
+  }, [desktopOpen]);
 
-    const handleResize = () => setOpen(window.innerWidth >= 1024);
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+  const setOpen = useCallback((next: boolean) => {
+    setManualOpen(next);
   }, []);
-
-  const toggle = useCallback(() => setOpen((v) => !v), []);
 
   const value = useMemo(
     () => ({ open, toggle, setOpen }),
-    [open, toggle],
+    [open, toggle, setOpen],
   );
 
   return (

@@ -8,6 +8,7 @@ import {
   type RenewalApplication,
   type ProjectDetail,
 } from "@/lib/actions/renewals";
+import { formatDisplayDate } from "@/lib/format-date";
 
 type Step = "application" | "fee" | "test" | "inspection" | "grant";
 
@@ -267,7 +268,7 @@ export function RenewalFormModal({
             {[
               { label: "CM/L No.", value: cmL },
               { label: "IS Standard", value: isCode },
-              { label: "Current Validity", value: project.license_validity_date ? new Date(project.license_validity_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "—" },
+              { label: "Current Validity", value: formatDisplayDate(project.license_validity_date) },
               { label: "Handled By", value: project.case_handled_by },
             ].map((item) => (
               <div key={item.label} className="bg-white px-4 py-2 dark:bg-zinc-900">
@@ -338,7 +339,7 @@ export function RenewalFormModal({
                   </SectionCard>
                   {form.new_validity_to && (
                     <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
-                      ✓ Saving will update the license validity in the project to <strong>{new Date(form.new_validity_to).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })}</strong> and mark the project as completed.
+                      ✓ Saving will update the license validity in the project to <strong>{formatDisplayDate(form.new_validity_to)}</strong> and mark the project as completed.
                     </div>
                   )}
                   <div className="rounded-xl border border-zinc-100 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-800/40">

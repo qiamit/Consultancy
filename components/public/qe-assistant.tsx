@@ -39,6 +39,17 @@ export function QEAssistant() {
   const hasCustomTrigger = isHomepage || isAboutPage || pathname.startsWith("/services/");
   const hideFloatingTrigger = hasCustomTrigger;
 
+  const showWelcome = useCallback(() => {
+    setMessages([
+      {
+        role: "assistant",
+        content:
+          "👋 Namaste! I'm **QE Assistant** — your AI guide for BIS certification, NABL accreditation, ISO standards, and more.\n\nAsk me anything in English or Hindi, or pick a topic below:",
+        quick: QUICK_STARTERS,
+      },
+    ]);
+  }, []);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, loading]);
@@ -51,29 +62,23 @@ export function QEAssistant() {
   useEffect(() => {
     const handler = () => {
       setOpen(true);
-      if (messages.length === 0) showWelcome();
+      if (messages.length === 0) {
+        showWelcome();
+      }
     };
     window.addEventListener("open-qe-assistant", handler);
     return () => window.removeEventListener("open-qe-assistant", handler);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages.length]);
+  }, [messages.length, showWelcome]);
 
   useEffect(() => {
-    if (open && messages.length === 0) showWelcome();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+    if (!open || messages.length > 0) return;
+    const timer = window.setTimeout(() => showWelcome(), 0);
+    return () => window.clearTimeout(timer);
+  }, [open, messages.length, showWelcome]);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 100);
   }, [open]);
-
-  const showWelcome = () => {
-    setMessages([{
-      role: "assistant",
-      content: "👋 Namaste! I'm **QE Assistant** — your AI guide for BIS certification, NABL accreditation, ISO standards, and more.\n\nAsk me anything in English or Hindi, or pick a topic below:",
-      quick: QUICK_STARTERS,
-    }]);
-  };
 
   const sendMessage = useCallback(async (text: string) => {
     if (!text.trim() || loading) return;

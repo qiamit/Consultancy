@@ -10,6 +10,7 @@ import {
   type PrintCompanyInfo,
   type PrintSettings,
 } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
 
 export type ManufacturingScopeDeclarationData = {
   companyName: string;
@@ -46,11 +47,7 @@ function formatBisBranchLine(
 function formatInspectionDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "";
-  return new Date(raw).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(raw, "");
 }
 
 function esc(s: string): string {

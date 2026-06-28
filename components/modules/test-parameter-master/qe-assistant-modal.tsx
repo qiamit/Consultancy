@@ -68,8 +68,18 @@ export function TestParameterQeAssistantModal({
   }, []);
 
   useEffect(() => {
-    void reloadIsCodeOptions();
-  }, [reloadIsCodeOptions]);
+    let cancelled = false;
+    void (async () => {
+      const data = await loadTestParameterAssistantData();
+      if (cancelled) return;
+      setIsCodeOptions(data.isCodeOptions);
+      setIsCodeFormDropdowns(data.isCodeFormDropdowns);
+      setLoadingData(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleCustomSend = useCallback(
     async (text: string, _messages: ChatMessage[], modelId: string | undefined) => {

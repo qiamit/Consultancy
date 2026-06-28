@@ -15,14 +15,11 @@ export function StorageDocumentLink({
   label?: ReactNode;
   loadingLabel?: ReactNode;
 }) {
+  const trimmed = value.trim();
   const [href, setHref] = useState<string | null>(null);
 
   useEffect(() => {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      setHref(null);
-      return;
-    }
+    if (!trimmed) return;
 
     let cancelled = false;
     void resolveDocumentRef(createClient(), trimmed).then((url) => {
@@ -32,15 +29,16 @@ export function StorageDocumentLink({
     return () => {
       cancelled = true;
     };
-  }, [value]);
+  }, [trimmed]);
 
-  if (!value.trim()) return null;
-  if (!href) {
+  if (!trimmed) return null;
+  const effectiveHref = trimmed ? href : null;
+  if (!effectiveHref) {
     return <span className={className}>{loadingLabel}</span>;
   }
 
   return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className={className}>
+    <a href={effectiveHref} target="_blank" rel="noopener noreferrer" className={className}>
       {label}
     </a>
   );

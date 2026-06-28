@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import {
   createPortalRole,
   createStaffUser,
@@ -120,6 +120,20 @@ export function UserManagementPanel({
   const router = useRouter();
   const [users, setUsers] = useState(initialUsers);
   const [roles, setRoles] = useState(initialRoles);
+  const usersKey = JSON.stringify(initialUsers);
+  const rolesKey = JSON.stringify(initialRoles);
+  const [appliedUsersKey, setAppliedUsersKey] = useState(usersKey);
+  const [appliedRolesKey, setAppliedRolesKey] = useState(rolesKey);
+
+  if (usersKey !== appliedUsersKey) {
+    setAppliedUsersKey(usersKey);
+    setUsers(initialUsers);
+  }
+  if (rolesKey !== appliedRolesKey) {
+    setAppliedRolesKey(rolesKey);
+    setRoles(initialRoles);
+  }
+
   const [pending, start] = useTransition();
   const [error, setError] = useState<string | null>(loadError);
   const [success, setSuccess] = useState<string | null>(null);
@@ -129,14 +143,6 @@ export function UserManagementPanel({
   const [editingUser, setEditingUser] = useState<StaffUserRow | null>(null);
   const [editRole, setEditRole] = useState("staff");
   const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
-
-  useEffect(() => {
-    setUsers(initialUsers);
-  }, [initialUsers]);
-
-  useEffect(() => {
-    setRoles(initialRoles);
-  }, [initialRoles]);
 
   function refresh() {
     router.refresh();

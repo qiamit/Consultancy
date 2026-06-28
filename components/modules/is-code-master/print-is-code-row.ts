@@ -1,5 +1,6 @@
 import type { IsCodeMasterRow } from "@/lib/types/is-code-master";
 import { formatReaffirmationDisplay } from "./constants";
+import { formatPrintTimestamp } from "@/lib/format-date";
 
 function esc(s: string): string {
   return s
@@ -263,10 +264,7 @@ function openPrintWindow(html: string): void {
 
 export function printIsCodeMasterList(rows: IsCodeMasterRow[]): void {
   if (rows.length === 0) return;
-  const now = new Date().toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const now = formatPrintTimestamp();
   const subtitle = `${rows.length} record(s) · Up to 4 per page · Generated ${now}`;
   const html = wrapPrintDocument(
     "IS Code master — print",

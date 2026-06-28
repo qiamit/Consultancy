@@ -34,7 +34,6 @@ export function CompanyScaleManager({
       onClearSelection={onClearSelection}
       selectOptions={selectOptions}
       overlayZIndexClass="z-[111]"
-      searchPlaceholder="Type to search scales…"
     />
   );
 }

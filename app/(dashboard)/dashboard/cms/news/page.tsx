@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { CmsNewsView } from "@/components/cms/cms-news-view";
+import type { CmsNewsRow } from "@/lib/types/cms";
 
 export default async function NewsCmsPage() {
   const supabase = await createClient();
@@ -7,7 +8,7 @@ export default async function NewsCmsPage() {
 
   return (
     <div className="w-full">
-      <CmsNewsView initialNews={news || []} />
+      <CmsNewsView initialNews={(news ?? []) as CmsNewsRow[]} />
     </div>
   );
 }

@@ -20,15 +20,15 @@ export function ClientEditModal({
 }) {
   const [form, setForm] = useState<Record<string, string> | null>(null);
   const [dropdowns, setDropdowns] = useState<ClientMasterDropdownOptions | null>(null);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const loadKey = clientId;
+  const [appliedLoadKey, setAppliedLoadKey] = useState<string | null>(null);
+  const loading = appliedLoadKey !== loadKey;
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
 
-    async function load() {
+    void (async () => {
       const supabase = createClient();
       const [{ data: row, error: rowError }, options] = await Promise.all([
         supabase.from("clients").select("*").eq("id", clientId).single(),
@@ -39,20 +39,19 @@ export function ClientEditModal({
 
       if (rowError || !row) {
         setLoadError("Client not found.");
-        setLoading(false);
+        setAppliedLoadKey(loadKey);
         return;
       }
 
       setForm(rowToForm(row as ClientMasterRow));
       setDropdowns(options);
-      setLoading(false);
-    }
+      setAppliedLoadKey(loadKey);
+    })();
 
-    load();
     return () => {
       cancelled = true;
     };
-  }, [clientId]);
+  }, [clientId, loadKey]);
 
   async function handleSaveSuccess() {
     const updated = await fetchClientDetail(clientId);

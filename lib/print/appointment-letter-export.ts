@@ -6,12 +6,13 @@ import {
   Paragraph,
   TextRun,
 } from "docx";
-import * as XLSX from "xlsx";
+import { buildWorkbookBuffer, triggerBlobDownload } from "@/lib/spreadsheet/excel";
 import type { AppointmentLetterData } from "@/lib/print/appointment-letter";
 import {
   buildManufacturingScopeCompany,
 } from "@/lib/print/manufacturing-scope-declaration";
 import type { PrintSettings } from "@/lib/print/types";
+import { formatDisplayDate, parseToDate } from "@/lib/format-date";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 24;
@@ -23,13 +24,8 @@ function safeFilePart(value: string): string {
 function formatDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "_______________________";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return raw;
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  if (!parseToDate(raw)) return raw;
+  return formatDisplayDate(raw);
 }
 
 function qualificationPhrasePlain(data: AppointmentLetterData): string {
@@ -49,15 +45,6 @@ function exportFilenameBase(data: AppointmentLetterData): string {
   const coPart = safeFilePart(data.companyName || "Company");
   const personPart = safeFilePart(data.person_name || "Staff");
   return `Appointment_Letter_${coPart}_${personPart}`;
-}
-
-function triggerBlobDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 function bodyRun(text: string, bold = false): TextRun {
@@ -276,9 +263,9 @@ export async function downloadAppointmentLetterWord(
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }
 
-export function downloadAppointmentLetterExcel(
+export async function downloadAppointmentLetterExcel(
   data: AppointmentLetterData,
-): void {
+): Promise<void> {
   const rows: (string | number)[][] = [];
 
   rows.push(["Appointment Letter"]);
@@ -313,18 +300,14 @@ export function downloadAppointmentLetterExcel(
     "4. Performing such other duties as may be assigned to you from time to time by the Management.",
   ]);
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [{ wch: 28 }, { wch: 56 }];
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Appointment Letter");
-
-  const buffer = XLSX.write(wb, {
-    bookType: "xlsx",
-    type: "array",
-    compression: true,
-  }) as ArrayBuffer;
+  const buffer = await buildWorkbookBuffer([
+    {
+      name: "Appointment Letter",
+      rows,
+      cols: [{ wch: 28 }, { wch: 56 }],
+      merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }],
+    },
+  ]);
 
   triggerBlobDownload(
     new Blob([buffer], {

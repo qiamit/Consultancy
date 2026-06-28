@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   addAppDropdownOption,
@@ -64,18 +65,25 @@ export function CompanyTypeManager({
   const inputRef = useRef<HTMLInputElement>(null);
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const selectOptionsRef = useRef(selectOptions);
-  selectOptionsRef.current = selectOptions;
   const valueRef = useRef(value);
-  valueRef.current = value;
+  useEffect(() => {
+    selectOptionsRef.current = selectOptions;
+    valueRef.current = value;
+  }, [selectOptions, value]);
 
+  const closedLabel = labelForOption(value, selectOptions);
+  const isClient = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
-
-  const [query, setQuery] = useState(() => labelForOption(value, selectOptions));
+  const [query, setQuery] = useState(closedLabel);
   const [listOpen, setListOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  const inputValue = listOpen ? query : closedLabel;
 
   const typeRows = useMemo(
     () => selectOptions.filter((o) => o.value !== ""),
@@ -90,18 +98,6 @@ export function CompanyTypeManager({
       return text.includes(q) || o.value.toLowerCase().includes(q);
     });
   }, [query, typeRows]);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    setQuery(labelForOption(value, selectOptionsRef.current));
-  }, [value]);
-
-  useEffect(() => {
-    setHighlight(0);
-  }, [query, filtered.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -138,6 +134,8 @@ export function CompanyTypeManager({
 
   function handleInputFocus() {
     clearBlurTimer();
+    setQuery(closedLabel);
+    setHighlight(0);
     setListOpen(true);
   }
 
@@ -251,9 +249,10 @@ export function CompanyTypeManager({
                 ? `${listboxId}-opt-${highlight}`
                 : undefined
             }
-            value={query}
+            value={inputValue}
             onChange={(e) => {
               setQuery(e.target.value);
+              setHighlight(0);
               setListOpen(true);
             }}
             onFocus={handleInputFocus}
@@ -301,7 +300,7 @@ export function CompanyTypeManager({
           </ul>
         ) : null}
       </div>
-      {mounted && open
+      {isClient && open
         ? createPortal(
             <div
               className="fixed inset-0 z-[110] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55"

@@ -60,6 +60,8 @@ export function DocumentPrintSettingsPanel({
   onOslTableColumnsChange,
   topMgmtTableColumns,
   onTopMgmtTableColumnsChange,
+  ftrPrintOptions,
+  onFtrPrintOptionsChange,
 }: {
   mode: "page" | "print";
   settings: PrintSettings;
@@ -68,6 +70,10 @@ export function DocumentPrintSettingsPanel({
   onOslTableColumnsChange?: (columns: OslSampleTableColumnKey[]) => void;
   topMgmtTableColumns?: TopManagementTableColumnKey[];
   onTopMgmtTableColumnsChange?: (columns: TopManagementTableColumnKey[]) => void;
+  ftrPrintOptions?: { show_witnessed_by: boolean; show_tested_by: boolean };
+  onFtrPrintOptionsChange?: (
+    patch: Partial<{ show_witnessed_by: boolean; show_tested_by: boolean }>,
+  ) => void;
 }) {
   if (mode === "page") {
     return (
@@ -287,6 +293,22 @@ export function DocumentPrintSettingsPanel({
           />
         </Field>
       </div>
+
+      {ftrPrintOptions && onFtrPrintOptionsChange ? (
+        <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+          <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Signatures</p>
+          <CheckboxField
+            label="Show Witnessed By"
+            checked={ftrPrintOptions.show_witnessed_by}
+            onChange={(v) => onFtrPrintOptionsChange({ show_witnessed_by: v })}
+          />
+          <CheckboxField
+            label="Show Tested By"
+            checked={ftrPrintOptions.show_tested_by}
+            onChange={(v) => onFtrPrintOptionsChange({ show_tested_by: v })}
+          />
+        </div>
+      ) : null}
 
       <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
         <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Table</p>

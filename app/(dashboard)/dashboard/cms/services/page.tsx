@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { CmsServicesView } from "@/components/cms/cms-services-view";
+import type { CmsServiceRow } from "@/lib/types/cms";
 
 export default async function ServicesCmsPage() {
   const supabase = await createClient();
@@ -7,7 +8,7 @@ export default async function ServicesCmsPage() {
 
   return (
     <div className="w-full">
-      <CmsServicesView initialServices={services || []} />
+      <CmsServicesView initialServices={(services ?? []) as CmsServiceRow[]} />
     </div>
   );
 }

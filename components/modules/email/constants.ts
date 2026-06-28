@@ -1,4 +1,5 @@
 import type { EmailFolderKey, EmailProvider } from "@/lib/types/email";
+import { formatDisplayDate } from "@/lib/format-date";
 
 export const EMAIL_FOLDERS: EmailFolderKey[] = [
   "inbox",
@@ -31,7 +32,7 @@ export function formatEmailDate(iso: string | null): string {
   if (sameDay) {
     return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
   }
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  return formatDisplayDate(d, "");
 }
 
 export function parseAddressList(raw: string): string[] {

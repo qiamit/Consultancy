@@ -212,8 +212,8 @@ function TechnicalStaffDropdownField({
   onChange,
   options,
   onOptionsChanged,
-  searchPlaceholder = "Type or select…",
-  commitOnBlur = false,
+  commitOnBlur = true,
+  searchPlaceholder,
 }: {
   label: string;
   optionKey: string;
@@ -224,8 +224,8 @@ function TechnicalStaffDropdownField({
   onChange: (value: string) => void;
   options: AppDropdownOptionRow[];
   onOptionsChanged: () => void;
-  searchPlaceholder?: string;
   commitOnBlur?: boolean;
+  searchPlaceholder?: string;
 }) {
   return (
     <div className="min-w-0">
@@ -244,15 +244,14 @@ function TechnicalStaffDropdownField({
           selectedValue={value}
           onClearSelection={() => onChange("")}
           hideLabel
-          emptySelectLabel="Type or select…"
           listZIndexClass="z-[460]"
           overlayZIndexClass="z-[470]"
-          searchPlaceholder={searchPlaceholder}
           inputRowShellClassName={TECH_STAFF_COMBO_SHELL}
           suffixButtonClassName="border-zinc-600 bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
           onOptionAdded={onOptionsChanged}
           onOptionDeleted={onOptionsChanged}
           commitOnBlur={commitOnBlur}
+          searchPlaceholder={searchPlaceholder}
         />
       </div>
     </div>
@@ -315,8 +314,30 @@ export function TechnicalStaffFormModal({
   }, []);
 
   useEffect(() => {
-    void reloadDropdowns();
-  }, [reloadDropdowns]);
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("app_dropdown_options")
+        .select("*")
+        .in("option_key", [...TECHNICAL_STAFF_DROPDOWN_KEYS])
+        .order("value", { ascending: true });
+
+      if (cancelled) return;
+
+      const grouped: Record<string, AppDropdownOptionRow[]> = {};
+      for (const key of TECHNICAL_STAFF_DROPDOWN_KEYS) grouped[key] = [];
+      for (const opt of (data ?? []) as (AppDropdownOptionRow & { option_key?: string })[]) {
+        const key = opt.option_key ?? "";
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(opt);
+      }
+      setDropdownOptions(grouped);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function handleSubmit() {
     if (!personName.trim()) {

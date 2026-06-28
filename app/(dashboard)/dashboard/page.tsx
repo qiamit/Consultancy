@@ -6,6 +6,7 @@ import {
   supabaseInFilter,
   type BisApplicationSource,
 } from "@/lib/bis-project-kind";
+import { dashboardLicenseDateBounds } from "@/lib/dashboard-date-bounds";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +15,7 @@ export default async function DashboardHomePage() {
   const applicationKinds = await applicationProjectKindDbValues(supabase);
   const applicationKindFilter = supabaseInFilter(applicationKinds);
 
-  const today = new Date().toISOString().split("T")[0];
-  const plus90Days  = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const minus90Days = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const before90Days = minus90Days;
+  const { today, plus90Days, minus90Days, before90Days } = dashboardLicenseDateBounds();
 
   const [
     clientsRes,

@@ -3,8 +3,9 @@
 import Link from "next/link";
 import type { PrintSettings, PrintCompanyInfo } from "@/lib/print/types";
 import { DEFAULT_PRINT_SETTINGS } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
 import { DialogCloseXButton } from "@/components/modules/client-master/dialog-close-x";
 import { CLIENT_FIELD_LABEL_BLOCK_CLASS } from "@/components/modules/client-master/constants";
@@ -23,6 +24,9 @@ import {
 } from "@/lib/actions/finance-quotations";
 import type { CustomerStatementFormState, CustomerStatementLineForm } from "./constants";
 import { ProductLineCombobox } from "./product-line-combobox";
+import { CompanyTemplateSearchBox } from "@/components/modules/finance/company-template-search-box";
+import { pickDefaultTemplate } from "@/lib/finance/template-defaults";
+import { useFinanceTextTemplateSelection } from "@/components/modules/finance/use-finance-text-template-selection";
 import { ClientMasterEmbedModal } from "@/components/modules/finance/client-master-embed-modal";
 import { ProductMasterEmbedModal } from "@/components/modules/finance/product-master-embed-modal";
 
@@ -153,117 +157,6 @@ function formatInrCurrency(amount: number): string {
   });
 }
 
-function pickDefaultTemplate(
-  templates: CompanyTextTemplateRow[],
-  exactMatches: string[],
-): CompanyTextTemplateRow | null {
-  if (!templates.length) return null;
-  const exact = templates.find((t) => {
-    const code = t.code.trim().toLowerCase();
-    const name = t.name.trim().toLowerCase();
-    return exactMatches.includes(code) || exactMatches.includes(name);
-  });
-  if (exact) return exact;
-  const byDefault = templates.find((t) => {
-    const code = t.code.trim().toLowerCase();
-    const name = t.name.trim().toLowerCase();
-    return code.includes("default") || name.includes("default");
-  });
-  if (byDefault) return byDefault;
-  return templates.length === 1 ? templates[0] : null;
-}
-
-function CompanyTemplateSearchBox({
-  templates,
-  onPick,
-  onTemplatePick,
-  ariaLabel,
-  placeholder,
-  defaultQuery,
-}: {
-  templates: CompanyTextTemplateRow[];
-  onPick: (body: string) => void;
-  onTemplatePick?: (template: CompanyTextTemplateRow) => void;
-  ariaLabel: string;
-  placeholder: string;
-  listId?: string;
-  defaultQuery?: string;
-}) {
-  const [query, setQuery] = useState("");
-  const [open, setOpen] = useState(false);
-  const wrapRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const next = (defaultQuery ?? "").trim();
-    if (!next) return;
-    if (query.trim()) return;
-    setQuery(next);
-  }, [defaultQuery, query]);
-
-  useEffect(() => {
-    function onDown(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    }
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, []);
-
-  if (templates.length === 0) return null;
-
-  const filtered = query.trim()
-    ? templates.filter((t) =>
-        t.name.toLowerCase().includes(query.toLowerCase()) ||
-        t.code.toLowerCase().includes(query.toLowerCase()),
-      )
-    : templates;
-
-  function pick(t: CompanyTextTemplateRow) {
-    setQuery(t.name);
-    setOpen(false);
-    onPick(t.body);
-    onTemplatePick?.(t);
-  }
-
-  return (
-    <div ref={wrapRef} className="relative">
-      <input
-        aria-label={ariaLabel}
-        value={query}
-        onFocus={() => setOpen(true)}
-        onChange={(e) => {
-          const next = e.target.value;
-          setQuery(next);
-          setOpen(true);
-          const exact = templates.find(
-            (x) =>
-              x.name.toLowerCase() === next.toLowerCase() ||
-              x.code.toLowerCase() === next.toLowerCase(),
-          );
-          if (exact) pick(exact);
-        }}
-        placeholder={placeholder}
-        className={`${fieldClass} py-1.5 text-xs`}
-        autoComplete="off"
-      />
-      {open && filtered.length > 0 && (
-        <ul className="absolute left-0 top-full z-50 mt-1 max-h-48 w-full overflow-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
-          {filtered.map((t) => (
-            <li
-              key={t.id}
-              onMouseDown={(e) => { e.preventDefault(); pick(t); }}
-              className="cursor-pointer px-3 py-1.5 text-xs hover:bg-sky-50 dark:hover:bg-zinc-800"
-            >
-              {t.name}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 export function FinanceCustomerStatementForm({
   visible,
   overlay,
@@ -323,23 +216,17 @@ export function FinanceCustomerStatementForm({
   const [quickAddProduct, setQuickAddProduct] = useState<{ lineIndex: number; prefill: string } | null>(null);
   const [editingDescLine, setEditingDescLine] = useState<number | null>(null);
   const [showNotes, setShowNotes] = useState(false);
-  const [notesTemplateId, setNotesTemplateId] = useState("");
   const [notesDraft, setNotesDraft] = useState("");
-  const [notesTemplateName, setNotesTemplateName] = useState("");
   const [notesModalOpen, setNotesModalOpen] = useState(false);
   const [notesSaveError, setNotesSaveError] = useState<string | null>(null);
   const [isSavingNotesTemplate, startSaveNotesTemplate] = useTransition();
   const [showTerms, setShowTerms] = useState(false);
-  const [termsTemplateId, setTermsTemplateId] = useState("");
   const [termsDraft, setTermsDraft] = useState("");
-  const [termsTemplateName, setTermsTemplateName] = useState("");
   const [termsModalOpen, setTermsModalOpen] = useState(false);
   const [termsSaveError, setTermsSaveError] = useState<string | null>(null);
   const [isSavingTermsTemplate, startSaveTermsTemplate] = useTransition();
   const [showScope, setShowScope] = useState(false);
-  const [scopeTemplateId, setScopeTemplateId] = useState("");
   const [scopeDraft, setScopeDraft] = useState("");
-  const [scopeTemplateName, setScopeTemplateName] = useState("");
   const [scopeModalOpen, setScopeModalOpen] = useState(false);
   const [scopeSaveError, setScopeSaveError] = useState<string | null>(null);
   const [isSavingScopeTemplate, startSaveScopeTemplate] = useTransition();
@@ -355,58 +242,16 @@ export function FinanceCustomerStatementForm({
     () => pickDefaultTemplate(scopeTemplates, ["quotation_scope_of_work", "quotation scope of work"]),
     [scopeTemplates],
   );
+  const { notes: notesTemplate, terms: termsTemplate, scope: scopeTemplate } =
+    useFinanceTextTemplateSelection({
+      visible,
+      isNewParam,
+      defaultNotesTemplate,
+      defaultTermsTemplate,
+      defaultScopeTemplate,
+    });
 
-  useEffect(() => {
-    if (!visible || !isNewParam) return;
-    if (!defaultNotesTemplate) return;
-    if (!formValues.notes.trim()) {
-      onUpdateField("notes", defaultNotesTemplate.body ?? "");
-    }
-    if (!notesTemplateId) setNotesTemplateId(defaultNotesTemplate.id);
-    if (!notesTemplateName) setNotesTemplateName(defaultNotesTemplate.name);
-  }, [
-    visible,
-    isNewParam,
-    defaultNotesTemplate,
-    formValues.notes,
-    onUpdateField,
-    notesTemplateId,
-    notesTemplateName,
-  ]);
-  useEffect(() => {
-    if (!visible || !isNewParam) return;
-    if (!defaultTermsTemplate) return;
-    if (!formValues.terms_and_conditions.trim()) {
-      onUpdateField("terms_and_conditions", defaultTermsTemplate.body ?? "");
-    }
-    if (!termsTemplateId) setTermsTemplateId(defaultTermsTemplate.id);
-    if (!termsTemplateName) setTermsTemplateName(defaultTermsTemplate.name);
-  }, [
-    visible,
-    isNewParam,
-    defaultTermsTemplate,
-    formValues.terms_and_conditions,
-    onUpdateField,
-    termsTemplateId,
-    termsTemplateName,
-  ]);
-  useEffect(() => {
-    if (!visible || !isNewParam) return;
-    if (!defaultScopeTemplate) return;
-    if (!formValues.scope_of_work.trim()) {
-      onUpdateField("scope_of_work", defaultScopeTemplate.body ?? "");
-    }
-    if (!scopeTemplateId) setScopeTemplateId(defaultScopeTemplate.id);
-    if (!scopeTemplateName) setScopeTemplateName(defaultScopeTemplate.name);
-  }, [
-    visible,
-    isNewParam,
-    defaultScopeTemplate,
-    formValues.scope_of_work,
-    onUpdateField,
-    scopeTemplateId,
-    scopeTemplateName,
-  ]);
+
 
   const linesJson = useMemo(
     () =>
@@ -525,7 +370,7 @@ export function FinanceCustomerStatementForm({
   ${letterheadUpperImageUrl ? `<img class="headimg" src="${letterheadUpperImageUrl}" alt="Upper letterhead"/>` : ""}
   <div class="pad grid">
     <div><div class="label">Customer Statement no.</div><div>${esc(taxDisplayNumber || "-")}</div></div>
-    <div class="right"><div class="title">PROFORMA INVOICE</div><div class="muted">Date: ${esc(formValues.statement_date || "-")} | Valid until: ${esc(formValues.valid_until_date || "-")}</div></div>
+    <div class="right"><div class="title">PROFORMA INVOICE</div><div class="muted">Date: ${esc(formatDisplayDate(formValues.statement_date, "-"))} | Valid until: ${esc(formatDisplayDate(formValues.valid_until_date, "-"))}</div></div>
   </div>
   <div class="section">
     <div class="label">Client Details</div>
@@ -1164,8 +1009,7 @@ export function FinanceCustomerStatementForm({
                     templates={notesTemplates}
                     onPick={(body) => onUpdateField("notes", body)}
                     onTemplatePick={(template) => {
-                      setNotesTemplateId(template.id);
-                      setNotesTemplateName(template.name);
+                      notesTemplate.pickTemplate(template);
                       setNotesDraft(template.body);
                       setNotesSaveError(null);
                     }}
@@ -1173,7 +1017,7 @@ export function FinanceCustomerStatementForm({
                     placeholder="Search Company Setting Notes..."
                     listId="company-notes-template-list"
                     defaultQuery={
-                      notesTemplateName || defaultNotesTemplate?.name || undefined
+                      notesTemplate.templateName || notesTemplate.defaultTemplate?.name || undefined
                     }
                   />
                 </div>
@@ -1198,8 +1042,7 @@ export function FinanceCustomerStatementForm({
                     templates={termsTemplates}
                     onPick={(body) => onUpdateField("terms_and_conditions", body)}
                     onTemplatePick={(template) => {
-                      setTermsTemplateId(template.id);
-                      setTermsTemplateName(template.name);
+                      termsTemplate.pickTemplate(template);
                       setTermsDraft(template.body);
                       setTermsSaveError(null);
                     }}
@@ -1207,7 +1050,7 @@ export function FinanceCustomerStatementForm({
                     placeholder="Search Company Setting Terms..."
                     listId="company-terms-template-list"
                     defaultQuery={
-                      termsTemplateName || defaultTermsTemplate?.name || undefined
+                      termsTemplate.templateName || termsTemplate.defaultTemplate?.name || undefined
                     }
                   />
                 </div>
@@ -1232,8 +1075,7 @@ export function FinanceCustomerStatementForm({
                     templates={scopeTemplates}
                     onPick={(body) => onUpdateField("scope_of_work", body)}
                     onTemplatePick={(template) => {
-                      setScopeTemplateId(template.id);
-                      setScopeTemplateName(template.name);
+                      scopeTemplate.pickTemplate(template);
                       setScopeDraft(template.body);
                       setScopeSaveError(null);
                     }}
@@ -1241,7 +1083,7 @@ export function FinanceCustomerStatementForm({
                     placeholder="Search Company Setting Scope..."
                     listId="company-scope-template-list"
                     defaultQuery={
-                      scopeTemplateName || defaultScopeTemplate?.name || undefined
+                      scopeTemplate.templateName || scopeTemplate.defaultTemplate?.name || undefined
                     }
                   />
                 </div>
@@ -1348,7 +1190,7 @@ export function FinanceCustomerStatementForm({
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                   Notes
-                  {notesTemplateName ? ` - ${notesTemplateName}` : ""}
+                  {notesTemplate.templateName ? ` - ${notesTemplate.templateName}` : ""}
                 </h3>
                 <button
                   type="button"
@@ -1383,7 +1225,7 @@ export function FinanceCustomerStatementForm({
                   type="button"
                   disabled={isSavingNotesTemplate}
                   onClick={() => {
-                    if (!notesTemplateId) {
+                    if (!notesTemplate.templateId) {
                       setNotesSaveError(
                         "Pick a notes template first, then update it from this window.",
                       );
@@ -1391,7 +1233,7 @@ export function FinanceCustomerStatementForm({
                     }
                     startSaveNotesTemplate(async () => {
                       const result = await updateFinanceQuotationNoteTemplate({
-                        id: notesTemplateId,
+                        id: notesTemplate.templateId,
                         body: notesDraft,
                       });
                       if (!result.ok) {
@@ -1427,7 +1269,7 @@ export function FinanceCustomerStatementForm({
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                   Term &amp; Condition
-                  {termsTemplateName ? ` - ${termsTemplateName}` : ""}
+                  {termsTemplate.templateName ? ` - ${termsTemplate.templateName}` : ""}
                 </h3>
                 <button
                   type="button"
@@ -1462,7 +1304,7 @@ export function FinanceCustomerStatementForm({
                   type="button"
                   disabled={isSavingTermsTemplate}
                   onClick={() => {
-                    if (!termsTemplateId) {
+                    if (!termsTemplate.templateId) {
                       setTermsSaveError(
                         "Pick a terms template first, then update it from this window.",
                       );
@@ -1470,7 +1312,7 @@ export function FinanceCustomerStatementForm({
                     }
                     startSaveTermsTemplate(async () => {
                       const result = await updateFinanceQuotationTermTemplate({
-                        id: termsTemplateId,
+                        id: termsTemplate.templateId,
                         body: termsDraft,
                       });
                       if (!result.ok) {
@@ -1506,7 +1348,7 @@ export function FinanceCustomerStatementForm({
               <div className="mb-3 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">
                   Scope of Work
-                  {scopeTemplateName ? ` - ${scopeTemplateName}` : ""}
+                  {scopeTemplate.templateName ? ` - ${scopeTemplate.templateName}` : ""}
                 </h3>
                 <button
                   type="button"
@@ -1541,7 +1383,7 @@ export function FinanceCustomerStatementForm({
                   type="button"
                   disabled={isSavingScopeTemplate}
                   onClick={() => {
-                    if (!scopeTemplateId) {
+                    if (!scopeTemplate.templateId) {
                       setScopeSaveError(
                         "Pick a scope template first, then update it from this window.",
                       );
@@ -1549,7 +1391,7 @@ export function FinanceCustomerStatementForm({
                     }
                     startSaveScopeTemplate(async () => {
                       const result = await updateFinanceQuotationScopeTemplate({
-                        id: scopeTemplateId,
+                        id: scopeTemplate.templateId,
                         body: scopeDraft,
                       });
                       if (!result.ok) {

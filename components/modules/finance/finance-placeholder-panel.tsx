@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef } from "react";
+import { formatDisplayDate } from "@/lib/format-date";
 import { FinanceModuleShell } from "./finance-module-shell";
 
 const COLUMN_SETS: Record<
@@ -167,7 +168,7 @@ export function FinancePlaceholderPanel({
 <h1>${title}</h1>
 <p class="sub">${description}</p>
 <div class="meta">
-  <span>Date: ${new Date().toLocaleDateString("en-IN")}</span>
+  <span>Date: ${formatDisplayDate(new Date())}</span>
   <span>Printed: ${new Date().toLocaleString("en-IN")}</span>
 </div>
 ${printRef.current.innerHTML}

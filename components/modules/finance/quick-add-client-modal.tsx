@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
 import { executeSaveClientMaster } from "@/lib/actions/clients";
 
@@ -46,9 +46,12 @@ export function QuickAddClientModal({
     onSuccess(result.id!, fields.company_name.trim());
   }
 
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
-  if (!mounted) return null;
+  const isClient = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
+  if (!isClient) return null;
 
   const modal = (
     <div

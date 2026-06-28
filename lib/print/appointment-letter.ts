@@ -13,6 +13,7 @@ import {
 } from "@/lib/print/manufacturing-scope-declaration";
 
 import type { PrintSettings } from "@/lib/print/types";
+import { formatDisplayDate, parseToDate } from "@/lib/format-date";
 
 
 
@@ -66,19 +67,9 @@ function formatDate(dateStr: string): string {
 
   if (!raw) return "_______________________";
 
-  const d = new Date(raw);
+  if (!parseToDate(raw)) return esc(raw);
 
-  if (Number.isNaN(d.getTime())) return esc(raw);
-
-  return d.toLocaleDateString("en-IN", {
-
-    day: "2-digit",
-
-    month: "short",
-
-    year: "numeric",
-
-  });
+  return formatDisplayDate(raw);
 
 }
 

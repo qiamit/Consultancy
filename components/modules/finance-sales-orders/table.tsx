@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { PROFORMA_INVOICE_LIST_PATH } from "@/components/modules/finance-proforma-invoices/constants";
 import { TAX_INVOICE_LIST_PATH } from "@/components/modules/finance-tax-invoices/constants";
 import type { FinanceSalesOrderRow } from "@/lib/types/finance-sales-order";
+import { formatDateField } from "@/lib/format-date";
 import { FinanceSalesOrdersFooterBar } from "./footer-bar";
 
 const COL_COUNT = 7;
@@ -211,7 +212,7 @@ export function FinanceSalesOrdersTable({
                     <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">
                       {r.sales_order_number}
                     </div>
-                    <StackLine muted>Date: {dash(r.order_date)}</StackLine>
+                    <StackLine muted>Date: {formatDateField(r.order_date)}</StackLine>
                     <StackLine muted>
                       From QT:{" "}
                       {dash(r.finance_quotations?.quotation_number ?? null)}

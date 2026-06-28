@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import { CREDIT_NOTE_LIST_PATH } from "@/components/modules/finance-credit-notes/constants";
 import { CUSTOMER_STATEMENT_LIST_PATH } from "@/components/modules/finance-customer-statements/constants";
 import type { FinanceTaxInvoiceRow } from "@/lib/types/finance-tax-invoice";
+import { formatDateField } from "@/lib/format-date";
 import { FinanceTaxInvoicesFooterBar } from "./footer-bar";
 
 const COL_COUNT = 7;
@@ -211,7 +212,7 @@ export function FinanceTaxInvoicesTable({
                     <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">
                       {r.tax_invoice_number}
                     </div>
-                    <StackLine muted>Date: {dash(r.tax_date)}</StackLine>
+                    <StackLine muted>Date: {formatDateField(r.tax_date)}</StackLine>
                     <StackLine muted>
                       From SO:{" "}
                       {dash(r.finance_sales_orders?.sales_order_number ?? null)}

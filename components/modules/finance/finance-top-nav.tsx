@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   FINANCE_SECTIONS,
   financeItemPath,
@@ -43,18 +43,18 @@ export function FinanceTopNav() {
   );
   /** Module links row: hidden until a section tab is opened (always shown on a concrete module URL). */
   const [panelExpanded, setPanelExpanded] = useState(false);
+  const [appliedPath, setAppliedPath] = useState(pathname);
 
-  useEffect(() => {
+  if (pathname !== appliedPath) {
+    setAppliedPath(pathname);
     const fromUrl = activeSectionFromPathname(pathname);
     if (fromUrl) {
       setActiveSectionId(fromUrl);
       setPanelExpanded(true);
-      return;
-    }
-    if (pathname === "/dashboard/finance" || pathname === "/dashboard/finance/") {
+    } else if (pathname === "/dashboard/finance" || pathname === "/dashboard/finance/") {
       setPanelExpanded(false);
     }
-  }, [pathname]);
+  }
 
   function handleSectionTabClick(sectionId: FinanceSectionId) {
     if (sectionId === activeSectionId && panelExpanded) {

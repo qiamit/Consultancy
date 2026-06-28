@@ -10,7 +10,7 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import * as XLSX from "xlsx";
+import { buildWorkbookBuffer } from "@/lib/spreadsheet/excel";
 import {
   buildOslSampleCompany,
   type OslSampleOfferLetterData,
@@ -26,6 +26,7 @@ import {
 } from "@/lib/print/sample-offer-letter-variant";
 import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
 import type { PrintSettings } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 24;
@@ -37,25 +38,13 @@ function safeFilePart(value: string): string {
 function formatInspectionDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "N/A";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return "N/A";
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(raw, "N/A");
 }
 
 function formatDateDisplay(ymd: string): string {
   const raw = (ymd ?? "").trim();
   if (!raw) return "—";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return raw;
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(raw, "—");
 }
 
 function bisBranchLine(data: OslSampleOfferLetterData): string {
@@ -380,11 +369,11 @@ export async function downloadOslSampleRequirementsWord(
 }
 
 /** Modern Office Open XML Excel workbook (.xlsx) for OSL / PI sample offer letter. */
-export function downloadOslSampleRequirementsExcel(
+export async function downloadOslSampleRequirementsExcel(
   data: OslSampleOfferLetterData,
   tableColumns: OslSampleTableColumnKey[],
   variant: SampleOfferLetterVariant = "osl",
-): void {
+): Promise<void> {
   const labels = sampleOfferLetterLabels(variant);
   const columns = normalizeOslSampleTableColumns(tableColumns);
   const columnDefs = OSL_SAMPLE_TABLE_COLUMN_OPTIONS.filter((col) =>
@@ -415,21 +404,17 @@ export function downloadOslSampleRequirementsExcel(
     rows.push(["No sample details entered yet."]);
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
   const colCount = Math.max(2, columnDefs.length);
-  ws["!cols"] = Array.from({ length: colCount }, (_, i) =>
-    i === 0 ? { wch: 22 } : { wch: 28 },
-  );
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(1, colCount - 1) } }];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, variant === "pi" ? "Sample PI" : "Sample OSL");
-
-  const buffer = XLSX.write(wb, {
-    bookType: "xlsx",
-    type: "array",
-    compression: true,
-  }) as ArrayBuffer;
+  const buffer = await buildWorkbookBuffer([
+    {
+      name: variant === "pi" ? "Sample PI" : "Sample OSL",
+      rows,
+      cols: Array.from({ length: colCount }, (_, i) =>
+        i === 0 ? { wch: 22 } : { wch: 28 },
+      ),
+      merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(1, colCount - 1) } }],
+    },
+  ]);
 
   triggerBlobDownload(
     new Blob([buffer], {

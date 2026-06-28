@@ -1,7 +1,13 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import {
+  useFinanceListPagination,
+  usePrunedSetSelection,
+  useRouteBoundFormState,
+  useSyncedRows,
+} from "@/components/modules/finance/use-finance-master-state";
 import {
   deleteIsCodeMaster,
   deleteIsCodesMaster,
@@ -44,12 +50,8 @@ export function IsCodeMaster({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [rows, setRows] = useState(initialRows);
-  const [form, setForm] = useState(() => emptyForm());
+  const [rows, setRows] = useSyncedRows(initialRows);
   const [searchQuery, setSearchQuery] = useState("");
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [page, setPage] = useState(1);
-  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
 
   const idParam = searchParams.get("id");
   const isNewParam = searchParams.get("new") === "1";
@@ -58,27 +60,25 @@ export function IsCodeMaster({
       ? rows.find((r) => r.id === idParam) ?? undefined
       : undefined;
   const formVisible = isNewParam || !!editRow;
-
-  useEffect(() => {
-    setRows(initialRows);
-  }, [initialRows]);
-
-  useEffect(() => {
-    const id = searchParams.get("id");
-    const isNew = searchParams.get("new");
-    if (isNew === "1") {
-      setForm(emptyForm());
-      return;
-    }
-    if (id) {
-      const row = initialRows.find((r) => r.id === id);
-      if (row) {
-        setForm(rowToForm(row));
-        return;
+  const formOpenKey = formVisible
+    ? isNewParam
+      ? "new"
+      : idParam
+        ? `edit:${idParam}`
+        : null
+    : null;
+  const [form, setForm] = useRouteBoundFormState(
+    formOpenKey,
+    () => {
+      if (isNewParam) return emptyForm();
+      if (idParam) {
+        const row = initialRows.find((r) => r.id === idParam);
+        if (row) return rowToForm(row);
       }
-    }
-    setForm(emptyForm());
-  }, [searchParams, initialRows]);
+      return emptyForm();
+    },
+    emptyForm(),
+  );
 
   const filteredRows = useMemo(
     () => filterIsCodesBySearch(rows, searchQuery),
@@ -89,58 +89,25 @@ export function IsCodeMaster({
   const filteredTotal = filteredRows.length;
   const searchActive = searchQuery.trim().length > 0;
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filteredTotal / pageSize) || 1,
+  const {
+    pageSize,
+    page,
+    setPage,
+    totalPages,
+    paginated: paginatedRows,
+    onPageSizeChange,
+  } = useFinanceListPagination(filteredRows, searchQuery, PAGE_SIZE_OPTIONS[0]);
+
+  const filteredRowIds = useMemo(
+    () => filteredRows.map((r) => r.id),
+    [filteredRows],
   );
+  const { selectedIds, toggleRowSelection, toggleSelectPage } =
+    usePrunedSetSelection(filteredRowIds);
 
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, pageSize]);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-
-  const paginatedRows = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, page, pageSize]);
-
-  useEffect(() => {
-    const valid = new Set(filteredRows.map((r) => r.id));
-    setSelectedIds((prev) => {
-      const next = new Set<string>();
-      prev.forEach((id) => {
-        if (valid.has(id)) next.add(id);
-      });
-      return next;
-    });
-  }, [filteredRows]);
-
-  const toggleRowSelection = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const toggleSelectPage = useCallback(() => {
-    setSelectedIds((prev) => {
-      const ids = paginatedRows.map((r) => r.id);
-      const next = new Set(prev);
-      const allOnPage =
-        ids.length > 0 && ids.every((id) => next.has(id));
-      if (allOnPage) {
-        for (const id of ids) next.delete(id);
-      } else {
-        for (const id of ids) next.add(id);
-      }
-      return next;
-    });
-  }, [paginatedRows]);
+  const toggleSelectPageRows = useCallback(() => {
+    toggleSelectPage(paginatedRows.map((r) => r.id));
+  }, [toggleSelectPage, paginatedRows]);
 
   function selectRow(r: IsCodeMasterRow) {
     router.replace(`/dashboard/is-code-master?id=${r.id}`, { scroll: false });
@@ -300,7 +267,7 @@ export function IsCodeMaster({
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           pageSize={pageSize}
-          onPageSizeChange={setPageSize}
+          onPageSizeChange={onPageSizeChange}
           grandTotal={grandTotal}
           filteredTotal={filteredTotal}
           page={page}
@@ -323,7 +290,7 @@ export function IsCodeMaster({
           onDeleteRow={handleDeleteRow}
           selectedIds={selectedIds}
           onToggleRowSelection={toggleRowSelection}
-          onToggleSelectPage={toggleSelectPage}
+          onToggleSelectPage={toggleSelectPageRows}
           onFilesChanged={(isCodeId, files) => {
             setRows((prev) =>
               prev.map((r) => r.id === isCodeId ? { ...r, files } : r)

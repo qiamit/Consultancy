@@ -39,6 +39,18 @@ export function rowHasContent(row: TopManagementStored): boolean {
   );
 }
 
+/** Sr No 1 in Top Management — used for firm representative on CMPF forms. */
+export function resolvePrimaryTopManagementPerson(rows: TopManagementStored[]): {
+  person_name: string;
+  designation: string;
+} {
+  const first = rows.filter(rowHasContent)[0];
+  return {
+    person_name: first?.person_name.trim() ?? "",
+    designation: first?.designation.trim() ?? "",
+  };
+}
+
 export function parseTopManagement(raw: unknown): TopManagementStored[] {
   if (!Array.isArray(raw)) return [];
   return raw

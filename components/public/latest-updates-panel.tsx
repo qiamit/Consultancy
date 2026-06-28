@@ -1,15 +1,14 @@
 import Link from "next/link";
 import { getRegulatoryUpdates } from "@/lib/updates/get-regulatory-updates";
 import type { RegulatoryUpdate } from "@/lib/updates/types";
+import { formatDisplayDate } from "@/lib/format-date";
 
 function formatFetchedAt(iso: string): string {
   try {
-    return new Date(iso).toLocaleString("en-IN", {
-      day: "numeric",
-      month: "short",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" });
+    return `${formatDisplayDate(d)}, ${time}`;
   } catch {
     return "";
   }

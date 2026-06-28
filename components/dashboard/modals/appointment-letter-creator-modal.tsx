@@ -90,7 +90,11 @@ export function AppointmentLetterCreatorModal({
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
-  useEffect(() => {
+  const personKey = `${person.person_name}\0${person.designation}\0${person.educational_qualification}\0${person.experience_years}`;
+  const [appliedPersonKey, setAppliedPersonKey] = useState(personKey);
+
+  if (personKey !== appliedPersonKey) {
+    setAppliedPersonKey(personKey);
     setDraft((prev) => ({
       ...prev,
       person_name: person.person_name,
@@ -98,12 +102,7 @@ export function AppointmentLetterCreatorModal({
       educational_qualification: person.educational_qualification,
       experience_years: person.experience_years,
     }));
-  }, [
-    person.person_name,
-    person.designation,
-    person.educational_qualification,
-    person.experience_years,
-  ]);
+  }
 
   const previewHtml = useMemo(
     () => buildAppointmentLetterHtml(draft, printSettings),
@@ -144,11 +143,9 @@ export function AppointmentLetterCreatorModal({
   }
 
   function handleDownloadExcel() {
-    try {
-      downloadAppointmentLetterExcel(draft);
-    } catch {
-      window.alert("Unable to download Excel file.");
-    }
+    void downloadAppointmentLetterExcel(draft).catch(() =>
+      window.alert("Unable to download Excel file."),
+    );
   }
 
   function toggleSettingsPanel(panel: "page" | "print") {

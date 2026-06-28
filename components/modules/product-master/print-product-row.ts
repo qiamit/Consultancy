@@ -1,4 +1,5 @@
 import type { ProductMasterRow } from "@/lib/types/product-master";
+import { formatPrintTimestamp } from "@/lib/format-date";
 
 function esc(s: string): string {
   return s
@@ -257,10 +258,7 @@ function openPrintWindow(html: string): void {
 
 export function printProductMasterList(rows: ProductMasterRow[]): void {
   if (rows.length === 0) return;
-  const now = new Date().toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const now = formatPrintTimestamp();
   const subtitle = `${rows.length} record(s) · Up to 4 per page · Generated ${now}`;
   const html = wrapPrintDocument(
     "Product & Services master — print",

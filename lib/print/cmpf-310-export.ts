@@ -1,0 +1,176 @@
+import {
+  AlignmentType,
+  Document,
+  Packer,
+  Paragraph,
+  Table,
+  TableCell,
+  TableRow,
+  TextRun,
+  WidthType,
+} from "docx";
+import { buildWorkbookBuffer } from "@/lib/spreadsheet/excel";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
+import { formatCmpf310RupeeDisplay } from "@/lib/cmpf-310";
+import type { Cmpf310LetterData } from "@/lib/print/cmpf-310";
+import type { PrintSettings } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
+
+const DOCX_FONT = "Times New Roman";
+const DOCX_BODY_SIZE = 22;
+
+function safeFilePart(value: string): string {
+  return value.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 60);
+}
+
+function exportFilenameBase(data: Cmpf310LetterData): string {
+  return safeFilePart(`CMPF310_${data.companyName || "Marking_Fee"}`);
+}
+
+function triggerBlobDownload(blob: Blob, filename: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function formatMetaDate(raw: string): string {
+  const v = (raw ?? "").trim();
+  if (!v) return "N/A";
+  return formatDisplayDate(v, "N/A");
+}
+
+function formatApplicationNo(raw: string): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
+}
+
+function bodyRun(text: string, bold = false): TextRun {
+  return new TextRun({ text, font: DOCX_FONT, size: DOCX_BODY_SIZE, bold });
+}
+
+function plainParagraph(text: string): Paragraph {
+  return new Paragraph({
+    spacing: { after: 120 },
+    children: [bodyRun(text)],
+  });
+}
+
+async function buildCmpf310Docx(data: Cmpf310LetterData): Promise<Document> {
+  const doc = data.document;
+  const addressParts = [data.address, data.city, data.bisBranchState].filter((p) => p.trim());
+  const addressLine = addressParts.length > 0 ? `${addressParts.join(", ")}, INDIA` : "—";
+
+  const rateTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [
+      new TableRow({
+        children: ["Unit", "Firm Scale", "Unit Rate in Rs", "Marking Fee in Rs"].map(
+          (label) =>
+            new TableCell({
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  children: [bodyRun(label, true)],
+                }),
+              ],
+            }),
+        ),
+      }),
+      new TableRow({
+        children: [
+          doc.unit || "—",
+          doc.firm_scale || "—",
+          formatCmpf310RupeeDisplay(doc.unit_rate_rs),
+          formatCmpf310RupeeDisplay(doc.marking_fee_rs),
+        ].map(
+          (text) =>
+            new TableCell({
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.CENTER,
+                  children: [bodyRun(text)],
+                }),
+              ],
+            }),
+        ),
+      }),
+    ],
+  });
+
+  const children: (Paragraph | Table)[] = [
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [bodyRun("CMPF - 310", true)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { after: 200 },
+      children: [bodyRun("Acceptance of Rate of Marking Fee", true)],
+    }),
+    plainParagraph(`Applicant Name: ${data.companyName}`),
+    plainParagraph(`Applicant Address: ${addressLine}`),
+    plainParagraph(`Application No.: ${formatApplicationNo(data.applicationNumber)}`),
+    plainParagraph(`IS Code: ${data.isNumber || "—"}`),
+    plainParagraph(
+      `Reference Letter No.: ${doc.reference_letter_no || "—"}  Dated: ${formatMetaDate(doc.reference_letter_date)}`,
+    ),
+    plainParagraph("1. Rate of Marking Fee"),
+    rateTable,
+    plainParagraph(
+      `Place: ${data.city || "—"}\nDate: ${formatMetaDate(data.dateOfInspection)}\nName: ${doc.signatory_name || data.contactPerson || "—"}\nDesignation: ${doc.signatory_designation || "—"}`,
+    ),
+  ];
+
+  return new Document({ sections: [{ properties: {}, children }] });
+}
+
+export async function downloadCmpf310Word(
+  data: Cmpf310LetterData,
+  _settings: PrintSettings,
+): Promise<void> {
+  const doc = await buildCmpf310Docx(data);
+  const blob = await Packer.toBlob(doc);
+  triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
+}
+
+export async function downloadCmpf310Excel(data: Cmpf310LetterData): Promise<void> {
+  const doc = data.document;
+  const rows: (string | number)[][] = [
+    ["Acceptance of Rate of Marking Fee (CMPF - 310)"],
+    [],
+    ["Applicant Name", data.companyName],
+    ["Application No.", formatApplicationNo(data.applicationNumber)],
+    ["IS Code", data.isNumber || "—"],
+    ["Reference Letter No.", doc.reference_letter_no || "—"],
+    ["Reference Letter Date", formatMetaDate(doc.reference_letter_date)],
+    [],
+    ["1. Rate of Marking Fee"],
+    ["Unit", "Firm Scale", "Unit Rate in Rs", "Marking Fee in Rs"],
+    [
+      doc.unit || "—",
+      doc.firm_scale || "—",
+      formatCmpf310RupeeDisplay(doc.unit_rate_rs),
+      formatCmpf310RupeeDisplay(doc.marking_fee_rs),
+    ],
+  ];
+
+  const buffer = await buildWorkbookBuffer([
+    {
+      name: "CMPF 310",
+      rows,
+      cols: [{ wch: 22 }, { wch: 18 }, { wch: 18 }, { wch: 20 }],
+      merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }],
+    },
+  ]);
+
+  triggerBlobDownload(
+    new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    `${exportFilenameBase(data)}.xlsx`,
+  );
+}

@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { updateLicenseValidity } from "@/lib/actions/renewals";
+import { formatDisplayDate } from "@/lib/format-date";
 
 export function UpdateValidityModal({
   projectId,
@@ -33,7 +34,9 @@ export function UpdateValidityModal({
     });
   }
 
-  const in90Days = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const [in90Days] = useState(
+    () => new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]!,
+  );
   const willRemove = date > in90Days;
 
   return (
@@ -75,7 +78,7 @@ export function UpdateValidityModal({
             </label>
             <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
               {currentValidity
-                ? new Date(currentValidity).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric" })
+                ? formatDisplayDate(currentValidity)
                 : "Not set"}
             </p>
           </div>

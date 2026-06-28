@@ -19,7 +19,7 @@ const GROUPED_TEST_NAME_BLOCKLIST = new Set(
 
 /** Single clause only — no "6.1, 6.2" or dual references. */
 export function normalizeClauseNo(raw: string): string {
-  let s = raw.trim().replace(/^clause\s*/i, "");
+  const s = raw.trim().replace(/^clause\s*/i, "");
   if (!s) return "";
 
   const first = s.split(/[,;/]|(?:\s+and\s+)|(?:\s*&\s*)/i)[0]?.trim() ?? "";

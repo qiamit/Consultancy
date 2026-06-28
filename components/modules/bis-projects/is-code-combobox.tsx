@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import { BIS_FIELD_LABEL_CLASS } from "./constants";
 
 export type IsCodeComboboxOption = {
@@ -53,19 +53,11 @@ export function IsCodeCombobox({
   const [query, setQuery] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
-  const prevValue = useRef(value);
 
   const selectedLabel = useMemo(() => {
     if (!value) return "";
     return options.find((o) => o.id === value)?.label ?? "";
   }, [value, options]);
-
-  useEffect(() => {
-    if (prevValue.current !== value) {
-      prevValue.current = value;
-      setQuery(selectedLabel);
-    }
-  }, [value, selectedLabel]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -78,9 +70,9 @@ export function IsCodeCombobox({
       .slice(0, 80);
   }, [options, query]);
 
-  useEffect(() => {
-    if (highlight >= filtered.length) setHighlight(Math.max(0, filtered.length - 1));
-  }, [filtered.length, highlight]);
+  const inputValue = listOpen ? query : selectedLabel;
+  const safeHighlight =
+    filtered.length === 0 ? 0 : Math.min(highlight, filtered.length - 1);
 
   function pick(o: IsCodeComboboxOption) {
     onChange(o.id);
@@ -103,16 +95,21 @@ export function IsCodeCombobox({
           aria-controls={listboxId}
           aria-autocomplete="list"
           aria-activedescendant={
-            listOpen && filtered[highlight]
-              ? `${listboxId}-opt-${highlight}`
+            listOpen && filtered[safeHighlight]
+              ? `${listboxId}-opt-${safeHighlight}`
               : undefined
           }
-          value={query}
+          value={inputValue}
           onChange={(e) => {
             setQuery(e.target.value);
+            setHighlight(0);
             setListOpen(true);
           }}
-          onFocus={() => setListOpen(true)}
+          onFocus={() => {
+            setQuery(selectedLabel);
+            setHighlight(0);
+            setListOpen(true);
+          }}
           onBlur={() => {
             window.setTimeout(() => setListOpen(false), 150);
           }}
@@ -127,9 +124,9 @@ export function IsCodeCombobox({
             } else if (e.key === "ArrowUp") {
               e.preventDefault();
               setHighlight((h) => Math.max(0, h - 1));
-            } else if (e.key === "Enter" && listOpen && filtered[highlight]) {
+            } else if (e.key === "Enter" && listOpen && filtered[safeHighlight]) {
               e.preventDefault();
-              pick(filtered[highlight]!);
+              pick(filtered[safeHighlight]!);
             } else if (e.key === "Escape") {
               setListOpen(false);
             }
@@ -162,9 +159,9 @@ export function IsCodeCombobox({
               key={o.id}
               id={`${listboxId}-opt-${i}`}
               role="option"
-              aria-selected={i === highlight}
+              aria-selected={i === safeHighlight}
               className={`cursor-pointer px-3 py-2 text-sm ${
-                i === highlight
+                i === safeHighlight
                   ? "bg-sky-100 text-zinc-900 dark:bg-sky-900/40 dark:text-zinc-100"
                   : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
               }`}

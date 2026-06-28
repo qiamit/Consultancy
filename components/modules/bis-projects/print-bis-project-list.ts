@@ -5,6 +5,7 @@ import {
   formatCmDisplay,
 } from "@/lib/bis-project-license-status";
 import { projectKindLabel } from "./constants";
+import { formatDisplayDate } from "@/lib/format-date";
 
 function esc(s: string): string {
   return s
@@ -31,8 +32,7 @@ function isLabel(r: BisProjectMasterRow): string {
 
 function validityCell(r: BisProjectMasterRow): string {
   if (r.project_kind === "application") return "—";
-  const d = r.license_validity_date;
-  return d == null || d === "" ? "—" : d;
+  return formatDisplayDate(r.license_validity_date);
 }
 
 /**

@@ -1,3 +1,4 @@
+import { formatDisplayDate, formatPrintTimestamp } from "@/lib/format-date";
 import type { FinanceSalesOrderRow } from "@/lib/types/finance-sales-order";
 
 function esc(s: string): string {
@@ -62,7 +63,7 @@ function listTableHtml(rows: FinanceSalesOrderRow[]): string {
   const body = rows
     .map(
       (r, i) =>
-        `<tr><td>${i + 1}</td><td class="mono">${esc(r.sales_order_number)}</td><td>${esc(r.order_date)}</td><td>${esc(r.expected_delivery_date)}</td><td class="mono">${esc(r.finance_quotations?.quotation_number ?? "—")}</td><td>${esc(clientLabel(r))}</td><td>${esc(r.order_type)}</td><td class="num">${esc(
+        `<tr><td>${i + 1}</td><td class="mono">${esc(r.sales_order_number)}</td><td>${esc(formatDisplayDate(r.order_date))}</td><td>${esc(formatDisplayDate(r.expected_delivery_date))}</td><td class="mono">${esc(r.finance_quotations?.quotation_number ?? "—")}</td><td>${esc(clientLabel(r))}</td><td>${esc(r.order_type)}</td><td class="num">${esc(
           Number(r.grand_total).toLocaleString("en-IN", {
             minimumFractionDigits: 2,
             maximumFractionDigits: 2,
@@ -240,10 +241,7 @@ function openPrintWindow(html: string): void {
 export function printFinanceSalesOrdersList(rows: FinanceSalesOrderRow[]): void {
   if (rows.length === 0) return;
 
-  const now = new Date().toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const now = formatPrintTimestamp();
   const subtitle = `${rows.length} record(s) · Generated ${now}`;
   const html = wrapPrintDocument(
     "Sales order — print",

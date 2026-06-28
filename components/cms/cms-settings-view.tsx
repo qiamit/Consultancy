@@ -2,8 +2,9 @@
 
 import { useState } from "react";
 import { updateCmsSettings } from "@/lib/actions/cms";
+import type { CmsSettingsRow } from "@/lib/types/cms";
 
-export function CmsSettingsView({ initialSettings }: { initialSettings: any }) {
+export function CmsSettingsView({ initialSettings }: { initialSettings: CmsSettingsRow | null }) {
   const [formData, setFormData] = useState({
     contact_email: initialSettings?.contact_email || "",
     contact_phone: initialSettings?.contact_phone || "",
@@ -85,7 +86,7 @@ export function CmsSettingsView({ initialSettings }: { initialSettings: any }) {
           <h3 className="font-semibold text-zinc-900 dark:text-zinc-100 border-b pb-2 dark:border-zinc-800">Company Details</h3>
           <div>
             <label className="block text-sm font-medium mb-1">About Us Text</label>
-            <p className="text-xs text-zinc-500 mb-2">This will be displayed on the public landing page in the 'About Us' section.</p>
+            <p className="text-xs text-zinc-500 mb-2">This will be displayed on the public landing page in the About Us section.</p>
             <textarea value={formData.about_text} onChange={e => setFormData({...formData, about_text: e.target.value})} className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm h-48" />
           </div>
         </div>

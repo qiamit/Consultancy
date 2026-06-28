@@ -17,6 +17,14 @@ import {
   buildFinanceQuotationsExportCsv,
   parseFinanceQuotationsImportCsv,
 } from "@/lib/finance-quotations-csv";
+import { applyDefaultTemplateBodies } from "@/lib/finance/template-defaults";
+import {
+  readNamedPrefixFromStorage,
+  useFinanceListPagination,
+  usePrunedSetSelection,
+  useRouteBoundFormState,
+  useSyncedRows,
+} from "@/components/modules/finance/use-finance-master-state";
 import {
   emptyForm,
   emptyLine,
@@ -161,33 +169,59 @@ export function FinanceQuotationsMaster({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [rows, setRows] = useState(initialRows);
-  const [form, setForm] = useState<QuotationFormState>(() =>
-    emptyForm(defaultBankDetails),
-  );
-  const [localNumberPrefix, setLocalNumberPrefix] = useState(defaultNumberPrefix);
-
-  useEffect(() => {
-    try {
-      const entries: Array<{ name: string; prefix: string }> =
-        JSON.parse(localStorage.getItem("app_named_prefix_suffix_entries") ?? "[]");
-      const match = entries.find((e) => e.name.trim().toLowerCase().includes("quotation"));
-      if (match?.prefix) setLocalNumberPrefix(match.prefix);
-      else if (defaultNumberPrefix) setLocalNumberPrefix(defaultNumberPrefix);
-    } catch {}
-  }, [defaultNumberPrefix]);
-  const [searchQuery, setSearchQuery] = useState("");
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [page, setPage] = useState(1);
-  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
-
   const idParam = searchParams.get("id");
   const isNewParam = searchParams.get("new") === "1";
+  const [rows, setRows] = useSyncedRows(initialRows);
+  const [localNumberPrefix] = useState(() =>
+    readNamedPrefixFromStorage("quotation", defaultNumberPrefix),
+  );
+  const [searchQuery, setSearchQuery] = useState("");
   const editRow =
     idParam && !isNewParam
       ? rows.find((r) => r.id === idParam) ?? undefined
       : undefined;
   const formVisible = isNewParam || !!editRow;
+  const [form, setForm] = useRouteBoundFormState<QuotationFormState>(
+    formVisible
+      ? isNewParam
+        ? `new:${searchParams.get("client_id") ?? ""}`
+        : idParam
+          ? `edit:${idParam}`
+          : null
+      : null,
+    (prev) => {
+      if (isNewParam) {
+        const base = applyDefaultTemplateBodies(
+          emptyForm(defaultBankDetails),
+          notesTemplates,
+          termsTemplates,
+          scopeTemplates,
+        );
+        const prevPrefix = prev.quotation_number_prefix.trim();
+        const nextNumber = getNextQuotationNumberParts(
+          initialRows,
+          prevPrefix || localNumberPrefix || undefined,
+        );
+        const fromUrl = searchParams.get("client_id")?.trim() ?? "";
+        if (fromUrl) return { ...base, ...nextNumber, client_id: fromUrl };
+        return { ...base, ...nextNumber, client_id: prev.client_id };
+      }
+      if (idParam) {
+        const row = initialRows.find((r) => r.id === idParam);
+        if (row) {
+          const base = rowToForm(row, defaultBankDetails);
+          const fromUrl = searchParams.get("client_id")?.trim() ?? "";
+          if (fromUrl) return { ...base, client_id: fromUrl };
+          if (prev.id === base.id && prev.client_id) {
+            return { ...base, client_id: prev.client_id };
+          }
+          return base;
+        }
+      }
+      return emptyForm(defaultBankDetails);
+    },
+    emptyForm(defaultBankDetails),
+  );
 
   const quotationReturnUrl = useMemo(() => {
     const q = new URLSearchParams();
@@ -209,42 +243,6 @@ export function FinanceQuotationsMaster({
     for (const c of clientRows) m.set(c.id, c);
     return m;
   }, [clientRows]);
-
-  useEffect(() => {
-    setRows(initialRows);
-  }, [initialRows]);
-
-  useEffect(() => {
-    if (isNewParam) {
-      setForm((prev) => {
-        const base = emptyForm(defaultBankDetails);
-        const prevPrefix = prev.quotation_number_prefix.trim();
-        const nextNumber = getNextQuotationNumberParts(
-          initialRows,
-          prevPrefix || localNumberPrefix || undefined,
-        );
-        const fromUrl = searchParams.get("client_id")?.trim() ?? "";
-        if (fromUrl) return { ...base, ...nextNumber, client_id: fromUrl };
-        return { ...base, ...nextNumber, client_id: prev.client_id };
-      });
-      return;
-    }
-    if (idParam) {
-      const row = initialRows.find((r) => r.id === idParam);
-      if (row) {
-        setForm((prev) => {
-          const base = rowToForm(row, defaultBankDetails);
-          const fromUrl = searchParams.get("client_id")?.trim() ?? "";
-          if (fromUrl) return { ...base, client_id: fromUrl };
-          if (prev.id === base.id && prev.client_id)
-            return { ...base, client_id: prev.client_id };
-          return base;
-        });
-        return;
-      }
-    }
-    setForm(emptyForm(defaultBankDetails));
-  }, [searchParams, initialRows, idParam, isNewParam, defaultBankDetails]);
 
   useEffect(() => {
     if (!formVisible) return;
@@ -272,55 +270,22 @@ export function FinanceQuotationsMaster({
     [filtered],
   );
 
-  const totalPages = Math.max(1, Math.ceil(filteredTotal / pageSize) || 1);
+  const {
+    pageSize,
+    page,
+    setPage,
+    totalPages,
+    paginated,
+    onPageSizeChange,
+  } = useFinanceListPagination(filtered, searchQuery, PAGE_SIZE_OPTIONS[0]);
 
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, pageSize]);
+  const filteredRowIds = useMemo(() => filtered.map((r) => r.id), [filtered]);
+  const { selectedIds, toggleRowSelection, toggleSelectPage } =
+    usePrunedSetSelection(filteredRowIds);
 
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-
-  const paginated = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filtered.slice(start, start + pageSize);
-  }, [filtered, page, pageSize]);
-
-  useEffect(() => {
-    const valid = new Set(filtered.map((r) => r.id));
-    setSelectedIds((prev) => {
-      const next = new Set<string>();
-      prev.forEach((id) => {
-        if (valid.has(id)) next.add(id);
-      });
-      return next;
-    });
-  }, [filtered]);
-
-  const toggleRowSelection = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const toggleSelectPage = useCallback(() => {
-    setSelectedIds((prev) => {
-      const ids = paginated.map((r) => r.id);
-      const next = new Set(prev);
-      const allOnPage =
-        ids.length > 0 && ids.every((id) => next.has(id));
-      if (allOnPage) {
-        for (const id of ids) next.delete(id);
-      } else {
-        for (const id of ids) next.add(id);
-      }
-      return next;
-    });
-  }, [paginated]);
+  const toggleSelectPageRows = useCallback(() => {
+    toggleSelectPage(paginated.map((r) => r.id));
+  }, [toggleSelectPage, paginated]);
 
   const selectRow = useCallback(
     (r: FinanceQuotationRow) => {
@@ -596,7 +561,7 @@ export function FinanceQuotationsMaster({
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           pageSize={pageSize}
-          onPageSizeChange={setPageSize}
+          onPageSizeChange={onPageSizeChange}
           grandTotal={grandTotal}
           filteredTotal={filteredTotal}
           page={page}
@@ -622,7 +587,7 @@ export function FinanceQuotationsMaster({
           deleteDisabled={deleteDisabled}
           selectedIds={selectedIds}
           onToggleRowSelection={toggleRowSelection}
-          onToggleSelectPage={toggleSelectPage}
+          onToggleSelectPage={toggleSelectPageRows}
         />
       </div>
 

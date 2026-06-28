@@ -10,7 +10,7 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import * as XLSX from "xlsx";
+import { buildWorkbookBuffer } from "@/lib/spreadsheet/excel";
 import {
   buildTechnicalStaffCompany,
   type TechnicalStaffLetterData,
@@ -23,6 +23,7 @@ import {
 import type { TechnicalStaffStored } from "@/lib/technical-staff";
 import { rowHasContent } from "@/lib/technical-staff";
 import type { PrintSettings } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 24;
@@ -34,13 +35,7 @@ function safeFilePart(value: string): string {
 function formatInspectionDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "N/A";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return "N/A";
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(raw, "N/A");
 }
 
 function bisBranchLine(data: TechnicalStaffLetterData): string {
@@ -306,7 +301,9 @@ export async function downloadTechnicalStaffWord(
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }
 
-export function downloadTechnicalStaffExcel(data: TechnicalStaffLetterData): void {
+export async function downloadTechnicalStaffExcel(
+  data: TechnicalStaffLetterData,
+): Promise<void> {
   const columns = DEFAULT_TECHNICAL_STAFF_TABLE_COLUMNS;
   const columnDefs = TECHNICAL_STAFF_TABLE_COLUMN_OPTIONS.filter((c) =>
     columns.includes(c.key),
@@ -334,21 +331,17 @@ export function downloadTechnicalStaffExcel(data: TechnicalStaffLetterData): voi
     rows.push(["No technical staff details entered yet."]);
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
   const colCount = Math.max(2, columnDefs.length);
-  ws["!cols"] = Array.from({ length: colCount }, (_, i) =>
-    i === 0 ? { wch: 22 } : { wch: 28 },
-  );
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(1, colCount - 1) } }];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Technical Staff");
-
-  const buffer = XLSX.write(wb, {
-    bookType: "xlsx",
-    type: "array",
-    compression: true,
-  }) as ArrayBuffer;
+  const buffer = await buildWorkbookBuffer([
+    {
+      name: "Technical Staff",
+      rows,
+      cols: Array.from({ length: colCount }, (_, i) =>
+        i === 0 ? { wch: 22 } : { wch: 28 },
+      ),
+      merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: Math.max(1, colCount - 1) } }],
+    },
+  ]);
 
   triggerBlobDownload(
     new Blob([buffer], {

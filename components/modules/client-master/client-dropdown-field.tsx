@@ -42,7 +42,7 @@ export function ClientDropdownField({
       hideLabel={hideLabel}
       inputRowShellClassName={inputRowShellClassName}
       listZIndexClass={listZIndexClass}
-      searchPlaceholder={searchPlaceholder ?? "Type to search…"}
+      searchPlaceholder={searchPlaceholder ?? ""}
       onSuffixButtonClick={onSuffixButtonClick}
       suffixButtonClassName={suffixButtonClassName}
       blankInputWhenNoSelection={blankInputWhenNoSelection}

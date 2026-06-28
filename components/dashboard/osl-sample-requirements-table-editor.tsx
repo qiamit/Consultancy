@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
 import { DROPDOWN_KEY_BIS_PROJECT_CLIENT } from "@/lib/dropdown-keys";
 import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
@@ -78,6 +79,7 @@ function SampleEntryRows({
   onUpdate,
   onRemove,
   isFirst,
+  highlighted,
 }: {
   row: OslSampleRequirementRow;
   index: number;
@@ -87,13 +89,14 @@ function SampleEntryRows({
   onUpdate: (patch: Partial<OslSampleRequirementRow>) => void;
   onRemove: () => void;
   isFirst: boolean;
+  highlighted?: boolean;
 }) {
   const srNo = String(index + 1).padStart(2, "0");
-  const row1Class = isFirst ? t.groupMid : `${t.groupStart} ${t.groupMid}`;
+  const row1Class = `${isFirst ? t.groupMid : `${t.groupStart} ${t.groupMid}`}${highlighted ? " ring-2 ring-inset ring-sky-500/60 bg-sky-950/20" : ""}`;
 
   return (
     <>
-      <tr className={row1Class}>
+      <tr id={`osl-sample-entry-${index}`} className={row1Class}>
         <td rowSpan={5} className={t.srCell}>
           {srNo}
         </td>
@@ -241,14 +244,22 @@ export function OslSampleRequirementsTableEditor({
   clientOptions,
   onRequestAddClient,
   theme = "light",
+  focusSampleIndex = null,
 }: {
   rows: OslSampleRequirementRow[];
   onChange: (rows: OslSampleRequirementRow[]) => void;
   clientOptions: AppDropdownOptionRow[];
   onRequestAddClient: (rowId: string) => void;
   theme?: keyof typeof themes;
+  focusSampleIndex?: number | null;
 }) {
   const t = themes[theme];
+
+  useEffect(() => {
+    if (focusSampleIndex == null || focusSampleIndex < 0) return;
+    const el = document.getElementById(`osl-sample-entry-${focusSampleIndex}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [focusSampleIndex, rows.length]);
 
   function updateRow(id: string, patch: Partial<OslSampleRequirementRow>) {
     onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -287,6 +298,7 @@ export function OslSampleRequirementsTableEditor({
                 isFirst={index === 0}
                 onUpdate={(patch) => updateRow(row.id, patch)}
                 onRemove={() => removeRow(row.id)}
+                highlighted={focusSampleIndex === index}
               />
             ))}
           </tbody>

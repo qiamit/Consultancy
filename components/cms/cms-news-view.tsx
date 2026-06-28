@@ -1,16 +1,19 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { addCmsNews, updateCmsNews, deleteCmsNews } from "@/lib/actions/cms";
+import { formatCmsPublishedDate } from "@/lib/cms-display";
+import type { CmsNewsRow } from "@/lib/types/cms";
 
-export function CmsNewsView({ initialNews }: { initialNews: any[] }) {
-  const [newsList, setNewsList] = useState(initialNews);
+export function CmsNewsView({ initialNews }: { initialNews: CmsNewsRow[] }) {
+  const [newsList] = useState(initialNews);
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [formData, setFormData] = useState({ title: "", content: "", image_url: "", published_date: "" });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const handleEdit = (news: any) => {
+  const handleEdit = (news: CmsNewsRow) => {
     setIsEditing(news.id);
     setFormData({
       title: news.title,
@@ -107,7 +110,7 @@ export function CmsNewsView({ initialNews }: { initialNews: any[] }) {
 
       <div className="grid gap-4 md:grid-cols-2">
         {newsList.length === 0 && !isEditing && (
-          <p className="text-zinc-500 text-sm">No news updates yet. Click "Add News Update" to get started.</p>
+          <p className="text-zinc-500 text-sm">No news updates yet. Click Add News Update to get started.</p>
         )}
         {newsList.map((news) => (
           <div key={news.id} className="p-5 rounded-xl border border-zinc-200 dark:border-zinc-800 flex flex-col">
@@ -118,9 +121,18 @@ export function CmsNewsView({ initialNews }: { initialNews: any[] }) {
                 <button onClick={() => handleDelete(news.id)} className="text-red-600 hover:text-red-700 text-sm font-medium">Delete</button>
               </div>
             </div>
-            <p className="text-xs text-zinc-500 mb-3">Published: {new Date(news.published_date).toLocaleString()}</p>
+            <p className="text-xs text-zinc-500 mb-3">Published: {formatCmsPublishedDate(news.published_date)}</p>
             <p className="text-sm text-zinc-600 dark:text-zinc-400 line-clamp-3 mb-3 flex-1 whitespace-pre-wrap">{news.content}</p>
-            {news.image_url && <img src={news.image_url} alt={news.title} className="w-full h-32 object-cover rounded-lg mt-2" />}
+            {news.image_url ? (
+              <Image
+                src={news.image_url}
+                alt={news.title}
+                width={640}
+                height={128}
+                unoptimized
+                className="mt-2 h-32 w-full rounded-lg object-cover"
+              />
+            ) : null}
           </div>
         ))}
       </div>

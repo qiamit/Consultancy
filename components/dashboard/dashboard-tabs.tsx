@@ -8,6 +8,7 @@ import { FinanceManagementCard } from "@/components/dashboard/finance-management
 import { PendingRenewalsSection } from "@/components/dashboard/pending-renewals-section";
 import { PendingApplicationsSection } from "@/components/dashboard/pending-applications-section";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
+import { formatDisplayDate } from "@/lib/format-date";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type FinanceModule = {
@@ -85,8 +86,7 @@ const TAB_IDS = new Set(TABS.map((t) => t.id));
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return formatDisplayDate(dateStr);
 }
 
 // ── Generic BIS table (Deferred / Cancelled) ──────────────────────────────────
@@ -155,7 +155,7 @@ function StopMarkingAddModal({ onClose, onAdded }: { onClose: () => void; onAdde
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     const q = clientSearch.trim();
-    if (!q) { setClients([]); return; }
+    if (!q) return;
     debounceRef.current = setTimeout(async () => {
       setClientLoading(true);
       const supabase = createClient();
@@ -169,9 +169,14 @@ function StopMarkingAddModal({ onClose, onAdded }: { onClose: () => void; onAdde
     }, 300);
   }, [clientSearch]);
 
+  const visibleClients = clientSearch.trim() ? clients : [];
+
   useEffect(() => {
-    if (!selectedClient) { setProjects([]); return; }
-    setProjLoading(true);
+    if (!selectedClient) return;
+    let cancelled = false;
+    void Promise.resolve().then(() => {
+      if (!cancelled) setProjLoading(true);
+    });
     const supabase = createClient();
     supabase
       .from("bis_projects")
@@ -183,6 +188,7 @@ function StopMarkingAddModal({ onClose, onAdded }: { onClose: () => void; onAdde
       .order("created_at", { ascending: false })
       .limit(50)
       .then(({ data }) => {
+        if (cancelled) return;
         const rows = (data ?? []).map((r: Record<string, unknown>) => {
           const ic = Array.isArray(r.is_codes) ? r.is_codes[0] : r.is_codes as { is_number?: string; revision_year?: number } | null;
           return {
@@ -196,6 +202,9 @@ function StopMarkingAddModal({ onClose, onAdded }: { onClose: () => void; onAdde
         setProjects(rows);
         setProjLoading(false);
       });
+    return () => {
+      cancelled = true;
+    };
   }, [selectedClient]);
 
   async function handleAdd() {
@@ -255,9 +264,9 @@ function StopMarkingAddModal({ onClose, onAdded }: { onClose: () => void; onAdde
               <div className="relative">
                 <input type="text" placeholder="Type client name…" value={clientSearch} onChange={(e) => setClientSearch(e.target.value)} className={inputCls} autoFocus />
                 {clientLoading && <div className="absolute right-3 top-1/2 -translate-y-1/2"><div className="h-4 w-4 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" /></div>}
-                {clients.length > 0 && (
+                {visibleClients.length > 0 && (
                   <div className="absolute left-0 right-0 top-full z-10 mt-1 overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
-                    {clients.map((c) => (
+                    {visibleClients.map((c) => (
                       <button key={c.id} type="button" onClick={() => { setSelectedClient(c); setClientSearch(""); setClients([]); }} className="w-full px-3 py-2 text-left text-sm text-zinc-700 hover:bg-zinc-50 dark:text-zinc-200 dark:hover:bg-zinc-700">
                         {clientLabel(c)}
                       </button>

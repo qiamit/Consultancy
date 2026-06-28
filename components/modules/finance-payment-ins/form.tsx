@@ -8,6 +8,7 @@ import {
   deleteFinancePaymentInForm,
 } from "@/lib/actions/finance-payment-ins";
 import type { PrintSettings, PrintCompanyInfo } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
 import { DEFAULT_PRINT_SETTINGS } from "@/lib/print/types";
 import type { PaymentInFormState } from "./constants";
 
@@ -57,7 +58,7 @@ export function FinancePaymentInForm({
   <div style="font-size:26px;font-weight:700;letter-spacing:.5px;">PAYMENT RECEIPT</div>
   <div style="text-align:right;font-size:12px;">
     <div style="font-size:16px;font-weight:700;font-family:monospace;">${esc(formValues.id || "DRAFT")}</div>
-    <div>Date: ${esc(formValues.txn_date || "—")}</div>
+    <div>Date: ${esc(formatDisplayDate(formValues.txn_date, "—"))}</div>
   </div>
 </div>
 <table style="width:100%;border-collapse:collapse;margin-bottom:14px;">

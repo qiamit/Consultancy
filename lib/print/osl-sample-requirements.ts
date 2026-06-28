@@ -17,6 +17,7 @@ import {
 } from "@/lib/print/osl-sample-table-columns";
 import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
 
 export type OslSampleOfferLetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -45,27 +46,13 @@ function formatBisBranchLine(branchName: string, state: string, country: string)
 function formatInspectionDateDisplay(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "N/A";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return "N/A";
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(raw, "N/A");
 }
 
 function formatDateDisplay(ymd: string): string {
   const raw = (ymd ?? "").trim();
   if (!raw) return "—";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return esc(raw);
-  return esc(
-    d.toLocaleDateString("en-IN", {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }),
-  );
+  return esc(formatDisplayDate(raw, "—"));
 }
 
 function formatIsStandardRef(isNumber: string, isTitle: string): string {

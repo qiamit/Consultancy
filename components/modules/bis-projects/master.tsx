@@ -1,7 +1,14 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import {
+  useCloseWhenHidden,
+  useFinanceListPagination,
+  usePrunedSetSelection,
+  useRouteBoundFormState,
+  useSyncedRowsWhen,
+} from "@/components/modules/finance/use-finance-master-state";
 import { emptyForm as clientMasterEmptyForm } from "@/components/modules/client-master/constants";
 import { ClientMasterForm } from "@/components/modules/client-master/form";
 import { emptyForm as isCodeEmptyForm } from "@/components/modules/is-code-master/constants";
@@ -78,12 +85,34 @@ export function BisProjectsMaster({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [rows, setRows] = useState(initialRows);
-  const [form, setForm] = useState(() => emptyForm());
+  const idParam = searchParams.get("id");
+  const isNewParam = searchParams.get("new") === "1";
+  const editRow =
+    idParam && !isNewParam
+      ? initialRows.find((r) => r.id === idParam) ?? undefined
+      : undefined;
+  const formVisible = isNewParam || !!editRow;
+  const [rows] = useSyncedRowsWhen(initialRows, !formVisible);
+  const formOpenKey = formVisible
+    ? isNewParam
+      ? "new"
+      : idParam
+        ? `edit:${idParam}`
+        : null
+    : null;
+  const [form, setForm] = useRouteBoundFormState(
+    formOpenKey,
+    () => {
+      if (isNewParam) return emptyForm();
+      if (idParam) {
+        const row = initialRows.find((r) => r.id === idParam);
+        if (row) return rowToForm(row);
+      }
+      return emptyForm();
+    },
+    emptyForm(),
+  );
   const [searchQuery, setSearchQuery] = useState("");
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [page, setPage] = useState(1);
-  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
   const [embedClientOpen, setEmbedClientOpen] = useState(false);
   const [embedIsCodeOpen, setEmbedIsCodeOpen] = useState(false);
   const [embedClientForm, setEmbedClientForm] = useState(() =>
@@ -93,14 +122,7 @@ export function BisProjectsMaster({
     isCodeEmptyForm(),
   );
 
-  const idParam = searchParams.get("id");
-  const isNewParam = searchParams.get("new") === "1";
-  const editRow =
-    idParam && !isNewParam
-      ? rows.find((r) => r.id === idParam) ?? undefined
-      : undefined;
-  const formVisible = isNewParam || !!editRow;
-  const loadedFormKeyRef = useRef<string | null>(null);
+  useCloseWhenHidden(formVisible, [setEmbedClientOpen, setEmbedIsCodeOpen]);
 
   const clientOptions: AppDropdownOptionRow[] = useMemo(
     () =>
@@ -127,45 +149,6 @@ export function BisProjectsMaster({
     [isCodeRows],
   );
 
-  useEffect(() => {
-    if (formVisible) return;
-    setRows(initialRows);
-  }, [initialRows, formVisible]);
-
-  useEffect(() => {
-    if (!formVisible) loadedFormKeyRef.current = null;
-  }, [formVisible]);
-
-  useEffect(() => {
-    const id = searchParams.get("id");
-    const isNew = searchParams.get("new");
-    if (isNew === "1") {
-      if (loadedFormKeyRef.current !== "new") {
-        setForm(emptyForm());
-        loadedFormKeyRef.current = "new";
-      }
-      return;
-    }
-    if (id) {
-      if (loadedFormKeyRef.current === id) return;
-      const row = initialRows.find((r) => r.id === id);
-      if (row) {
-        setForm(rowToForm(row));
-        loadedFormKeyRef.current = id;
-        return;
-      }
-    }
-    loadedFormKeyRef.current = null;
-    if (!formVisible) setForm(emptyForm());
-  }, [searchParams, initialRows, formVisible]);
-
-  useEffect(() => {
-    if (!formVisible) {
-      setEmbedClientOpen(false);
-      setEmbedIsCodeOpen(false);
-    }
-  }, [formVisible]);
-
   const filteredRows = useMemo(
     () => filterBisProjectsBySearch(rows, searchQuery),
     [rows, searchQuery],
@@ -175,58 +158,25 @@ export function BisProjectsMaster({
   const filteredTotal = filteredRows.length;
   const searchActive = searchQuery.trim().length > 0;
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filteredTotal / pageSize) || 1,
+  const {
+    pageSize,
+    page,
+    setPage,
+    totalPages,
+    paginated: paginatedRows,
+    onPageSizeChange,
+  } = useFinanceListPagination(filteredRows, searchQuery, PAGE_SIZE_OPTIONS[0]);
+
+  const filteredRowIds = useMemo(
+    () => filteredRows.map((r) => r.id),
+    [filteredRows],
   );
+  const { selectedIds, toggleRowSelection, toggleSelectPage } =
+    usePrunedSetSelection(filteredRowIds);
 
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, pageSize]);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-
-  const paginatedRows = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredRows.slice(start, start + pageSize);
-  }, [filteredRows, page, pageSize]);
-
-  useEffect(() => {
-    const valid = new Set(filteredRows.map((r) => r.id));
-    setSelectedIds((prev) => {
-      const next = new Set<string>();
-      prev.forEach((id) => {
-        if (valid.has(id)) next.add(id);
-      });
-      return next;
-    });
-  }, [filteredRows]);
-
-  const toggleRowSelection = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const toggleSelectPage = useCallback(() => {
-    setSelectedIds((prev) => {
-      const ids = paginatedRows.map((r) => r.id);
-      const next = new Set(prev);
-      const allOnPage =
-        ids.length > 0 && ids.every((id) => next.has(id));
-      if (allOnPage) {
-        for (const id of ids) next.delete(id);
-      } else {
-        for (const id of ids) next.add(id);
-      }
-      return next;
-    });
-  }, [paginatedRows]);
+  const toggleSelectPageRows = useCallback(() => {
+    toggleSelectPage(paginatedRows.map((r) => r.id));
+  }, [toggleSelectPage, paginatedRows]);
 
   function selectRow(r: BisProjectMasterRow) {
     router.replace(`/dashboard/bis-projects?id=${r.id}`, { scroll: false });
@@ -365,7 +315,7 @@ export function BisProjectsMaster({
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           pageSize={pageSize}
-          onPageSizeChange={setPageSize}
+          onPageSizeChange={onPageSizeChange}
           grandTotal={grandTotal}
           filteredTotal={filteredTotal}
           page={page}
@@ -388,7 +338,7 @@ export function BisProjectsMaster({
           onDeleteRow={handleDeleteRow}
           selectedIds={selectedIds}
           onToggleRowSelection={toggleRowSelection}
-          onToggleSelectPage={toggleSelectPage}
+          onToggleSelectPage={toggleSelectPageRows}
         />
       </div>
 

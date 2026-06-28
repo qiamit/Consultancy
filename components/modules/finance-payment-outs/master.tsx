@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
 import type { FinancePaymentOutRow } from "@/lib/types/finance-payment-out";
 import type { PrintSettings, PrintCompanyInfo } from "@/lib/print/types";
@@ -9,6 +9,7 @@ import { FinancePaymentOutForm } from "./form";
 import { FinancePaymentOutsHeaderBar } from "./header-bar";
 import { filterPaymentOutsBySearch } from "./search-utils";
 import { FinancePaymentOutsTable } from "./table";
+import { useRouteBoundFormState } from "@/components/modules/finance/use-finance-master-state";
 
 export function FinancePaymentOutsMaster({
   initialRows,
@@ -29,7 +30,6 @@ export function FinancePaymentOutsMaster({
   const [searchQuery, setSearchQuery] = useState("");
   const [pageSize, setPageSize] = useState(25);
   const [page, setPage] = useState(1);
-  const [form, setForm] = useState<PaymentInFormState>(() => emptyForm());
 
   const filtered = useMemo(() => filterPaymentOutsBySearch(rows, searchQuery), [rows, searchQuery]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
@@ -41,6 +41,12 @@ export function FinancePaymentOutsMaster({
   const editRow = queryId && !isNew ? rows.find((r) => r.id === queryId) ?? null : null;
   const formVisible = isNew || !!editRow;
   const idParam = editRow?.id ?? null;
+  const formOpenKey = formVisible ? (isNew ? "new" : `edit:${editRow?.id ?? ""}`) : null;
+  const [form, setForm] = useRouteBoundFormState<PaymentInFormState>(
+    formOpenKey,
+    (prev) => (editRow ? rowToForm(editRow) : isNew ? emptyForm() : prev),
+    emptyForm(),
+  );
 
   const clientOptions: AppDropdownOptionRow[] = clientRows.map((c) => {
     const company = (c.company_name ?? "").trim();
@@ -54,15 +60,6 @@ export function FinancePaymentOutsMaster({
       filterText: [company, name].filter(Boolean).join(" "),
     };
   });
-
-  useEffect(() => {
-    if (!formVisible) return;
-    if (editRow) {
-      setForm(rowToForm(editRow));
-      return;
-    }
-    if (isNew) setForm(emptyForm());
-  }, [formVisible, editRow, isNew]);
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-0">
@@ -116,5 +113,3 @@ export function FinancePaymentOutsMaster({
     </div>
   );
 }
-
-

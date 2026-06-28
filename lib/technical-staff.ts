@@ -99,3 +99,29 @@ export function storedFromEditor(rows: TechnicalStaffRow[]): TechnicalStaffStore
     )
     .filter(rowHasContent);
 }
+
+function isQualityControlInchargeDesignation(designation: string): boolean {
+  const d = designation.trim().toLowerCase();
+  if (!d) return false;
+  return (
+    d.includes("quality control") ||
+    d.includes("qc incharge") ||
+    d.includes("q.c. incharge") ||
+    d === "qci"
+  );
+}
+
+/** First technical staff row whose designation matches Quality Control Incharge. */
+export function resolveQualityControlIncharge(staff: TechnicalStaffStored[]): {
+  name: string;
+  designation: string;
+} {
+  const match = staff
+    .filter(rowHasContent)
+    .find((row) => isQualityControlInchargeDesignation(row.designation));
+  if (!match) return { name: "", designation: "" };
+  return {
+    name: match.person_name.trim(),
+    designation: match.designation.trim(),
+  };
+}

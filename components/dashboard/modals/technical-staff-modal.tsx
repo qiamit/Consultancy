@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEditorRowsFromStored } from "@/components/modules/finance/use-finance-master-state";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import {
@@ -9,16 +10,7 @@ import {
 } from "@/components/dashboard/technical-staff-table-editor";
 import { TechnicalStaffFormModal } from "@/components/dashboard/modals/technical-staff-form-modal";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
-import {
-  SplitModalPaneTabs,
-  type SplitModalPane,
-} from "@/components/dashboard/modals/split-modal-pane-tabs";
-import {
-  splitModalBodyClass,
-  splitModalEditorPaneClass,
-  splitModalPreviewPaneClass,
-  splitModalSettingsPaneClass,
-} from "@/components/dashboard/modals/split-modal-layout";
+import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import type { ManufacturingScopeDeclarationData } from "@/lib/print/manufacturing-scope-declaration";
 import {
   buildTechnicalStaffHtml,
@@ -75,14 +67,12 @@ export function TechnicalStaffModal({
   onSave: (rows: TechnicalStaffStored[]) => void;
   onClose: () => void;
 }) {
-  const [rows, setRows] = useState<TechnicalStaffRow[]>(() =>
-    editorRowsFromStored(initialStored),
-  );
+  const [rows, setRows] = useEditorRowsFromStored(initialStored, editorRowsFromStored);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultTechnicalStaffPrintSettings(),
   );
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
-  const [mobilePane, setMobilePane] = useState<SplitModalPane>("editor");
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
   const [staffFormOpen, setStaffFormOpen] = useState(false);
@@ -90,12 +80,6 @@ export function TechnicalStaffModal({
   const [savedFlash, setSavedFlash] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  const rowsKey = JSON.stringify(initialStored);
-
-  useEffect(() => {
-    setRows(editorRowsFromStored(initialStored));
-  }, [rowsKey]);
 
   const isFullNumber = letterData.isNumber?.trim() || "—";
   const isTitle = letterData.isTitle ?? "";
@@ -119,6 +103,12 @@ export function TechnicalStaffModal({
   useEffect(() => {
     refreshPreview();
   }, [refreshPreview]);
+
+  useEffect(() => {
+    if (showPrintPreview) {
+      refreshPreview();
+    }
+  }, [showPrintPreview, refreshPreview]);
 
   const iframeSize = iframeSizeForTechnicalStaffPrintSettings(printSettings);
 
@@ -147,11 +137,9 @@ export function TechnicalStaffModal({
   }
 
   function handleDownloadExcel() {
-    try {
-      downloadTechnicalStaffExcel(previewData);
-    } catch {
-      window.alert("Unable to download Excel file.");
-    }
+    void downloadTechnicalStaffExcel(previewData).catch(() =>
+      window.alert("Unable to download Excel file."),
+    );
   }
 
   function toggleSettingsPanel(panel: "page" | "print") {
@@ -201,6 +189,17 @@ export function TechnicalStaffModal({
               className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowPrintPreview((prev) => !prev)}
+              className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+                showPrintPreview
+                  ? "border-sky-500 bg-sky-600 text-white"
+                  : "border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+              }`}
+            >
+              Print Preview
             </button>
             <button
               type="button"
@@ -265,67 +264,72 @@ export function TechnicalStaffModal({
           </div>
         </div>
 
-        <SplitModalPaneTabs
-          active={mobilePane}
-          onChange={setMobilePane}
-          editorLabel="Technical Staff"
-          previewLabel="Print Preview"
-        />
-
-        <div className={splitModalBodyClass()}>
-          <div className={splitModalEditorPaneClass(mobilePane, Boolean(settingsPanel))}>
-            <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="text-sm font-medium text-zinc-200">Technical Staff Details</p>
-                  <p className="mt-0.5 text-xs font-semibold text-teal-300">{isFullNumber}</p>
-                  {isTitle ? (
-                    <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{isTitle}</p>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
+          {!showPrintPreview && (
+            <div
+              className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
+                settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+              }`}
+            >
+              <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-200">Technical Staff Details</p>
+                    <p className="mt-0.5 text-xs font-semibold text-teal-300">{isFullNumber}</p>
+                    {isTitle ? (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{isTitle}</p>
+                    ) : null}
+                  </div>
+                  {isCodeId ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowIsCodeView(true)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      View IS Files
+                    </button>
                   ) : null}
                 </div>
-                {isCodeId ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowIsCodeView(true)}
-                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
-                    View IS Files
-                  </button>
-                ) : null}
+                <TechnicalStaffAddButton theme="dark" onClick={openAddStaffForm} />
               </div>
-              <TechnicalStaffAddButton theme="dark" onClick={openAddStaffForm} />
-            </div>
 
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-              <TechnicalStaffTableEditor
-                theme="dark"
-                rows={rows}
-                onEdit={openEditStaffForm}
-              />
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+                <TechnicalStaffTableEditor
+                  theme="dark"
+                  rows={rows}
+                  onEdit={openEditStaffForm}
+                />
+              </div>
             </div>
-          </div>
+          )}
 
-          <div className={splitModalPreviewPaneClass(mobilePane, Boolean(settingsPanel))}>
-            <div className="border-b border-zinc-700/80 px-4 py-2">
-              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-                Print Preview
-              </p>
+          {showPrintPreview && (
+            <div
+              className={`flex min-w-0 flex-1 flex-col bg-zinc-600 ${
+                settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+              }`}
+            >
+              <div className="border-b border-zinc-700/80 px-4 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
+                  Print Preview
+                </p>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+                <iframe
+                  ref={iframeRef}
+                  title="Technical Staff print preview"
+                  className="mx-auto max-w-full border-0 bg-white shadow-2xl"
+                  style={{
+                    width: `min(100%, ${iframeSize.widthMm}mm)`,
+                    minHeight: `${iframeSize.heightMm}mm`,
+                  }}
+                />
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
-              <iframe
-                ref={iframeRef}
-                title="Technical Staff print preview"
-                className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                style={{
-                  width: `min(100%, ${iframeSize.widthMm}mm)`,
-                  minHeight: `${iframeSize.heightMm}mm`,
-                }}
-              />
-            </div>
-          </div>
+          )}
 
           {settingsPanel && (
             <div className={splitModalSettingsPaneClass()}>

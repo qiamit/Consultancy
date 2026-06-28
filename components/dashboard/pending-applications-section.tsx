@@ -19,6 +19,14 @@ import { LicenseScopeEditorModal } from "@/components/dashboard/modals/license-s
 import { OslSampleRequirementsModal } from "@/components/dashboard/modals/osl-sample-requirements-modal";
 import { TopManagementModal } from "@/components/dashboard/modals/top-management-modal";
 import { TechnicalStaffModal } from "@/components/dashboard/modals/technical-staff-modal";
+import { FactoryTestReportModal } from "@/components/dashboard/modals/factory-test-report-modal";
+import { SubcontractedTestsModal } from "@/components/dashboard/modals/subcontracted-tests-modal";
+import { Cmpf305Modal } from "@/components/dashboard/modals/cmpf-305-modal";
+import { Cmpf306Modal } from "@/components/dashboard/modals/cmpf-306-modal";
+import { Cmpf307Modal } from "@/components/dashboard/modals/cmpf-307-modal";
+import { Cmpf310Modal } from "@/components/dashboard/modals/cmpf-310-modal";
+import { Cmpf311Modal } from "@/components/dashboard/modals/cmpf-311-modal";
+import { UndertakingOption2Modal } from "@/components/dashboard/modals/undertaking-option-2-modal";
 import { IsCodeEditModal } from "@/components/dashboard/modals/is-code-edit-modal";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import {
@@ -33,8 +41,19 @@ import {
 import { parseBisProjectLicenseScopeNotes } from "@/lib/bis-project-license-scope-notes";
 import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
 import type { TopManagementStored } from "@/lib/top-management";
+import { formatCmDisplay } from "@/lib/bis-project-license-status";
 import { isApplicationProjectKind, isPendingApplicationRow, type BisApplicationSource } from "@/lib/bis-project-kind";
 import type { TechnicalStaffStored } from "@/lib/technical-staff";
+import type { FactoryTestReportStored, FtrSampleSource } from "@/lib/factory-test-report";
+import type { SubcontractedTestStored, SubcontractedTestsDocumentStored } from "@/lib/subcontracted-tests";
+import type { Cmpf305MachineryStored } from "@/lib/cmpf-305";
+import type { Cmpf306Stored } from "@/lib/cmpf-306";
+import type { Cmpf307Stored } from "@/lib/cmpf-307";
+import type { Cmpf310Stored } from "@/lib/cmpf-310";
+import type { Cmpf311Stored } from "@/lib/cmpf-311";
+import type { UndertakingOption2Stored } from "@/lib/undertaking-option-2";
+import { formatClientAddressLine } from "@/lib/format-client-address";
+import { formatDisplayDate } from "@/lib/format-date";
 import type { LicenseScopeSavePayload } from "@/components/dashboard/modals/license-scope-editor-modal";
 import {
   BIS_APPLICATION_DROPDOWN_KEYS,
@@ -148,11 +167,13 @@ function ParticularCell({
   onGenerateDocument: (item: ChecklistRow) => void;
 }) {
   const [localText, setLocalText] = useState(item.content ?? "");
+  const [appliedContent, setAppliedContent] = useState(item.content ?? "");
   const [uploading, setUploading] = useState(false);
 
-  useEffect(() => {
+  if ((item.content ?? "") !== appliedContent) {
+    setAppliedContent(item.content ?? "");
     setLocalText(item.content ?? "");
-  }, [item.content]);
+  }
 
   const type = item.particular;
 
@@ -289,13 +310,12 @@ function ApplicationMetaDropdown({
         selectedValue={value}
         onClearSelection={() => onChange("")}
         hideLabel
-        emptySelectLabel="Type or select…"
         listZIndexClass="z-[60]"
         overlayZIndexClass="z-[70]"
-        searchPlaceholder="Search or type…"
         inputRowShellClassName={APP_META_INPUT_SHELL}
         onOptionAdded={onOptionsChanged}
         onOptionDeleted={onOptionsChanged}
+        commitOnBlur
       />
     </div>
   );
@@ -400,7 +420,12 @@ function DocumentTemplateModal({
   isCode: IsCodeDetail | null;
   onClose: () => void;
 }) {
-  const address = [client?.address, client?.city, client?.state, client?.pin_code].filter(Boolean).join(", ");
+  const address = formatClientAddressLine({
+    address: client?.address,
+    city: client?.city,
+    pin_code: client?.pin_code,
+    state: client?.state,
+  });
 
   function handlePrint() {
     const w = window.open("", "_blank", "width=900,height=700");
@@ -506,6 +531,12 @@ function DocumentTemplateModal({
   );
 }
 
+const APP_DOC_SHORTCUT_BTN_BASE =
+  "group inline-flex h-14 w-[5.75rem] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-zinc-200 bg-white px-1.5 py-1.5 text-center shadow-sm transition sm:h-[62px] sm:w-[7.5rem] sm:px-2 sm:py-2 dark:border-zinc-700 dark:bg-zinc-800";
+
+const APP_DOC_SHORTCUT_LABEL =
+  "line-clamp-2 w-full text-[10px] font-semibold leading-tight text-zinc-800 sm:text-[11px] dark:text-zinc-100";
+
 function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: () => void }) {
   const initialNotes = parseApplicationChecklistNotes(row.notes);
   const initialScope = parseBisProjectLicenseScopeNotes(row.notes);
@@ -536,6 +567,18 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [showPiSampleRequirements, setShowPiSampleRequirements] = useState(false);
   const [showTopManagement, setShowTopManagement] = useState(false);
   const [showTechnicalStaff, setShowTechnicalStaff] = useState(false);
+  const [showFactoryTestReport, setShowFactoryTestReport] = useState(false);
+  const [showSubcontractedTests, setShowSubcontractedTests] = useState(false);
+  const [showCmpf305, setShowCmpf305] = useState(false);
+  const [showCmpf306, setShowCmpf306] = useState(false);
+  const [showCmpf307, setShowCmpf307] = useState(false);
+  const [showCmpf310, setShowCmpf310] = useState(false);
+  const [showCmpf311, setShowCmpf311] = useState(false);
+  const [showUndertakingOption2, setShowUndertakingOption2] = useState(false);
+  const [reopenFtrAfterSampleEdit, setReopenFtrAfterSampleEdit] = useState(false);
+  const [sampleOfferLetterFocusIndex, setSampleOfferLetterFocusIndex] = useState<number | null>(
+    null,
+  );
   const [licenseScope, setLicenseScope] = useState(() =>
     initialScope.scopeType === "plain"
       ? initialScope.plainText || initialNotes.licenseScope
@@ -559,6 +602,24 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [technicalStaff, setTechnicalStaff] = useState<TechnicalStaffStored[]>(
     initialNotes.technicalStaff,
   );
+  const [factoryTestReports, setFactoryTestReports] = useState<FactoryTestReportStored[]>(
+    initialNotes.factoryTestReports,
+  );
+  const [subcontractedTests, setSubcontractedTests] = useState<SubcontractedTestStored[]>(
+    initialNotes.subcontractedTests,
+  );
+  const [subcontractedTestsDocument, setSubcontractedTestsDocument] =
+    useState<SubcontractedTestsDocumentStored>(initialNotes.subcontractedTestsDocument);
+  const [cmpf305Machinery, setCmpf305Machinery] = useState<Cmpf305MachineryStored[]>(
+    initialNotes.cmpf305Machinery,
+  );
+  const [cmpf306, setCmpf306] = useState<Cmpf306Stored>(initialNotes.cmpf306);
+  const [cmpf307, setCmpf307] = useState<Cmpf307Stored>(initialNotes.cmpf307);
+  const [cmpf310, setCmpf310] = useState<Cmpf310Stored>(initialNotes.cmpf310);
+  const [cmpf311, setCmpf311] = useState<Cmpf311Stored>(initialNotes.cmpf311);
+  const [undertakingOption2, setUndertakingOption2] = useState<UndertakingOption2Stored>(
+    initialNotes.undertakingOption2,
+  );
   const [applicationMeta, setApplicationMeta] = useState<ApplicationMeta>(initialNotes.meta);
   const [saving, startSave] = useTransition();
   const saveNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -572,6 +633,15 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     piSampleRequirements?: OslSampleRequirementStored[];
     topManagement?: TopManagementStored[];
     technicalStaff?: TechnicalStaffStored[];
+    factoryTestReports?: FactoryTestReportStored[];
+    subcontractedTests?: SubcontractedTestStored[];
+    subcontractedTestsDocument?: SubcontractedTestsDocumentStored;
+    cmpf305Machinery?: Cmpf305MachineryStored[];
+    cmpf306?: Cmpf306Stored;
+    cmpf307?: Cmpf307Stored;
+    cmpf310?: Cmpf310Stored;
+    cmpf311?: Cmpf311Stored;
+    undertakingOption2?: UndertakingOption2Stored;
   }>({});
 
   const flushNotesSave = useCallback(() => {
@@ -587,6 +657,16 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         piSampleRequirements: overrides.piSampleRequirements ?? piSampleRequirements,
         topManagement: overrides.topManagement ?? topManagement,
         technicalStaff: overrides.technicalStaff ?? technicalStaff,
+        factoryTestReports: overrides.factoryTestReports ?? factoryTestReports,
+        subcontractedTests: overrides.subcontractedTests ?? subcontractedTests,
+        subcontractedTestsDocument:
+          overrides.subcontractedTestsDocument ?? subcontractedTestsDocument,
+        cmpf305Machinery: overrides.cmpf305Machinery ?? cmpf305Machinery,
+        cmpf306: overrides.cmpf306 ?? cmpf306,
+        cmpf307: overrides.cmpf307 ?? cmpf307,
+        cmpf310: overrides.cmpf310 ?? cmpf310,
+        cmpf311: overrides.cmpf311 ?? cmpf311,
+        undertakingOption2: overrides.undertakingOption2 ?? undertakingOption2,
         meta: overrides.meta ?? applicationMeta,
       });
       if (row.source === "bis_new_applications") {
@@ -595,7 +675,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         await updateBisProjectNotes(row.id, payload);
       }
     });
-  }, [row.id, row.source, items, licenseScope, licenseScopeFormat, licenseScopeRows, oslSampleRequirements, piSampleRequirements, topManagement, technicalStaff, applicationMeta]);
+  }, [row.id, row.source, items, licenseScope, licenseScopeFormat, licenseScopeRows, oslSampleRequirements, piSampleRequirements, topManagement, technicalStaff, factoryTestReports, subcontractedTests, subcontractedTestsDocument, cmpf305Machinery, cmpf306, cmpf307, cmpf310, cmpf311, undertakingOption2, applicationMeta]);
 
   const saveNotesToDb = useCallback(
     (overrides?: {
@@ -608,6 +688,15 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       piSampleRequirements?: OslSampleRequirementStored[];
       topManagement?: TopManagementStored[];
       technicalStaff?: TechnicalStaffStored[];
+      factoryTestReports?: FactoryTestReportStored[];
+      subcontractedTests?: SubcontractedTestStored[];
+      subcontractedTestsDocument?: SubcontractedTestsDocumentStored;
+      cmpf305Machinery?: Cmpf305MachineryStored[];
+      cmpf306?: Cmpf306Stored;
+      cmpf307?: Cmpf307Stored;
+      cmpf310?: Cmpf310Stored;
+      cmpf311?: Cmpf311Stored;
+      undertakingOption2?: UndertakingOption2Stored;
     }) => {
       pendingNotesSaveRef.current = {
         ...pendingNotesSaveRef.current,
@@ -665,11 +754,39 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   }, []);
 
   useEffect(() => {
-    reloadOptions();
-    reloadApplicationDropdowns();
+    let cancelled = false;
+
+    void (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("app_dropdown_options")
+        .select("*")
+        .eq("option_key", "particular_description")
+        .order("value", { ascending: true });
+      if (!cancelled && data) setDescOptions(data as AppDropdownOptionRow[]);
+    })();
+
+    void (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("app_dropdown_options")
+        .select("*")
+        .in("option_key", [...BIS_APPLICATION_DROPDOWN_KEYS])
+        .order("value", { ascending: true });
+
+      if (cancelled) return;
+
+      const grouped: Record<string, AppDropdownOptionRow[]> = {};
+      for (const key of BIS_APPLICATION_DROPDOWN_KEYS) grouped[key] = [];
+      for (const opt of (data ?? []) as (AppDropdownOptionRow & { option_key?: string })[]) {
+        const key = opt.option_key ?? "";
+        if (!grouped[key]) grouped[key] = [];
+        grouped[key].push(opt);
+      }
+      setAppDropdownOptions(grouped);
+    })();
 
     const supabase = createClient();
-    let cancelled = false;
 
     async function loadDetails() {
       const tasks: PromiseLike<void>[] = [];
@@ -693,6 +810,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
             setPiSampleRequirements(parsed.piSampleRequirements);
             setTopManagement(parsed.topManagement);
             setTechnicalStaff(parsed.technicalStaff);
+            setFactoryTestReports(parsed.factoryTestReports);
             setApplicationMeta(parsed.meta);
           }),
       );
@@ -714,7 +832,9 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         tasks.push(
           supabase
             .from("is_codes")
-            .select("is_number, revision_year, is_code_title, aspect_of_is")
+            .select(
+              "is_number, revision_year, is_code_title, aspect_of_is, unit_of_is, mmf_large_scale, mmf_medium_scale, mmf_small_scale, mmf_micro_scale, slab_1_rate",
+            )
             .eq("id", row.is_code_id)
             .single()
             .then(({ data }) => {
@@ -730,7 +850,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     return () => {
       cancelled = true;
     };
-  }, [row.client_id, row.is_code_id, row.id, row.notes, reloadApplicationDropdowns, reloadOptions]);
+  }, [row.client_id, row.is_code_id, row.id, row.notes]);
 
   const done = items.filter((item) => item.done).length;
   const total = items.length;
@@ -791,10 +911,86 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     saveNotesToDb({ technicalStaff: rows });
   }
 
+  function saveFactoryTestReports(rows: FactoryTestReportStored[]) {
+    setFactoryTestReports(rows);
+    saveNotesToDb({ factoryTestReports: rows });
+  }
+
+  function saveSubcontractedTests(payload: {
+    rows: SubcontractedTestStored[];
+    document: SubcontractedTestsDocumentStored;
+  }) {
+    setSubcontractedTests(payload.rows);
+    setSubcontractedTestsDocument(payload.document);
+    saveNotesToDb({
+      subcontractedTests: payload.rows,
+      subcontractedTestsDocument: payload.document,
+    });
+  }
+
+  function saveCmpf305Machinery(rows: Cmpf305MachineryStored[]) {
+    setCmpf305Machinery(rows);
+    saveNotesToDb({ cmpf305Machinery: rows });
+  }
+
+  function saveCmpf306(document: Cmpf306Stored) {
+    setCmpf306(document);
+    saveNotesToDb({ cmpf306: document });
+  }
+
+  function saveCmpf307(document: Cmpf307Stored) {
+    setCmpf307(document);
+    saveNotesToDb({ cmpf307: document });
+  }
+
+  function saveCmpf310(document: Cmpf310Stored) {
+    setCmpf310(document);
+    saveNotesToDb({ cmpf310: document });
+  }
+
+  function saveCmpf311(document: Cmpf311Stored) {
+    setCmpf311(document);
+    saveNotesToDb({ cmpf311: document });
+  }
+
+  function saveUndertakingOption2(document: UndertakingOption2Stored) {
+    setUndertakingOption2(document);
+    saveNotesToDb({ undertakingOption2: document });
+  }
+
+  function handleEditSampleFromFtr(source: FtrSampleSource, sampleIndex: number) {
+    setSampleOfferLetterFocusIndex(sampleIndex);
+    setReopenFtrAfterSampleEdit(true);
+    setShowFactoryTestReport(false);
+    if (source === "osl") setShowOslSampleRequirements(true);
+    else setShowPiSampleRequirements(true);
+  }
+
+  function closeOslSampleRequirementsModal() {
+    setShowOslSampleRequirements(false);
+    setSampleOfferLetterFocusIndex(null);
+    if (reopenFtrAfterSampleEdit) {
+      setReopenFtrAfterSampleEdit(false);
+      setShowFactoryTestReport(true);
+    }
+  }
+
+  function closePiSampleRequirementsModal() {
+    setShowPiSampleRequirements(false);
+    setSampleOfferLetterFocusIndex(null);
+    if (reopenFtrAfterSampleEdit) {
+      setReopenFtrAfterSampleEdit(false);
+      setShowFactoryTestReport(true);
+    }
+  }
+
   function buildDeclarationData() {
-    const address = [client?.address, client?.city, client?.state, client?.pin_code]
-      .filter(Boolean)
-      .join(", ");
+    const address = formatClientAddressLine({
+      address: client?.address,
+      city: client?.city,
+      pin_code: client?.pin_code,
+      state: client?.state,
+    });
     return {
       companyName: client?.company_name ?? row.client_name,
       address,
@@ -856,16 +1052,16 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
-      <div className="relative flex h-dvh w-full flex-col bg-white shadow-2xl dark:bg-zinc-900">
+      <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-zinc-900">
         {/* Header */}
-        <div className="bg-gradient-to-r from-sky-600 to-indigo-600 px-5 py-4">
+        <div className="shrink-0 bg-gradient-to-r from-sky-600 to-indigo-600 px-3 py-3 sm:px-5 sm:py-4">
           <div className="relative flex items-center">
-            <div className="absolute left-0 flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20">
+            <div className="absolute left-0 hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20 sm:flex">
               <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
               </svg>
             </div>
-            <p className="w-full text-center text-sm font-semibold uppercase tracking-wider text-white/80 sm:text-base">
+            <p className="w-full text-center text-xs font-semibold uppercase tracking-wider text-white/80 sm:pl-0 sm:text-base">
               Application Checklist
             </p>
             <button
@@ -877,9 +1073,9 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
               </svg>
             </button>
           </div>
-          <div className="mt-2 flex items-center justify-between gap-4">
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
             <div className="flex min-w-0 items-center gap-2">
-              <p className="min-w-0 truncate text-base font-extrabold text-white sm:text-lg">
+              <p className="min-w-0 text-sm font-extrabold text-white sm:text-lg">
                 {client?.company_name ?? row.client_name}
               </p>
               {row.client_id && (
@@ -896,8 +1092,8 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
               )}
             </div>
             {isFullNumber !== "—" && (
-              <div className="flex shrink-0 items-center gap-2">
-                <p className="truncate text-right text-base font-extrabold text-white sm:text-lg">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+                <p className="text-sm font-extrabold text-white sm:text-lg">
                   {isFullNumber}
                 </p>
                 {row.is_code_id && (
@@ -917,8 +1113,9 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           </div>
         </div>
 
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {/* Application details & documents */}
-        <div className="border-b border-zinc-200 bg-zinc-50 px-5 py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+        <div className="border-b border-zinc-200 bg-zinc-50 px-3 py-3 sm:px-5 sm:py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
             <div className="min-w-0">
               <label htmlFor="application_procedure" className={APP_META_FIELD_LABEL}>
@@ -1086,74 +1283,163 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
             />
           </div>
 
-          <div className="mt-4 flex flex-wrap gap-3">
+          <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0">
             <button
               type="button"
               onClick={() => setShowLicenseScopeEditor(true)}
-              className="group inline-flex max-w-[200px] flex-col items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-center shadow-sm transition hover:border-violet-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-violet-600"
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-violet-300 hover:shadow-md dark:hover:border-violet-600`}
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-violet-100 text-violet-700 group-hover:bg-violet-200 dark:bg-violet-950/40 dark:text-violet-300">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-700 group-hover:bg-violet-200 dark:bg-violet-950/40 dark:text-violet-300">
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                 </svg>
               </div>
-              <span className="text-xs font-semibold text-zinc-800 dark:text-zinc-100">License Scope</span>
+              <span className={APP_DOC_SHORTCUT_LABEL}>License Scope</span>
             </button>
             <button
               type="button"
               onClick={() => setShowOslSampleRequirements(true)}
-              className="group inline-flex max-w-[200px] flex-col items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-center shadow-sm transition hover:border-teal-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-teal-600"
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                 </svg>
               </div>
-              <span className="text-[11px] font-semibold leading-tight text-zinc-800 dark:text-zinc-100">
-                Sample for OSL
-              </span>
+              <span className={APP_DOC_SHORTCUT_LABEL}>Sample for OSL</span>
             </button>
             <button
               type="button"
               onClick={() => setShowPiSampleRequirements(true)}
-              className="group inline-flex max-w-[200px] flex-col items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-center shadow-sm transition hover:border-teal-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-teal-600"
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                 </svg>
               </div>
-              <span className="text-[11px] font-semibold leading-tight text-zinc-800 dark:text-zinc-100">
-                Sample for PI
-              </span>
+              <span className={APP_DOC_SHORTCUT_LABEL}>Sample for PI</span>
             </button>
             <button
               type="button"
               onClick={() => setShowTopManagement(true)}
-              className="group inline-flex max-w-[200px] flex-col items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-center shadow-sm transition hover:border-teal-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-teal-600"
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                 </svg>
               </div>
-              <span className="text-[11px] font-semibold leading-tight text-zinc-800 dark:text-zinc-100">
-                Top Management
-              </span>
+              <span className={APP_DOC_SHORTCUT_LABEL}>Top Management</span>
             </button>
             <button
               type="button"
               onClick={() => setShowTechnicalStaff(true)}
-              className="group inline-flex max-w-[200px] flex-col items-center gap-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-center shadow-sm transition hover:border-teal-300 hover:shadow-md dark:border-zinc-700 dark:bg-zinc-800 dark:hover:border-teal-600"
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
             >
-              <div className="flex h-6 w-6 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                 </svg>
               </div>
-              <span className="text-[11px] font-semibold leading-tight text-zinc-800 dark:text-zinc-100">
-                Technical Staff
-              </span>
+              <span className={APP_DOC_SHORTCUT_LABEL}>Technical Staff</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowFactoryTestReport(true)}
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <span className={APP_DOC_SHORTCUT_LABEL}>FTR</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowSubcontractedTests(true)}
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+              </div>
+              <span className={APP_DOC_SHORTCUT_LABEL}>Test Subcontracted</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCmpf305(true)}
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+              </div>
+              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 305</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCmpf306(true)}
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+                </svg>
+              </div>
+              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 306</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCmpf307(true)}
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+                </svg>
+              </div>
+              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 307</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCmpf310(true)}
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 310</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCmpf311(true)}
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+              </div>
+              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 311</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowUndertakingOption2(true)}
+              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
+            >
+              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <span className={APP_DOC_SHORTCUT_LABEL}>Undertaking Option 2</span>
             </button>
           </div>
 
@@ -1195,8 +1481,83 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         </div>
 
         {total > 0 && (
-        <div className="min-h-0 flex-1 overflow-y-auto">
-          <table className="w-full text-sm">
+        <>
+        {/* Mobile checklist cards */}
+        <div className="divide-y divide-zinc-100 md:hidden dark:divide-zinc-800">
+          {items.map((item, i) => (
+            <div
+              key={item.id}
+              className={`space-y-3 px-3 py-3 sm:px-4 ${item.done ? "bg-sky-50/60 dark:bg-sky-950/20" : ""}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-bold text-zinc-400 dark:text-zinc-500">
+                  {String(i + 1).padStart(2, "0")}
+                </span>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-1.5 text-xs text-zinc-600 dark:text-zinc-300">
+                    <input
+                      type="checkbox"
+                      checked={item.done}
+                      onChange={(e) => updateItem(item.id, { done: e.target.checked })}
+                      className="h-4 w-4 cursor-pointer rounded accent-sky-600"
+                    />
+                    Done
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => removeItem(item.id)}
+                    title="Remove"
+                    className="rounded p-1 text-zinc-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/30"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                  Description
+                </p>
+                <AppDropdownCombobox
+                  optionKey="particular_description"
+                  name={`desc_${item.id}`}
+                  label="Description"
+                  dialogTitle="Manage Particular Descriptions"
+                  addPlaceholder="Add description..."
+                  manageAriaLabel="Manage descriptions"
+                  value={item.description}
+                  onChange={(v) => updateItem(item.id, { description: v })}
+                  options={descOptions}
+                  selectedValue={item.description}
+                  onClearSelection={() => updateItem(item.id, { description: "" })}
+                  hideLabel
+                  listZIndexClass="z-[40]"
+                  overlayZIndexClass="z-[50]"
+                  inputRowShellClassName={`flex overflow-hidden rounded-lg border bg-white focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500 dark:bg-zinc-800 ${item.done ? "border-zinc-200 opacity-50 dark:border-zinc-700" : "border-zinc-200 dark:border-zinc-700"}`}
+                  onOptionAdded={reloadOptions}
+                  onOptionDeleted={reloadOptions}
+                  commitOnBlur
+                />
+              </div>
+              <div>
+                <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                  Particular
+                </p>
+                <ParticularCell
+                  item={item}
+                  projectId={row.id}
+                  onUpdate={(patch) => updateItem(item.id, patch)}
+                  onGenerateDocument={setDocTemplateItem}
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop checklist table */}
+        <div className="hidden overflow-x-auto md:block">
+          <table className="w-full min-w-[720px] text-sm">
             <thead className="sticky top-0 z-10 border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800">
               <tr>
                 <th className="w-12 px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Sr No</th>
@@ -1229,13 +1590,12 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
                       selectedValue={item.description}
                       onClearSelection={() => updateItem(item.id, { description: "" })}
                       hideLabel
-                      emptySelectLabel="Type or select…"
                       listZIndexClass="z-[40]"
                       overlayZIndexClass="z-[50]"
-                      searchPlaceholder="Search or type description..."
                       inputRowShellClassName={`flex overflow-hidden rounded-lg border bg-white focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500 dark:bg-zinc-800 ${item.done ? 'border-zinc-200 opacity-50 dark:border-zinc-700' : 'border-zinc-200 dark:border-zinc-700'}`}
                       onOptionAdded={reloadOptions}
                       onOptionDeleted={reloadOptions}
+                      commitOnBlur
                     />
                   </td>
                   <td className="px-4 py-3">
@@ -1271,13 +1631,16 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
             </tbody>
           </table>
         </div>
+        </>
         )}
 
+        </div>
+
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-zinc-200 bg-zinc-50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-200 bg-zinc-50 px-3 py-3 sm:px-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex min-w-0 flex-1 items-center gap-3">
             {total > 0 && (
-              <p className="text-xs text-zinc-400">
+              <p className="hidden text-xs text-zinc-400 sm:inline">
                 {done === total ? "✓ All items completed" : "Fill particulars and mark items as done"}
               </p>
             )}
@@ -1349,7 +1712,8 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={oslSampleRequirements}
           onSave={saveOslSampleRequirements}
-          onClose={() => setShowOslSampleRequirements(false)}
+          onClose={closeOslSampleRequirementsModal}
+          initialFocusSampleIndex={sampleOfferLetterFocusIndex}
         />
       )}
 
@@ -1362,7 +1726,8 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={piSampleRequirements}
           onSave={savePiSampleRequirements}
-          onClose={() => setShowPiSampleRequirements(false)}
+          onClose={closePiSampleRequirementsModal}
+          initialFocusSampleIndex={sampleOfferLetterFocusIndex}
         />
       )}
 
@@ -1391,6 +1756,139 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         />
       )}
 
+      {showFactoryTestReport && (
+        <FactoryTestReportModal
+          letterData={buildDeclarationData()}
+          oslSamples={oslSampleRequirements}
+          piSamples={piSampleRequirements}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          licenceNumber={
+            row.cm_l_digits
+              ? formatCmDisplay(row.project_kind, row.cm_l_digits)
+              : ""
+          }
+          inspectionOfficerName={applicationMeta.inspection_officer_name}
+          inspectionOfficerDesignation={applicationMeta.inspection_officer_designation}
+          technicalStaff={technicalStaff}
+          isCodeId={row.is_code_id}
+          isNumber={isCode?.is_number ?? row.is_number}
+          revisionYear={isCode?.revision_year ?? row.is_revision_year}
+          rows={factoryTestReports}
+          onSave={saveFactoryTestReports}
+          onClose={() => setShowFactoryTestReport(false)}
+          onEditSample={handleEditSampleFromFtr}
+        />
+      )}
+
+      {showSubcontractedTests && (
+        <SubcontractedTestsModal
+          letterData={buildDeclarationData()}
+          isCodeId={row.is_code_id}
+          isNumber={isCode?.is_number ?? row.is_number}
+          revisionYear={isCode?.revision_year ?? row.is_revision_year}
+          rows={subcontractedTests}
+          document={subcontractedTestsDocument}
+          onSave={saveSubcontractedTests}
+          onClose={() => setShowSubcontractedTests(false)}
+        />
+      )}
+
+      {showCmpf305 && (
+        <Cmpf305Modal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          inspectionOfficerName={applicationMeta.inspection_officer_name}
+          inspectionOfficerDesignation={applicationMeta.inspection_officer_designation}
+          topManagement={topManagement}
+          isCodeId={row.is_code_id}
+          isNumber={isCode?.is_number ?? row.is_number}
+          revisionYear={isCode?.revision_year ?? row.is_revision_year}
+          licenseScope={licenseScope}
+          licenseScopeFormat={licenseScopeFormat}
+          licenseScopeRows={licenseScopeRows}
+          rows={cmpf305Machinery}
+          onSave={saveCmpf305Machinery}
+          onClose={() => setShowCmpf305(false)}
+        />
+      )}
+
+      {showCmpf306 && (
+        <Cmpf306Modal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          inspectionOfficerName={applicationMeta.inspection_officer_name}
+          inspectionOfficerDesignation={applicationMeta.inspection_officer_designation}
+          topManagement={topManagement}
+          isCodeId={row.is_code_id}
+          isNumber={isCode?.is_number ?? row.is_number}
+          revisionYear={isCode?.revision_year ?? row.is_revision_year}
+          licenseScope={licenseScope}
+          licenseScopeFormat={licenseScopeFormat}
+          licenseScopeRows={licenseScopeRows}
+          document={cmpf306}
+          onSave={saveCmpf306}
+          onClose={() => setShowCmpf306(false)}
+        />
+      )}
+
+      {showCmpf307 && (
+        <Cmpf307Modal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          topManagement={topManagement}
+          document={cmpf307}
+          onSave={saveCmpf307}
+          onClose={() => setShowCmpf307(false)}
+        />
+      )}
+
+      {showCmpf310 && (
+        <Cmpf310Modal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          isCode={isCode}
+          companyScale={client?.company_scale ?? null}
+          topManagement={topManagement}
+          onSave={saveCmpf310}
+          onClose={() => setShowCmpf310(false)}
+        />
+      )}
+
+      {showCmpf311 && (
+        <Cmpf311Modal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          natureOfInspection={applicationMeta.nature_of_inspection}
+          topManagement={topManagement}
+          onSave={saveCmpf311}
+          onClose={() => setShowCmpf311(false)}
+        />
+      )}
+
+      {showUndertakingOption2 && (
+        <UndertakingOption2Modal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          topManagement={topManagement}
+          onSave={saveUndertakingOption2}
+          onClose={() => setShowUndertakingOption2(false)}
+        />
+      )}
+
     </div>
   );
 }
@@ -1398,12 +1896,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(dateStr);
 }
 
 function toInputDate(dateStr: string | null): string {
@@ -1423,16 +1916,18 @@ function TargetDateCell({
   onUpdate: (id: string, date: string) => void;
 }) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(toInputDate(targetDate));
+  const [editValue, setEditValue] = useState("");
   const [saving, startSave] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!editing) setValue(toInputDate(targetDate));
-  }, [targetDate, editing]);
+  function beginEdit() {
+    setEditValue(toInputDate(targetDate));
+    setError(null);
+    setEditing(true);
+  }
 
   function save() {
-    if (!value) {
+    if (!editValue) {
       setError("Pick a date");
       return;
     }
@@ -1440,13 +1935,13 @@ function TargetDateCell({
     startSave(async () => {
       const res =
         source === "bis_new_applications"
-          ? await updateBisNewApplicationTargetDate(projectId, value)
-          : await updateBisProjectTargetDate(projectId, value);
+          ? await updateBisNewApplicationTargetDate(projectId, editValue)
+          : await updateBisProjectTargetDate(projectId, editValue);
       if (!res.ok) {
         setError(res.error);
         return;
       }
-      onUpdate(projectId, value);
+      onUpdate(projectId, editValue);
       setEditing(false);
     });
   }
@@ -1457,8 +1952,8 @@ function TargetDateCell({
         <div className="flex items-center gap-1">
           <input
             type="date"
-            value={value}
-            onChange={(e) => setValue(e.target.value)}
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
             disabled={saving}
             autoFocus
             className="w-full rounded-md border border-zinc-200 bg-white px-2 py-1 text-xs text-zinc-800 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
@@ -1466,7 +1961,7 @@ function TargetDateCell({
           <button
             type="button"
             onClick={save}
-            disabled={saving || !value}
+            disabled={saving || !editValue}
             title="Save date"
             className="rounded-md bg-sky-600 p-1 text-white hover:bg-sky-500 disabled:opacity-50"
           >
@@ -1478,7 +1973,6 @@ function TargetDateCell({
             type="button"
             onClick={() => {
               setEditing(false);
-              setValue(toInputDate(targetDate));
               setError(null);
             }}
             disabled={saving}
@@ -1498,7 +1992,7 @@ function TargetDateCell({
   return (
     <button
       type="button"
-      onClick={() => setEditing(true)}
+      onClick={beginEdit}
       className={
         targetDate
           ? "text-xs text-zinc-700 hover:underline dark:text-zinc-300"

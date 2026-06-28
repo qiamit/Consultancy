@@ -4,6 +4,7 @@ import { useMemo, useState, useEffect, useTransition } from "react";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { ClientSnapshotModal } from "@/components/dashboard/modals/client-snapshot-modal";
 import { formatCmDisplay } from "@/lib/bis-project-license-status";
+import { formatDisplayDate, parseDisplayDateInput, toYmdDateString } from "@/lib/format-date";
 import {
   fetchRenewalApplication,
   upsertRenewalApplication,
@@ -69,7 +70,15 @@ type PeriodRow = {
   to: string;
   total_production: string;
   rejection: string;
+  /** True when row was created via split — dates become editable */
+  datesEditable?: boolean;
+  /** Original month bounds before split — used to restore row on merge */
+  parentFrom?: string;
+  parentTo?: string;
 };
+
+const APPLICATION_FEE = 1000;
+const ANNUAL_LICENSE_FEE_PER_YEAR = 1000;
 
 type RenewalFormSnapshot = {
   version: 1;
@@ -297,7 +306,45 @@ function lastDayOfMonth(year: number, month: number): number {
 }
 
 function toYMD(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  return toYmdDateString(d);
+}
+
+function splitDateRange(fromStr: string, toStr: string, parts: 2 | 3): { from: string; to: string }[] {
+  const [fy, fm, fd] = fromStr.split("-").map(Number);
+  const [ty, tm, td] = toStr.split("-").map(Number);
+  const start = new Date(fy, fm - 1, fd);
+  const end = new Date(ty, tm - 1, td);
+  const totalDays = Math.round((end.getTime() - start.getTime()) / 86_400_000) + 1;
+
+  if (parts === 2) {
+    const firstDays = Math.ceil(totalDays / 2);
+    const midEnd = new Date(start);
+    midEnd.setDate(midEnd.getDate() + firstDays - 1);
+    const secondStart = new Date(midEnd);
+    secondStart.setDate(secondStart.getDate() + 1);
+    return [
+      { from: toYMD(start), to: toYMD(midEnd) },
+      { from: toYMD(secondStart), to: toYMD(end) },
+    ];
+  }
+
+  const chunk = Math.ceil(totalDays / 3);
+  const segments: { from: string; to: string }[] = [];
+  let cur = new Date(start);
+  for (let i = 0; i < 3; i++) {
+    const segEnd = new Date(cur);
+    if (i === 2) {
+      segEnd.setTime(end.getTime());
+    } else {
+      segEnd.setDate(segEnd.getDate() + chunk - 1);
+      if (segEnd > end) segEnd.setTime(end.getTime());
+    }
+    segments.push({ from: toYMD(cur), to: toYMD(segEnd) });
+    if (segEnd >= end) break;
+    cur = new Date(segEnd);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return segments;
 }
 
 function generatePeriodRows(fromStr: string, toStr: string): PeriodRow[] {
@@ -324,8 +371,45 @@ function generatePeriodRows(fromStr: string, toStr: string): PeriodRow[] {
 
 function fmtDMY(dateStr: string): string {
   if (!dateStr) return "";
-  const [y, m, d] = dateStr.split("-").map(Number);
-  return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}`;
+  return formatDisplayDate(dateStr, "");
+}
+
+function parseDMYInput(raw: string): string | null {
+  return parseDisplayDateInput(raw);
+}
+
+function PeriodDateInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (ymd: string) => void;
+}) {
+  const [local, setLocal] = useState(() => (value ? fmtDMY(value) : ""));
+  const [focused, setFocused] = useState(false);
+  const displayValue = focused ? local : value ? fmtDMY(value) : "";
+
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      placeholder="DD-MMM-YY"
+      value={displayValue}
+      onFocus={() => setFocused(true)}
+      onChange={(e) => setLocal(e.target.value)}
+      onBlur={() => {
+        setFocused(false);
+        const parsed = parseDMYInput(local);
+        if (parsed) {
+          onChange(parsed);
+          setLocal(fmtDMY(parsed));
+        } else {
+          setLocal(value ? fmtDMY(value) : "");
+        }
+      }}
+      className="w-full min-w-[6.75rem] rounded-md border border-sky-300 bg-sky-50 px-2 py-1.5 text-center text-xs font-semibold tabular-nums text-zinc-800 placeholder:font-normal placeholder:text-zinc-400 focus:border-sky-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200 dark:border-sky-700 dark:bg-sky-950/50 dark:text-zinc-100 dark:placeholder:text-zinc-500 dark:focus:bg-zinc-800 dark:focus:ring-sky-900"
+    />
+  );
 }
 
 function daysUntil(dateStr: string | null): number | null {
@@ -337,12 +421,7 @@ function daysUntil(dateStr: string | null): number | null {
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(dateStr);
 }
 
 function ExpiryBadge({ dateStr }: { dateStr: string | null }) {
@@ -466,6 +545,7 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
 
   // Auto-fetch client details and IS code title
   useEffect(() => {
+    let cancelled = false;
     const supabase = createClient();
     if (row.client_id) {
       supabase
@@ -474,13 +554,19 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
         .eq("id", row.client_id)
         .single()
         .then(({ data }) => {
-          if (!data) { setFirmAddress("—"); return; }
+          if (cancelled) return;
+          if (!data) {
+            setFirmAddress("—");
+            return;
+          }
           const addr = [data.address, data.city, data.state, data.pin_code].filter(Boolean).join(", ");
           setFirmAddress(addr || "—");
           setFirmScale((data.company_scale as string | null) ?? "—");
         });
     } else {
-      setFirmAddress("—");
+      void Promise.resolve().then(() => {
+        if (!cancelled) setFirmAddress("—");
+      });
     }
     if (row.is_code_id) {
       supabase
@@ -489,11 +575,16 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
         .eq("id", row.is_code_id)
         .single()
         .then(({ data }) => {
-          setIsCodeDetail((data as IsCodeFeeDetail | null) ?? null);
+          if (!cancelled) setIsCodeDetail((data as IsCodeFeeDetail | null) ?? null);
         });
     } else {
-      setIsCodeDetail(null);
+      void Promise.resolve().then(() => {
+        if (!cancelled) setIsCodeDetail(null);
+      });
     }
+    return () => {
+      cancelled = true;
+    };
   }, [row.client_id, row.is_code_id]);
 
   useEffect(() => {
@@ -523,6 +614,56 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
 
   function updatePeriodRow(idx: number, field: "total_production" | "rejection", val: string) {
     setPeriodRows((prev) => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
+  }
+
+  function updatePeriodRowDate(idx: number, field: "from" | "to", val: string) {
+    setPeriodRows((prev) => prev.map((r, i) => i === idx ? { ...r, [field]: val } : r));
+  }
+
+  function handleSplitRow(idx: number, parts: 2 | 3) {
+    setPeriodRows((prev) => {
+      const row = prev[idx];
+      if (!row) return prev;
+      const parentFrom = row.parentFrom ?? row.from;
+      const parentTo = row.parentTo ?? row.to;
+      const segments = splitDateRange(row.from, row.to, parts).map((seg) => ({
+        ...seg,
+        total_production: "",
+        rejection: "",
+        datesEditable: true,
+        parentFrom,
+        parentTo,
+      }));
+      return [...prev.slice(0, idx), ...segments, ...prev.slice(idx + 1)];
+    });
+  }
+
+  function handleRemoveSplitRow(idx: number) {
+    setPeriodRows((prev) => {
+      const row = prev[idx];
+      if (!row?.datesEditable) return prev;
+
+      const parentFrom = row.parentFrom ?? row.from;
+      const parentTo = row.parentTo ?? row.to;
+      const without = prev.filter((_, i) => i !== idx);
+      const siblings = without.filter(
+        (r) => r.datesEditable && r.parentFrom === parentFrom && r.parentTo === parentTo,
+      );
+
+      if (siblings.length === 0) {
+        const restored: PeriodRow = {
+          from: parentFrom,
+          to: parentTo,
+          total_production: "",
+          rejection: "",
+        };
+        const next = [...without];
+        next.splice(Math.min(idx, next.length), 0, restored);
+        return next;
+      }
+
+      return without;
+    });
   }
 
   function applyProductionDecimals(decimals: number) {
@@ -563,7 +704,10 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
   const { finalMmf: mmf, slabRows } = computeRenewalMmf(firmScale, totalConformingQty, isCodeDetail);
   const lateFeeAmount = parseDecimal(lateFee);
   const previousDuesAmount = parseDecimal(previousDues);
-  const gstBase = mmf + lateFeeAmount + previousDuesAmount;
+  const renewalYearsNum = parseInt(renewalYears, 10) || 1;
+  const applicationFee = APPLICATION_FEE;
+  const annualLicenseFee = ANNUAL_LICENSE_FEE_PER_YEAR * renewalYearsNum;
+  const gstBase = mmf + lateFeeAmount + previousDuesAmount + applicationFee + annualLicenseFee;
   const gst = gstBase * 0.18;
   const total = gstBase + gst;
 
@@ -694,6 +838,8 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
         amount: s.amount,
       })),
       mmf,
+      applicationFee,
+      annualLicenseFee,
       lateFee: lateFeeAmount,
       previousDues: previousDuesAmount,
       gst,
@@ -710,11 +856,9 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
 
   function handleDownloadExcel() {
     setSaveError(null);
-    try {
-      downloadRenewalExcel(buildExportData());
-    } catch {
-      setSaveError("Unable to download Excel file.");
-    }
+    void downloadRenewalExcel(buildExportData()).catch(() =>
+      setSaveError("Unable to download Excel file."),
+    );
   }
 
   return (
@@ -842,14 +986,15 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                 </details>
               </div>
               <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-                <table className="renewal-form-table w-full min-w-[760px] table-fixed text-sm">
+                <table className="renewal-form-table w-full min-w-[860px] table-fixed text-sm">
                   <colgroup>
+                    <col className="w-[12%]" />
+                    <col className="w-[12%]" />
+                    <col className="w-[19%]" />
                     <col className="w-[11%]" />
-                    <col className="w-[11%]" />
-                    <col className="w-[22%]" />
-                    <col className="w-[14%]" />
-                    <col className="w-[22%]" />
-                    <col className="w-[20%]" />
+                    <col className="w-[19%]" />
+                    <col className="w-[17%]" />
+                    <col className="w-[10%]" />
                   </colgroup>
                   <thead className="bg-zinc-50 dark:bg-zinc-800">
                     <tr>
@@ -868,8 +1013,11 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                       <th className="border-b border-r border-zinc-200 px-3 py-2 text-center text-xs font-semibold normal-case whitespace-normal break-words leading-snug text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
                         Total Production of the Article Confirming to Indian Standards
                       </th>
-                      <th className="border-b border-zinc-200 px-3 py-2 text-center text-xs font-semibold normal-case whitespace-normal break-words leading-snug text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-center text-xs font-semibold normal-case whitespace-normal break-words leading-snug text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
                         Approx. Production Value (₹)
+                      </th>
+                      <th className="border-b border-zinc-200 px-2 py-2 text-center text-xs font-semibold normal-case text-zinc-600 dark:text-zinc-300">
+                        Actions
                       </th>
                     </tr>
                   </thead>
@@ -878,12 +1026,26 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                       const conforming = rowConforming(r);
                       const approxValue = rowApproxValue(r, unitRate);
                       return (
-                      <tr key={i} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
-                        <td className="border-r border-zinc-100 px-3 py-1.5 text-center font-mono text-xs text-zinc-700 dark:border-zinc-800 dark:text-zinc-300">
-                          {fmtDMY(r.from)}
+                      <tr key={`${r.from}-${r.to}-${i}`} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/40 ${r.datesEditable ? "bg-sky-50/40 dark:bg-sky-950/10" : ""}`}>
+                        <td className="border-r border-zinc-100 px-2 py-1.5 text-center dark:border-zinc-800">
+                          {r.datesEditable ? (
+                            <PeriodDateInput
+                              value={r.from}
+                              onChange={(ymd) => updatePeriodRowDate(i, "from", ymd)}
+                            />
+                          ) : (
+                            <span className="font-mono text-xs text-zinc-700 dark:text-zinc-300">{fmtDMY(r.from)}</span>
+                          )}
                         </td>
-                        <td className="border-r border-zinc-100 px-3 py-1.5 text-center font-mono text-xs text-zinc-700 dark:border-zinc-800 dark:text-zinc-300">
-                          {fmtDMY(r.to)}
+                        <td className="border-r border-zinc-100 px-2 py-1.5 text-center dark:border-zinc-800">
+                          {r.datesEditable ? (
+                            <PeriodDateInput
+                              value={r.to}
+                              onChange={(ymd) => updatePeriodRowDate(i, "to", ymd)}
+                            />
+                          ) : (
+                            <span className="font-mono text-xs text-zinc-700 dark:text-zinc-300">{fmtDMY(r.to)}</span>
+                          )}
                         </td>
                         <td className="border-r border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
                           <input
@@ -916,7 +1078,7 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                             className={tableReadOnlyCls}
                           />
                         </td>
-                        <td className="px-2 py-1.5">
+                        <td className="border-r border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
                           <div className="flex overflow-hidden rounded border border-zinc-200 dark:border-zinc-700">
                             <span className="flex shrink-0 items-center border-r border-zinc-200 bg-zinc-50 px-1.5 text-xs font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-400">
                               ₹
@@ -928,6 +1090,38 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                               value={formatCurrencyDisplay(approxValue)}
                               className={`${tableReadOnlyCls} rounded-none border-0`}
                             />
+                          </div>
+                        </td>
+                        <td className="px-1 py-1.5 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            {!r.datesEditable ? (
+                              <details className="relative inline-block">
+                                <summary className="inline-flex cursor-pointer list-none items-center justify-center rounded border border-zinc-200 bg-white p-1 text-zinc-500 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800 dark:hover:bg-zinc-700 [&::-webkit-details-marker]:hidden" title="Split row">
+                                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12M8 12h12M8 17h12M4 7h.01M4 12h.01M4 17h.01" />
+                                  </svg>
+                                </summary>
+                                <div className="absolute right-0 top-full z-10 mt-1 min-w-[7rem] rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-700 dark:bg-zinc-900">
+                                  <button type="button" onClick={() => handleSplitRow(i, 2)} className="block w-full px-3 py-1.5 text-left text-xs text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                                    Split into 2
+                                  </button>
+                                  <button type="button" onClick={() => handleSplitRow(i, 3)} className="block w-full px-3 py-1.5 text-left text-xs text-zinc-600 hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-800">
+                                    Split into 3
+                                  </button>
+                                </div>
+                              </details>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveSplitRow(i)}
+                                title="Remove split row"
+                                className="inline-flex items-center justify-center rounded border border-red-200 bg-red-50 p-1 text-red-600 hover:bg-red-100 dark:border-red-900 dark:bg-red-950/40 dark:text-red-400 dark:hover:bg-red-950/60"
+                              >
+                                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                </svg>
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -950,6 +1144,7 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                             : formatProductionDecimalTotal(total, productionDecimals)}
                         </td>
                       ))}
+                      <td />
                     </tr>
                   </tbody>
                 </table>
@@ -998,6 +1193,14 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                   <span>Final Marking Fee Based on Production</span>
                   <span className="font-mono font-semibold">₹ {formatInrPlain(mmf)}</span>
                 </div>
+                <div className="flex items-center justify-between text-zinc-700 dark:text-zinc-300">
+                  <span>Application Fee</span>
+                  <span className="font-mono font-semibold">₹ {formatInrPlain(applicationFee)}</span>
+                </div>
+                <div className="flex items-center justify-between text-zinc-700 dark:text-zinc-300">
+                  <span>Annual License Fee ({renewalYearsNum} Year{renewalYearsNum === 1 ? "" : "s"} × ₹ {formatInrPlain(ANNUAL_LICENSE_FEE_PER_YEAR)})</span>
+                  <span className="font-mono font-semibold">₹ {formatInrPlain(annualLicenseFee)}</span>
+                </div>
                 <div className="flex items-center justify-between gap-4">
                   <span className="text-zinc-600 dark:text-zinc-400">Late Fee</span>
                   <div className="w-44">
@@ -1011,7 +1214,7 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                   </div>
                 </div>
                 <div className="flex items-center justify-between text-zinc-600 dark:text-zinc-400">
-                  <span>GST @ 18% (on MMF + Late Fee + Previous Due)</span>
+                  <span>GST @ 18% (on MMF + Application Fee + Annual License Fee + Late Fee + Previous Due)</span>
                   <span className="font-mono">₹ {formatInrPlain(gst)}</span>
                 </div>
                 <div className="flex items-center justify-between border-t border-zinc-200 pt-3 font-bold text-zinc-900 dark:border-zinc-600 dark:text-white">

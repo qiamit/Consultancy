@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { formatCmDisplay } from "@/lib/bis-project-license-status";
+import { formatDisplayDate } from "@/lib/format-date";
 import { bisProjectSavedLicenseScope } from "@/lib/bis-project-scope-label";
 import { createClient } from "@/lib/supabase/client";
 
@@ -47,8 +48,7 @@ function daysUntil(dateStr: string | null): number | null {
 }
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return "—";
-  return new Date(dateStr).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  return formatDisplayDate(dateStr);
 }
 
 function InfoItem({

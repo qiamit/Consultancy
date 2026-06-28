@@ -10,7 +10,6 @@ import type {
   EmailMessageRow,
 } from "@/lib/types/email";
 import {
-  DEFAULT_EMAIL_PREFERENCES,
   loadEmailPreferences,
   saveEmailPreferences,
   syncIntervalMs,
@@ -26,6 +25,7 @@ import {
   formatEmailDate,
   parseAddressList,
 } from "./constants";
+import { useSyncedRows } from "@/components/modules/finance/use-finance-master-state";
 
 type ComposeAttachment = {
   id: string;
@@ -69,10 +69,14 @@ export function EmailWorkspace({
   setupError?: string | null;
 }) {
   const router = useRouter();
-  const [accounts, setAccounts] = useState(initialAccounts);
+  const [accounts] = useSyncedRows(initialAccounts);
   const [accountId, setAccountId] = useState<string>(
     initialAccounts.find((a) => a.is_default)?.id ?? initialAccounts[0]?.id ?? "",
   );
+  const effectiveAccountId = useMemo(() => {
+    if (accountId && accounts.some((a) => a.id === accountId)) return accountId;
+    return accounts.find((a) => a.is_default)?.id ?? accounts[0]?.id ?? "";
+  }, [accountId, accounts]);
   const [folderKey, setFolderKey] = useState<EmailFolderKey>("inbox");
   const [messages, setMessages] = useState<EmailMessageRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -91,14 +95,22 @@ export function EmailWorkspace({
   const [bodyLoadError, setBodyLoadError] = useState<{ id: string; message: string } | null>(null);
   const [threadMessages, setThreadMessages] = useState<EmailMessageRow[]>([]);
   const [loadingThread, setLoadingThread] = useState(false);
-  const [readFilter, setReadFilter] = useState<MessageReadFilter>("all");
+  const [preferences, setPreferences] = useState<EmailPreferences>(() => loadEmailPreferences());
+  const [readFilter, setReadFilter] = useState<MessageReadFilter>(
+    () => loadEmailPreferences().defaultReadFilter,
+  );
   const [listPage, setListPage] = useState(1);
-  const [preferences, setPreferences] = useState<EmailPreferences>(DEFAULT_EMAIL_PREFERENCES);
   const syncingRef = useRef(false);
 
   const messagePageSize = preferences.messagesPerPage;
+  const listScopeKey = `${effectiveAccountId}|${folderKey}|${readFilter}|${search}|${messagePageSize}`;
+  const [appliedListScopeKey, setAppliedListScopeKey] = useState(listScopeKey);
+  if (listScopeKey !== appliedListScopeKey) {
+    setAppliedListScopeKey(listScopeKey);
+    setListPage(1);
+  }
 
-  const activeAccount = accounts.find((a) => a.id === accountId) ?? null;
+  const activeAccount = accounts.find((a) => a.id === effectiveAccountId) ?? null;
   const selected = useMemo(
     () => (selectedId ? messages.find((m) => m.id === selectedId) ?? null : null),
     [messages, selectedId],
@@ -116,12 +128,19 @@ export function EmailWorkspace({
     );
   }
 
+  function clearSelectedMessage() {
+    setSelectedId(null);
+    setThreadMessages([]);
+    setBodyLoadError(null);
+  }
+
   function selectMessage(messageId: string) {
     setCompose(emptyCompose());
     setSelectedId(messageId);
     setBodyLoadError(null);
     const msg = messages.find((m) => m.id === messageId);
     if (msg && preferences.markReadOnOpen && !msg.is_read) void patchMessage(messageId, { isRead: true });
+    void loadThread(messageId);
   }
 
   const imapFolder = useMemo(() => {
@@ -161,9 +180,9 @@ export function EmailWorkspace({
   const pageEnd = Math.min(safePage * messagePageSize, filteredMessages.length);
 
   const loadMessages = useCallback(async () => {
-    if (!accountId) return;
+    if (!effectiveAccountId) return;
     const params = new URLSearchParams({
-      accountId,
+      accountId: effectiveAccountId,
       folder: imapFolder,
       starred: folderKey === "starred" ? "1" : "0",
     });
@@ -172,7 +191,7 @@ export function EmailWorkspace({
       const data = (await res.json()) as { messages: EmailMessageRow[] };
       setMessages(data.messages);
     }
-  }, [accountId, imapFolder, folderKey]);
+  }, [effectiveAccountId, imapFolder, folderKey]);
 
   const loadMessageBody = useCallback(async (messageId: string) => {
     setLoadingBodyId(messageId);
@@ -242,8 +261,13 @@ export function EmailWorkspace({
     [loadMessageBody],
   );
 
-  const syncMailbox = useCallback(async (allFolders = false) => {
-    if (!accountId || syncingRef.current) return;
+  const selectedIdRef = useRef(selectedId);
+  useEffect(() => {
+    selectedIdRef.current = selectedId;
+  }, [selectedId]);
+
+  async function syncMailbox(allFolders = false) {
+    if (!effectiveAccountId || syncingRef.current) return;
     syncingRef.current = true;
     setSyncing(true);
     setError(null);
@@ -252,13 +276,16 @@ export function EmailWorkspace({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(
-          allFolders ? { accountId, allFolders: true } : { accountId, folderKey },
+          allFolders
+            ? { accountId: effectiveAccountId, allFolders: true }
+            : { accountId: effectiveAccountId, folderKey },
         ),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Sync failed");
       await loadMessages();
-      if (selectedId) void loadThread(selectedId);
+      const activeSelectedId = selectedIdRef.current;
+      if (activeSelectedId) void loadThread(activeSelectedId);
       router.refresh();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed");
@@ -266,13 +293,12 @@ export function EmailWorkspace({
       syncingRef.current = false;
       setSyncing(false);
     }
-  }, [accountId, folderKey, loadMessages, loadThread, router, selectedId]);
+  }
 
+  const syncMailboxRef = useRef(syncMailbox);
   useEffect(() => {
-    const loaded = loadEmailPreferences();
-    setPreferences(loaded);
-    setReadFilter(loaded.defaultReadFilter);
-  }, []);
+    syncMailboxRef.current = syncMailbox;
+  });
 
   function updatePreferences(next: EmailPreferences) {
     setPreferences(next);
@@ -280,45 +306,38 @@ export function EmailWorkspace({
   }
 
   useEffect(() => {
-    if (!preferences.autoSync || !accountId) return;
-    void syncMailbox(false);
-    const timer = window.setInterval(() => {
-      void syncMailbox(false);
-    }, syncIntervalMs(preferences));
-    return () => window.clearInterval(timer);
-  }, [preferences.autoSync, preferences.syncIntervalMinutes, accountId, syncMailbox]);
+    if (!effectiveAccountId) return;
+    let cancelled = false;
+    void (async () => {
+      const params = new URLSearchParams({
+        accountId: effectiveAccountId,
+        folder: imapFolder,
+        starred: folderKey === "starred" ? "1" : "0",
+      });
+      const res = await fetch(`/api/email/messages/list?${params}`);
+      if (cancelled || !res.ok) return;
+      const data = (await res.json()) as { messages: EmailMessageRow[] };
+      setMessages(data.messages);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveAccountId, imapFolder, folderKey]);
 
   useEffect(() => {
-    setAccounts(initialAccounts);
-  }, [initialAccounts]);
-
-  useEffect(() => {
-    loadMessages();
-    setListPage(1);
-  }, [loadMessages]);
-
-  useEffect(() => {
-    setListPage(1);
-  }, [messagePageSize]);
-
-  useEffect(() => {
-    setListPage(1);
-  }, [readFilter, search, folderKey, accountId]);
-
-  useEffect(() => {
-    if (accounts.length && !accountId) {
-      setAccountId(accounts.find((a) => a.is_default)?.id ?? accounts[0].id);
-    }
-  }, [accounts, accountId]);
-
-  useEffect(() => {
-    if (!selectedId) {
-      setThreadMessages([]);
-      setBodyLoadError(null);
-      return;
-    }
-    void loadThread(selectedId);
-  }, [selectedId, loadThread]);
+    if (!preferences.autoSync || !effectiveAccountId) return;
+    let cancelled = false;
+    const runSync = () => {
+      if (!cancelled) void syncMailboxRef.current(false);
+    };
+    const initialTimer = window.setTimeout(runSync, 0);
+    const timer = window.setInterval(runSync, syncIntervalMs(preferences));
+    return () => {
+      cancelled = true;
+      window.clearTimeout(initialTimer);
+      window.clearInterval(timer);
+    };
+  }, [preferences.autoSync, preferences.syncIntervalMinutes, effectiveAccountId]);
 
   function buildReplyCompose(base: EmailMessageRow, mode: "reply" | "replyAll" | "forward"): ComposeState {
     const from = base.from_address ?? "";
@@ -376,7 +395,7 @@ export function EmailWorkspace({
   }
 
   async function replyWithAi(base: EmailMessageRow) {
-    if (!accountId) return;
+    if (!effectiveAccountId) return;
     const draft = buildReplyCompose(base, "reply");
     setCompose(draft);
     setAiLoading(true);
@@ -386,7 +405,7 @@ export function EmailWorkspace({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          accountId,
+          accountId: effectiveAccountId,
           draft: {
             mode: "reply",
             subject: draft.subject || base.subject,
@@ -437,7 +456,7 @@ export function EmailWorkspace({
     if (preferences.confirmDelete && !confirm("Delete this message?")) return;
     await fetch(`/api/email/messages?id=${id}`, { method: "DELETE" });
     setMessages((prev) => prev.filter((m) => m.id !== id));
-    if (selectedId === id) setSelectedId(null);
+    if (selectedId === id) clearSelectedMessage();
   }
 
   async function moveMessage(id: string, folderKey: EmailFolderKey) {
@@ -453,7 +472,7 @@ export function EmailWorkspace({
       return;
     }
     setMessages((prev) => prev.filter((m) => m.id !== id));
-    if (selectedId === id) setSelectedId(null);
+    if (selectedId === id) clearSelectedMessage();
     await loadMessages();
   }
 
@@ -531,7 +550,7 @@ export function EmailWorkspace({
   }
 
   async function sendCompose() {
-    if (!accountId) return;
+    if (!effectiveAccountId) return;
     setSending(true);
     setError(null);
     try {
@@ -539,7 +558,7 @@ export function EmailWorkspace({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          accountId,
+          accountId: effectiveAccountId,
           to: parseAddressList(compose.to),
           cc: parseAddressList(compose.cc),
           bcc: parseAddressList(compose.bcc),
@@ -567,7 +586,7 @@ export function EmailWorkspace({
   }
 
   async function aiDraft(mode: "draft" | "reply" | "replyAll" | "forward") {
-    if (!accountId) return;
+    if (!effectiveAccountId) return;
     setAiLoading(true);
     setError(null);
     try {
@@ -575,7 +594,7 @@ export function EmailWorkspace({
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          accountId,
+          accountId: effectiveAccountId,
           draft: {
             mode,
             subject: compose.subject || selected?.subject,
@@ -772,7 +791,7 @@ export function EmailWorkspace({
                 type="button"
                 onClick={() => {
                   setFolderKey(key);
-                  setSelectedId(null);
+                  clearSelectedMessage();
                   setListPage(1);
                 }}
                 className={`mb-0.5 flex w-full items-center rounded-lg px-3 py-2 text-left text-xs ${

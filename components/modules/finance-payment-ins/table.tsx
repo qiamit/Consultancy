@@ -1,6 +1,7 @@
 "use client";
 
 import type { FinancePaymentInRow } from "@/lib/types/finance-payment-in";
+import { formatDateField } from "@/lib/format-date";
 import { FinancePaymentInsFooterBar } from "./footer-bar";
 
 function clientLabel(r: FinancePaymentInRow): string {
@@ -49,7 +50,7 @@ export function FinancePaymentInsTable({
                 key={r.id}
                 className={idParam === r.id ? "bg-sky-50 dark:bg-sky-950/30" : "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"}
               >
-                <td className="px-3 py-2">{r.txn_date}</td>
+                <td className="px-3 py-2">{formatDateField(r.txn_date)}</td>
                 <td className="px-3 py-2">{clientLabel(r)}</td>
                 <td className="px-3 py-2 uppercase">{(r.mode_of_payment ?? "bank").replace("_", " / ")}</td>
                 <td className="px-3 py-2 capitalize">{r.status}</td>

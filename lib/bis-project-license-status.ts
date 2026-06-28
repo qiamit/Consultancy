@@ -4,6 +4,7 @@ import {
   cmPrefixForProjectKind,
   isApplicationProjectKind,
 } from "@/lib/bis-project-kind";
+import { formatDisplayDate } from "@/lib/format-date";
 
 export type LicenseDisplayStatus =
   | "Operative"
@@ -109,12 +110,7 @@ export function licenceValidityDisplayWithWindow90(
   const vRaw = (validityDateYmd ?? "").trim();
   if (!vRaw) return null;
   const end = startOfDay(parseYmd(vRaw));
-  const fmt = (d: Date) =>
-    d.toLocaleDateString("en-IN", {
-      day: "numeric",
-      month: "short",
-      year: "numeric",
-    });
+  const fmt = (d: Date) => formatDisplayDate(d);
   return {
     main: fmt(end),
     before90: fmt(addDays(end, -90)),

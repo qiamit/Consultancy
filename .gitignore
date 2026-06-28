@@ -82,3 +82,12 @@ Instructions.docx
 
 # tooling caches
 .cache/
+.eslintcache
+
+# Cursor / local workspace outputs
+terminals/
+agent-tools/
+
+# OS / editor extras
+*.lnk
+.vs/

@@ -14,6 +14,7 @@ import {
 import type { TechnicalStaffStored } from "@/lib/technical-staff";
 import { rowHasContent } from "@/lib/technical-staff";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
 
 export type TechnicalStaffLetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -42,13 +43,7 @@ function formatBisBranchLine(branchName: string, state: string, country: string)
 function formatInspectionDateDisplay(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "N/A";
-  const d = new Date(raw);
-  if (Number.isNaN(d.getTime())) return "N/A";
-  return d.toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(raw, "N/A");
 }
 
 function formatIsStandardRef(isNumber: string, isTitle: string): string {

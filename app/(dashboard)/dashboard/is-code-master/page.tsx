@@ -47,7 +47,7 @@ export default async function IsCodeMasterPage({
   const codeRows = (codes ?? []) as unknown as IsCodeMasterRow[];
   const ids = codeRows.map((r) => r.id);
 
-  let filesByCode = new Map<string, IsCodeFileRow[]>();
+  const filesByCode = new Map<string, IsCodeFileRow[]>();
   if (ids.length > 0) {
     const { data: fileRows } = await supabase
       .from("is_code_files")

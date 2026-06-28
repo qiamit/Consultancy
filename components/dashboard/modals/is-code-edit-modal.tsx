@@ -96,15 +96,15 @@ export function IsCodeEditModal({
   const [existingFiles, setExistingFiles] = useState<IsCodeFileRow[]>([]);
   const [aspectOptions, setAspectOptions] = useState<AppDropdownOptionRow[]>([]);
   const [unitOptions, setUnitOptions] = useState<AppDropdownOptionRow[]>([]);
-  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const loadKey = isCodeId;
+  const [appliedLoadKey, setAppliedLoadKey] = useState<string | null>(null);
+  const loading = appliedLoadKey !== loadKey;
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setLoadError(null);
 
-    async function load() {
+    void (async () => {
       const supabase = createClient();
       const [{ data: row, error: rowError }, { data: fileData }, dropdowns] = await Promise.all([
         supabase.from("is_codes").select("*").eq("id", isCodeId).single(),
@@ -116,7 +116,7 @@ export function IsCodeEditModal({
 
       if (rowError || !row) {
         setLoadError("IS code not found.");
-        setLoading(false);
+        setAppliedLoadKey(loadKey);
         return;
       }
 
@@ -124,14 +124,13 @@ export function IsCodeEditModal({
       setExistingFiles((fileData ?? []) as IsCodeFileRow[]);
       setAspectOptions(dropdowns.aspectOptions);
       setUnitOptions(dropdowns.unitOptions);
-      setLoading(false);
-    }
+      setAppliedLoadKey(loadKey);
+    })();
 
-    load();
     return () => {
       cancelled = true;
     };
-  }, [isCodeId]);
+  }, [isCodeId, loadKey]);
 
   async function handleSaveSuccess() {
     const supabase = createClient();

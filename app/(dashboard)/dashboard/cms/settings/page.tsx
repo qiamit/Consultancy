@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { CmsSettingsView } from "@/components/cms/cms-settings-view";
+import type { CmsSettingsRow } from "@/lib/types/cms";
 
 export default async function SettingsCmsPage() {
   const supabase = await createClient();
@@ -7,7 +8,7 @@ export default async function SettingsCmsPage() {
 
   return (
     <div className="w-full">
-      <CmsSettingsView initialSettings={settings || {}} />
+      <CmsSettingsView initialSettings={(settings as CmsSettingsRow | null) ?? null} />
     </div>
   );
 }

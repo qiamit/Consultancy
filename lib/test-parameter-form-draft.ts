@@ -70,3 +70,11 @@ export function currentTestParameterFormMode(
   if (idParam) return idParam;
   return null;
 }
+
+/** Opens Test Parameter master with a new form pre-filled for the given IS code. */
+export function openNewTestParameterForIsCode(isCodeId: string): void {
+  if (typeof window === "undefined") return;
+  clearTestParameterFormDraft();
+  saveTestParameterFormDraft("new", { ...emptyForm(), is_code_id: isCodeId });
+  window.open("/dashboard/test-parameters?new=1", "_blank", "noopener,noreferrer");
+}

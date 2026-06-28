@@ -1,4 +1,5 @@
-import * as XLSX from "xlsx";
+import { buildWorkbookBuffer, triggerBlobDownload } from "@/lib/spreadsheet/excel";
+import { formatDisplayDate } from "@/lib/format-date";
 
 export type RenewalExportPeriodRow = {
   from: string;
@@ -42,6 +43,8 @@ export type RenewalExportData = {
   };
   slabRows: RenewalExportSlabRow[];
   mmf: number;
+  applicationFee: number;
+  annualLicenseFee: number;
   lateFee: number;
   previousDues: number;
   gst: number;
@@ -57,10 +60,7 @@ function escapeHtml(value: string): string {
 }
 
 function fmtDMY(dateStr: string): string {
-  if (!dateStr) return "—";
-  const [y, m, d] = dateStr.split("-").map(Number);
-  if (!y || !m || !d) return dateStr;
-  return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}`;
+  return formatDisplayDate(dateStr);
 }
 
 function formatInrPlain(n: number): string {
@@ -175,6 +175,8 @@ function buildSummaryTableHtml(data: RenewalExportData): string {
   return `<table class="data-table summary-table">
     <tbody>
       <tr><td>Final Marking Fee Based on Production</td><td class="right">₹ ${formatInrPlain(data.mmf)}</td></tr>
+      <tr><td>Application Fee</td><td class="right">₹ ${formatInrPlain(data.applicationFee)}</td></tr>
+      <tr><td>Annual License Fee</td><td class="right">₹ ${formatInrPlain(data.annualLicenseFee)}</td></tr>
       <tr><td>Late Fee</td><td class="right">₹ ${formatInrPlain(data.lateFee)}</td></tr>
       <tr><td>Previous Due</td><td class="right">₹ ${formatInrPlain(data.previousDues)}</td></tr>
       <tr><td>GST @ 18%</td><td class="right">₹ ${formatInrPlain(data.gst)}</td></tr>
@@ -364,7 +366,7 @@ function safeFilePart(value: string): string {
   return value.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 60);
 }
 
-export function downloadRenewalExcel(data: RenewalExportData): void {
+export async function downloadRenewalExcel(data: RenewalExportData): Promise<void> {
   const rows: (string | number)[][] = [];
 
   rows.push(["Apply for Renewal"]);
@@ -437,17 +439,26 @@ export function downloadRenewalExcel(data: RenewalExportData): void {
 
   rows.push(["Summary"]);
   rows.push(["Final Marking Fee Based on Production", data.mmf]);
+  rows.push(["Application Fee", data.applicationFee]);
+  rows.push(["Annual License Fee", data.annualLicenseFee]);
   rows.push(["Late Fee", data.lateFee]);
   rows.push(["Previous Due", data.previousDues]);
   rows.push(["GST @ 18%", data.gst]);
   rows.push(["Total Amount Payable to BIS", data.total]);
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [{ wch: 42 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 20 }];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Renewal Application");
-
   const filename = `Renewal_${safeFilePart(data.clientName)}_${data.isNumber.replace(/\s+/g, "")}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  const buffer = await buildWorkbookBuffer([
+    {
+      name: "Renewal Application",
+      rows,
+      cols: [{ wch: 42 }, { wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 20 }],
+    },
+  ]);
+
+  triggerBlobDownload(
+    new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+    filename,
+  );
 }

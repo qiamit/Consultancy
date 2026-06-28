@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { FinanceCustomerStatementRow } from "@/lib/types/finance-customer-statement";
+import { formatDateField } from "@/lib/format-date";
 import { FinanceCustomerStatementsFooterBar } from "./footer-bar";
 
 const COL_COUNT = 7;
@@ -208,7 +209,7 @@ export function FinanceCustomerStatementsTable({
                     <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">
                       {r.customer_statement_number}
                     </div>
-                    <StackLine muted>Date: {dash(r.statement_date)}</StackLine>
+                    <StackLine muted>Date: {formatDateField(r.statement_date)}</StackLine>
                     <StackLine muted>
                       Linked SO:{" "}
                       {dash(r.finance_sales_orders?.sales_order_number ?? null)}

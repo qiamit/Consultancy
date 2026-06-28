@@ -2,15 +2,16 @@
 
 import { useState } from "react";
 import { addCmsService, updateCmsService, deleteCmsService } from "@/lib/actions/cms";
+import type { CmsServiceRow } from "@/lib/types/cms";
 
-export function CmsServicesView({ initialServices }: { initialServices: any[] }) {
-  const [services, setServices] = useState(initialServices);
+export function CmsServicesView({ initialServices }: { initialServices: CmsServiceRow[] }) {
+  const [services] = useState(initialServices);
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [formData, setFormData] = useState({ title: "", description: "", icon_name: "", is_active: true });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
 
-  const handleEdit = (service: any) => {
+  const handleEdit = (service: CmsServiceRow) => {
     setIsEditing(service.id);
     setFormData({
       title: service.title,
@@ -84,7 +85,7 @@ export function CmsServicesView({ initialServices }: { initialServices: any[] })
               <textarea required value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm h-24" />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Icon Name (Optional - e.g., 'Shield', 'Globe')</label>
+              <label className="block text-sm font-medium mb-1">Icon Name (Optional — e.g. Shield, Globe)</label>
               <input value={formData.icon_name} onChange={e => setFormData({...formData, icon_name: e.target.value})} className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded-lg px-3 py-2 text-sm" />
             </div>
             <div className="flex items-center gap-2">
@@ -103,7 +104,7 @@ export function CmsServicesView({ initialServices }: { initialServices: any[] })
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
         {services.length === 0 && !isEditing && (
-          <p className="text-zinc-500 text-sm">No services added yet. Click "Add New Service" to get started.</p>
+          <p className="text-zinc-500 text-sm">No services added yet. Click Add New Service to get started.</p>
         )}
         {services.map((svc) => (
           <div key={svc.id} className={`p-5 rounded-xl border ${svc.is_active ? 'border-zinc-200 dark:border-zinc-800' : 'border-zinc-200 bg-zinc-50 opacity-75 dark:border-zinc-800 dark:bg-zinc-900/50'}`}>

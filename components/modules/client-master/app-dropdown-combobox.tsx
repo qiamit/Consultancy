@@ -9,6 +9,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   addAppDropdownOption,
@@ -67,19 +68,19 @@ export function AppDropdownCombobox({
   selectedValue,
   onClearSelection,
   selectOptions: selectOptionsProp,
-  emptySelectLabel = "— Select —",
+  emptySelectLabel = "—",
   overlayZIndexClass = "z-[112]",
   listZIndexClass = "z-[105]",
   /** Render the typeahead list in a portal so it is not clipped by overflow containers. */
   portalList = true,
   includeEmptyOption = true,
-  searchPlaceholder = "Type to search…",
+  searchPlaceholder = "",
   hideLabel = false,
   inputRowShellClassName = inputRowShell,
   /** When set, the + button runs this instead of opening the manage-labels dialog. */
   onSuffixButtonClick,
   suffixButtonClassName,
-  blankInputWhenNoSelection = false,
+  blankInputWhenNoSelection = true,
   /** When true, typed text is saved as the value on blur if not picked from the list. */
   commitOnBlur = false,
   onOptionAdded,
@@ -154,19 +155,29 @@ export function AppDropdownCombobox({
   ]);
 
   const selectOptionsRef = useRef(selectOptions);
-  selectOptionsRef.current = selectOptions;
   const valueRef = useRef(value);
-  valueRef.current = value;
   const queryRef = useRef("");
+  useEffect(() => {
+    selectOptionsRef.current = selectOptions;
+    valueRef.current = value;
+  }, [selectOptions, value]);
+
+  const closedLabel = displayLabelForInput(
+    value,
+    selectOptions,
+    blankInputWhenNoSelection,
+  );
+  const isClient = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false,
+  );
 
   const [open, setOpen] = useState(false);
-  const [mounted, setMounted] = useState(false);
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const [query, setQuery] = useState(() =>
-    displayLabelForInput(value, selectOptions, blankInputWhenNoSelection),
-  );
+  const [query, setQuery] = useState(closedLabel);
   queryRef.current = query;
   const [listOpen, setListOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
@@ -175,6 +186,8 @@ export function AppDropdownCombobox({
     left: number;
     width: number;
   } | null>(null);
+
+  const inputValue = listOpen ? query : closedLabel;
 
   const typeRows = useMemo(
     () => selectOptions.filter((o) => o.value !== ""),
@@ -199,21 +212,6 @@ export function AppDropdownCombobox({
     }
     return fromData;
   }, [query, typeRows, includeEmptyOption, emptySelectLabel]);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (listOpen) return;
-    setQuery(
-      displayLabelForInput(value, selectOptions, blankInputWhenNoSelection),
-    );
-  }, [value, selectOptions, listOpen, blankInputWhenNoSelection]);
-
-  useEffect(() => {
-    setHighlight(0);
-  }, [query, filtered.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -243,10 +241,7 @@ export function AppDropdownCombobox({
   }, []);
 
   useEffect(() => {
-    if (!listOpen || !portalList) {
-      setListPosition(null);
-      return;
-    }
+    if (!listOpen || !portalList) return;
     updateListPosition();
     window.addEventListener("resize", updateListPosition);
     window.addEventListener("scroll", updateListPosition, true);
@@ -258,6 +253,8 @@ export function AppDropdownCombobox({
 
   const pick = useCallback(
     (row: { value: string; label: string }) => {
+      clearBlurTimer();
+      valueRef.current = row.value;
       onChange(row.value);
       setQuery(
         displayLabelForInput(
@@ -281,6 +278,8 @@ export function AppDropdownCombobox({
 
   function handleInputFocus() {
     clearBlurTimer();
+    setQuery(closedLabel);
+    setHighlight(0);
     setListOpen(true);
     if (portalList) updateListPosition();
   }
@@ -439,16 +438,17 @@ export function AppDropdownCombobox({
                 ? `${listboxId}-opt-${highlight}`
                 : undefined
             }
-            value={query}
+            value={inputValue}
             onChange={(e) => {
               setQuery(e.target.value);
+              setHighlight(0);
               setListOpen(true);
               if (portalList) updateListPosition();
             }}
             onFocus={handleInputFocus}
             onBlur={handleInputBlur}
             onKeyDown={handleKeyDown}
-            placeholder={searchPlaceholder}
+            placeholder={searchPlaceholder || undefined}
             className={inputInner}
           />
           <button
@@ -496,7 +496,7 @@ export function AppDropdownCombobox({
           </ul>
         ) : null}
       </div>
-      {mounted && listOpen && filtered.length > 0 && portalList && listPosition
+      {isClient && listOpen && filtered.length > 0 && portalList && listPosition
         ? createPortal(
             <ul
               id={listboxId}
@@ -531,7 +531,7 @@ export function AppDropdownCombobox({
             document.body,
           )
         : null}
-      {mounted && open
+      {isClient && open
         ? createPortal(
             <div
               className={`fixed inset-0 ${overlayZIndexClass} flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55`}

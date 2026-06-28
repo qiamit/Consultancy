@@ -1,6 +1,6 @@
 import "server-only";
 
-import * as XLSX from "xlsx";
+import { extractSpreadsheetText } from "@/lib/spreadsheet/excel";
 
 const TEXT_EXTENSIONS = new Set([
   ".txt",
@@ -31,18 +31,6 @@ async function extractPdfText(buffer: Buffer): Promise<string> {
   return parsed.text ?? "";
 }
 
-function extractSpreadsheetText(buffer: Buffer): string {
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-  const chunks: string[] = [];
-  for (const sheetName of workbook.SheetNames) {
-    const sheet = workbook.Sheets[sheetName];
-    if (!sheet) continue;
-    chunks.push(`--- Sheet: ${sheetName} ---`);
-    chunks.push(XLSX.utils.sheet_to_csv(sheet));
-  }
-  return chunks.join("\n\n");
-}
-
 /** Extract plain text from an IS document upload for AI parsing. */
 export async function extractDocumentText(
   buffer: Buffer,
@@ -54,8 +42,14 @@ export async function extractDocumentText(
     return extractPdfText(buffer);
   }
 
-  if (ext === ".xlsx" || ext === ".xls") {
+  if (ext === ".xlsx") {
     return extractSpreadsheetText(buffer);
+  }
+
+  if (ext === ".xls") {
+    throw new Error(
+      `Legacy .xls format is not supported. Save "${fileName}" as .xlsx and upload again.`,
+    );
   }
 
   if (TEXT_EXTENSIONS.has(ext) || ext === "") {

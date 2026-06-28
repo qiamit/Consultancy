@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 import { TAX_INVOICE_LIST_PATH } from "@/components/modules/finance-tax-invoices/constants";
 import type { FinanceProformaInvoiceRow } from "@/lib/types/finance-proforma-invoice";
+import { formatDateField } from "@/lib/format-date";
 import { FinanceProformaInvoicesFooterBar } from "./footer-bar";
 
 const COL_COUNT = 7;
@@ -210,7 +211,7 @@ export function FinanceProformaInvoicesTable({
                     <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">
                       {r.proforma_invoice_number}
                     </div>
-                    <StackLine muted>Date: {dash(r.proforma_date)}</StackLine>
+                    <StackLine muted>Date: {formatDateField(r.proforma_date)}</StackLine>
                     <StackLine muted>
                       From SO:{" "}
                       {dash(r.finance_sales_orders?.sales_order_number ?? null)}

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import type { FinanceCreditNoteRow } from "@/lib/types/finance-credit-note";
+import { formatDateField } from "@/lib/format-date";
 import { FinanceCreditNotesFooterBar } from "./footer-bar";
 
 const COL_COUNT = 7;
@@ -208,7 +209,7 @@ export function FinanceCreditNotesTable({
                     <div className="font-mono font-medium text-zinc-900 dark:text-zinc-100">
                       {r.credit_note_number}
                     </div>
-                    <StackLine muted>Date: {dash(r.credit_note_date)}</StackLine>
+                    <StackLine muted>Date: {formatDateField(r.credit_note_date)}</StackLine>
                     <StackLine muted>
                       From SO:{" "}
                       {dash(r.finance_sales_orders?.sales_order_number ?? null)}

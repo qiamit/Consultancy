@@ -53,22 +53,33 @@ export function ClientViewModal({
   onUpdated?: (client: ClientDetail) => void;
 }) {
   const [client, setClient] = useState<ClientDetail | null>(null);
-  const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(startInEditMode);
+  const [appliedEditStart, setAppliedEditStart] = useState(startInEditMode);
+  if (startInEditMode !== appliedEditStart) {
+    setAppliedEditStart(startInEditMode);
+    setEditing(startInEditMode);
+  }
+
   const [form, setForm] = useState<Partial<ClientDetail>>({});
   const [saving, startSave] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const loadKey = `${clientId}\0${startInEditMode}`;
+  const [appliedLoadKey, setAppliedLoadKey] = useState<string | null>(null);
+  const loading = appliedLoadKey !== loadKey;
 
   useEffect(() => {
-    setLoading(true);
-    setEditing(startInEditMode);
-    fetchClientDetail(clientId).then((c) => {
+    let cancelled = false;
+    void fetchClientDetail(clientId).then((c) => {
+      if (cancelled) return;
       setClient(c);
       if (c) setForm(c);
-      setLoading(false);
+      setAppliedLoadKey(loadKey);
     });
-  }, [clientId, startInEditMode]);
+    return () => {
+      cancelled = true;
+    };
+  }, [clientId, loadKey]);
 
   function field(k: keyof ClientDetail) {
     return (String(form[k] ?? ""));

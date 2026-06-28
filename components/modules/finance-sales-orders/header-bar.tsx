@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useGoPageDraft } from "@/components/modules/finance/use-finance-master-state";
 import { CLIENT_FIELD_LABEL_CLASS } from "@/components/modules/client-master/constants";
 import { PAGE_SIZE_OPTIONS } from "./search-utils";
 
@@ -31,19 +32,16 @@ export function FinanceSalesOrdersHeaderBar({
   onPageChange: (p: number) => void;
 }) {
   const searchActive = searchQuery.trim().length > 0;
-  const [goDraft, setGoDraft] = useState(String(page));
-
-  useEffect(() => {
-    setGoDraft(String(page));
-  }, [page]);
+  const { goDisplay: goDraft, setGoDraft, clearGoDraft } = useGoPageDraft(page);
 
   function handleGoTo() {
     const n = Number.parseInt(goDraft.trim(), 10);
     if (!Number.isFinite(n) || n < 1) {
-      setGoDraft(String(page));
+      setGoDraft(null);
       return;
     }
     const p = Math.min(n, totalPages);
+    clearGoDraft();
     onPageChange(p);
   }
 
@@ -117,7 +115,7 @@ export function FinanceSalesOrdersHeaderBar({
                   <button
                     type="button"
                     disabled={navDisabled || page <= 1}
-                    onClick={() => onPageChange(page - 1)}
+                    onClick={() => { clearGoDraft(); onPageChange(page - 1); }}
                     className={pageBtn}
                   >
                     Previous
@@ -125,7 +123,7 @@ export function FinanceSalesOrdersHeaderBar({
                   <button
                     type="button"
                     disabled={navDisabled || page >= totalPages}
-                    onClick={() => onPageChange(page + 1)}
+                    onClick={() => { clearGoDraft(); onPageChange(page + 1); }}
                     className={pageBtn}
                   >
                     Next

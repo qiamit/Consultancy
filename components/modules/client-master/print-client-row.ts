@@ -1,4 +1,5 @@
 import type { ClientMasterRow } from "@/lib/types/client-master";
+import { formatDisplayDate, parseToDate, formatPrintTimestamp } from "@/lib/format-date";
 import { formatClientPhoneDisplay } from "./constants";
 
 function esc(s: string): string {
@@ -39,19 +40,8 @@ function formatPaymentTerm(term: string | null | undefined): string {
 
 function formatDateShort(iso: string | null | undefined): string {
   if (!iso) return "—";
-  try {
-    const d = new Date(iso);
-    if (Number.isNaN(d.getTime())) return esc(iso);
-    return esc(
-      d.toLocaleDateString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-      }),
-    );
-  } catch {
-    return esc(String(iso));
-  }
+  if (!parseToDate(iso)) return esc(String(iso));
+  return esc(formatDisplayDate(iso));
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -392,10 +382,7 @@ export function printClientMasterRow(c: ClientMasterRow): void {
 export function printClientMasterList(rows: ClientMasterRow[]): void {
   if (rows.length === 0) return;
 
-  const now = new Date().toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
+  const now = formatPrintTimestamp();
   const subtitle = `${rows.length} record(s) · Up to 4 per page · Generated ${now}`;
   const html = wrapPrintDocument(
     "Client master — print",

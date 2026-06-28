@@ -96,13 +96,6 @@ export function SpecifiedValueField({
 
   useEffect(() => {
     if (!open) return;
-    setRecentSymbols(loadRecentSymbols());
-    setSearchQuery("");
-    requestAnimationFrame(() => searchRef.current?.focus());
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
 
     function positionPanel() {
       const el = anchorRef.current;
@@ -140,6 +133,17 @@ export function SpecifiedValueField({
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, [open, panelId]);
+
+  function togglePanel() {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    setRecentSymbols(loadRecentSymbols());
+    setSearchQuery("");
+    setOpen(true);
+    requestAnimationFrame(() => searchRef.current?.focus());
+  }
 
   function insertSymbol(symbol: string) {
     const el = inputRef.current;
@@ -253,7 +257,7 @@ export function SpecifiedValueField({
             aria-expanded={open}
             aria-controls={open ? panelId : undefined}
             onMouseDown={(e) => e.preventDefault()}
-            onClick={() => setOpen((v) => !v)}
+            onClick={togglePanel}
           >
             Ω
           </button>

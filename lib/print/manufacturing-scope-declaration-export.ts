@@ -10,12 +10,13 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import * as XLSX from "xlsx";
+import { buildWorkbookBuffer, triggerBlobDownload } from "@/lib/spreadsheet/excel";
 import {
   buildManufacturingScopeCompany,
   type ManufacturingScopeDeclarationData,
 } from "@/lib/print/manufacturing-scope-declaration";
 import type { PrintSettings } from "@/lib/print/types";
+import { formatDisplayDate } from "@/lib/format-date";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 24; // half-points → 12pt
@@ -27,11 +28,7 @@ function safeFilePart(value: string): string {
 function formatInspectionDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "";
-  return new Date(raw).toLocaleDateString("en-IN", {
-    day: "2-digit",
-    month: "short",
-    year: "numeric",
-  });
+  return formatDisplayDate(raw, "");
 }
 
 function bisBranchLine(data: ManufacturingScopeDeclarationData): string {
@@ -55,15 +52,6 @@ function exportFilenameBase(data: ManufacturingScopeDeclarationData): string {
   const coPart = safeFilePart(data.companyName || "Company");
   const isPart = safeFilePart(data.isNumber || "IS");
   return `Manufacturing_Scope_${coPart}_${isPart}`;
-}
-
-function triggerBlobDownload(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
 }
 
 function bodyRun(text: string, bold = false): TextRun {
@@ -289,9 +277,9 @@ export async function downloadManufacturingScopeDeclarationWord(
 }
 
 /** Modern Office Open XML Excel workbook (.xlsx). */
-export function downloadManufacturingScopeDeclarationExcel(
+export async function downloadManufacturingScopeDeclarationExcel(
   data: ManufacturingScopeDeclarationData,
-): void {
+): Promise<void> {
   const rows: (string | number)[][] = [];
 
   rows.push(["Declaration Regarding Manufacturing Scope"]);
@@ -321,18 +309,14 @@ export function downloadManufacturingScopeDeclarationExcel(
     rows.push([data.licenseScope.trim() || "—"]);
   }
 
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = [{ wch: 28 }, { wch: 56 }];
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }];
-
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, "Manufacturing Scope");
-
-  const buffer = XLSX.write(wb, {
-    bookType: "xlsx",
-    type: "array",
-    compression: true,
-  }) as ArrayBuffer;
+  const buffer = await buildWorkbookBuffer([
+    {
+      name: "Manufacturing Scope",
+      rows,
+      cols: [{ wch: 28 }, { wch: 56 }],
+      merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }],
+    },
+  ]);
 
   triggerBlobDownload(
     new Blob([buffer], {

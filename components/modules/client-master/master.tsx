@@ -1,7 +1,13 @@
 "use client";
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import {
+  useFinanceListPagination,
+  usePrunedSetSelection,
+  useRouteBoundFormState,
+  useSyncedRows,
+} from "@/components/modules/finance/use-finance-master-state";
 import {
   deleteClientMaster,
   deleteClientsMaster,
@@ -78,12 +84,8 @@ export function ClientMaster({
 }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [clients, setClients] = useState(initialClients);
-  const [form, setForm] = useState(emptyForm);
+  const [clients] = useSyncedRows(initialClients);
   const [searchQuery, setSearchQuery] = useState("");
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [page, setPage] = useState(1);
-  const [selectedIds, setSelectedIds] = useState(() => new Set<string>());
 
   const idParam = searchParams.get("id");
   const isNewParam = searchParams.get("new") === "1";
@@ -92,27 +94,25 @@ export function ClientMaster({
       ? clients.find((c) => c.id === idParam) ?? undefined
       : undefined;
   const formVisible = isNewParam || !!editRow;
-
-  useEffect(() => {
-    setClients(initialClients);
-  }, [initialClients]);
-
-  useEffect(() => {
-    const id = searchParams.get("id");
-    const isNew = searchParams.get("new");
-    if (isNew === "1") {
-      setForm(emptyForm());
-      return;
-    }
-    if (id) {
-      const row = initialClients.find((c) => c.id === id);
-      if (row) {
-        setForm(rowToForm(row));
-        return;
+  const formOpenKey = formVisible
+    ? isNewParam
+      ? "new"
+      : idParam
+        ? `edit:${idParam}`
+        : null
+    : null;
+  const [form, setForm] = useRouteBoundFormState(
+    formOpenKey,
+    () => {
+      if (isNewParam) return emptyForm();
+      if (idParam) {
+        const row = initialClients.find((c) => c.id === idParam);
+        if (row) return rowToForm(row);
       }
-    }
-    setForm(emptyForm());
-  }, [searchParams, initialClients]);
+      return emptyForm();
+    },
+    emptyForm(),
+  );
 
   const filteredClients = useMemo(
     () => filterClientsBySearch(clients, searchQuery),
@@ -132,58 +132,25 @@ export function ClientMaster({
   const filteredTotal = filteredClients.length;
   const searchActive = searchQuery.trim().length > 0;
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filteredTotal / pageSize) || 1,
+  const {
+    pageSize,
+    page,
+    setPage,
+    totalPages,
+    paginated: paginatedClients,
+    onPageSizeChange,
+  } = useFinanceListPagination(filteredClients, searchQuery, PAGE_SIZE_OPTIONS[0]);
+
+  const filteredClientIds = useMemo(
+    () => filteredClients.map((c) => c.id),
+    [filteredClients],
   );
+  const { selectedIds, toggleRowSelection, toggleSelectPage } =
+    usePrunedSetSelection(filteredClientIds);
 
-  useEffect(() => {
-    setPage(1);
-  }, [searchQuery, pageSize]);
-
-  useEffect(() => {
-    if (page > totalPages) setPage(totalPages);
-  }, [page, totalPages]);
-
-  const paginatedClients = useMemo(() => {
-    const start = (page - 1) * pageSize;
-    return filteredClients.slice(start, start + pageSize);
-  }, [filteredClients, page, pageSize]);
-
-  useEffect(() => {
-    const valid = new Set(filteredClients.map((c) => c.id));
-    setSelectedIds((prev) => {
-      const next = new Set<string>();
-      prev.forEach((id) => {
-        if (valid.has(id)) next.add(id);
-      });
-      return next;
-    });
-  }, [filteredClients]);
-
-  const toggleRowSelection = useCallback((id: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }, []);
-
-  const toggleSelectPage = useCallback(() => {
-    setSelectedIds((prev) => {
-      const ids = paginatedClients.map((c) => c.id);
-      const next = new Set(prev);
-      const allOnPage =
-        ids.length > 0 && ids.every((id) => next.has(id));
-      if (allOnPage) {
-        for (const id of ids) next.delete(id);
-      } else {
-        for (const id of ids) next.add(id);
-      }
-      return next;
-    });
-  }, [paginatedClients]);
+  const toggleSelectPageRows = useCallback(() => {
+    toggleSelectPage(paginatedClients.map((c) => c.id));
+  }, [toggleSelectPage, paginatedClients]);
 
   function selectRow(c: ClientMasterRow) {
     router.replace(`/dashboard/clients?id=${c.id}`, { scroll: false });
@@ -341,7 +308,7 @@ export function ClientMaster({
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           pageSize={pageSize}
-          onPageSizeChange={setPageSize}
+          onPageSizeChange={onPageSizeChange}
           grandTotal={grandTotal}
           filteredTotal={filteredTotal}
           page={page}
@@ -365,7 +332,7 @@ export function ClientMaster({
           onDeleteRow={handleDeleteRow}
           selectedIds={selectedIds}
           onToggleRowSelection={toggleRowSelection}
-          onToggleSelectPage={toggleSelectPage}
+          onToggleSelectPage={toggleSelectPageRows}
         />
       </div>
 

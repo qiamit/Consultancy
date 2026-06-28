@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { updateAppSettings } from "@/lib/actions/settings";
 import { AiSettingsPanel } from "@/components/dashboard/ai-settings-panel";
 import type { AiModelRow } from "@/lib/actions/ai-models";
@@ -128,13 +128,9 @@ export function AppSettingsTabs({
   ) as TabId;
 
   const [tab, setTab] = useState<TabId>(startTab);
-  const [prefixEntries, setPrefixEntries] = useState<PrefixEntry[]>([]);
+  const [prefixEntries, setPrefixEntries] = useState<PrefixEntry[]>(() => loadEntries());
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState<PrefixEntry | null>(null);
-
-  useEffect(() => {
-    setPrefixEntries(loadEntries());
-  }, []);
 
   function addEntry(entry: Omit<PrefixEntry, "id">) {
     const next = [...prefixEntries, { ...entry, id: crypto.randomUUID() }];
