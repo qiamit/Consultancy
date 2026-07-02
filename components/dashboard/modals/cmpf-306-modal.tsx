@@ -12,11 +12,7 @@ import {
   iframeSizeForCmpf306PrintSettings,
   type Cmpf306LetterData,
 } from "@/lib/print/cmpf-306";
-import {
-  downloadCmpf306Excel,
-  downloadCmpf306ImportTemplate,
-  downloadCmpf306Word,
-} from "@/lib/print/cmpf-306-export";
+import { downloadCmpf306ImportTemplate } from "@/lib/print/cmpf-306-export";
 import type { PrintSettings } from "@/lib/print/types";
 import {
   editorRowsFromStored,
@@ -27,12 +23,14 @@ import {
 import { editorRowsFromImported, importCmpf306EquipmentFromXlsx } from "@/lib/cmpf-306-import";
 import {
   resolvePrimaryTopManagementPerson,
+  withDocumentSignatureImage,
   type TopManagementStored,
 } from "@/lib/top-management";
 import type { LicenseScopeFormat } from "@/lib/license-scope-format";
 import type { StoredLicenseScopeRow } from "@/lib/license-scope-format";
 
 export function Cmpf306Modal({
+  projectId,
   letterData,
   applicationNumber,
   dateOfApplication,
@@ -50,6 +48,7 @@ export function Cmpf306Modal({
   onSave,
   onClose,
 }: {
+  projectId: string;
   letterData: Omit<
     ManufacturingScopeDeclarationData,
     "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
@@ -71,6 +70,10 @@ export function Cmpf306Modal({
   onClose: () => void;
 }) {
   const [rows, setRows] = useState(() => editorRowsFromStored(initialDocument));
+  const [calibrationCertificates, setCalibrationCertificates] = useState(
+    () => initialDocument.calibration_certificates,
+  );
+  const [consentLetters, setConsentLetters] = useState(() => initialDocument.consent_letters);
   const [equipmentFormKey, setEquipmentFormKey] = useState(0);
   const separateSheetEnclosed = initialDocument.separate_sheet_enclosed;
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
@@ -100,22 +103,29 @@ export function Cmpf306Modal({
   }, [topManagement, letterData.contactPerson]);
 
   const previewDocument = useMemo(
-    (): Cmpf306Stored => storedFromEditor(rows, separateSheetEnclosed),
-    [rows, separateSheetEnclosed],
+    (): Cmpf306Stored =>
+      storedFromEditor(rows, separateSheetEnclosed, {
+        calibrationCertificates,
+        consentLetters,
+      }),
+    [rows, separateSheetEnclosed, calibrationCertificates, consentLetters],
   );
 
   const previewData = useMemo((): Cmpf306LetterData => {
-    return {
-      ...letterData,
-      applicationNumber,
-      dateOfApplication,
-      dateOfInspection,
-      inspectionOfficerName,
-      inspectionOfficerDesignation,
-      firmRepName,
-      firmRepDesignation,
-      document: previewDocument,
-    };
+    return withDocumentSignatureImage(
+      {
+        ...letterData,
+        applicationNumber,
+        dateOfApplication,
+        dateOfInspection,
+        inspectionOfficerName,
+        inspectionOfficerDesignation,
+        firmRepName,
+        firmRepDesignation,
+        document: previewDocument,
+      },
+      topManagement,
+    );
   }, [
     letterData,
     applicationNumber,
@@ -126,6 +136,7 @@ export function Cmpf306Modal({
     firmRepName,
     firmRepDesignation,
     previewDocument,
+    topManagement,
   ]);
 
   const refreshPreview = useCallback(() => {
@@ -155,7 +166,12 @@ export function Cmpf306Modal({
 
   function handleSave() {
     startSave(() => {
-      onSave(storedFromEditor(rows, separateSheetEnclosed));
+      onSave(
+        storedFromEditor(rows, separateSheetEnclosed, {
+          calibrationCertificates,
+          consentLetters,
+        }),
+      );
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2000);
     });
@@ -164,18 +180,6 @@ export function Cmpf306Modal({
   function handlePrint() {
     iframeRef.current?.contentWindow?.focus();
     iframeRef.current?.contentWindow?.print();
-  }
-
-  function handleDownloadWord() {
-    void downloadCmpf306Word(previewData, printSettings).catch(() =>
-      window.alert("Unable to download Word file."),
-    );
-  }
-
-  function handleDownloadExcel() {
-    void downloadCmpf306Excel(previewData).catch(() =>
-      window.alert("Unable to download Excel file."),
-    );
   }
 
   function handleDownloadImportTemplate() {
@@ -269,20 +273,6 @@ export function Cmpf306Modal({
             </button>
             <button
               type="button"
-              onClick={handleDownloadWord}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-            >
-              Download Word File
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadExcel}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-            >
-              Download Excel File
-            </button>
-            <button
-              type="button"
               onClick={() => toggleSettingsPanel("print")}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                 settingsPanel === "print"
@@ -333,6 +323,7 @@ export function Cmpf306Modal({
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
                 <Cmpf306AddEquipmentForm
                   key={equipmentFormKey}
+                  projectId={projectId}
                   isCodeId={isCodeId}
                   isReference={isReference}
                   isNumber={isNumber}
@@ -342,7 +333,11 @@ export function Cmpf306Modal({
                   licenseScopeFormat={licenseScopeFormat}
                   licenseScopeRows={licenseScopeRows}
                   initialRows={rows}
+                  calibrationCertificates={calibrationCertificates}
+                  consentLetters={consentLetters}
                   onRowsChange={setRows}
+                  onCalibrationCertificatesChange={setCalibrationCertificates}
+                  onConsentLettersChange={setConsentLetters}
                 />
               </div>
             </div>

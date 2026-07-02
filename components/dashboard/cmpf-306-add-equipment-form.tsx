@@ -5,6 +5,7 @@ import {
   Cmpf306MakeSuggestInput,
   collectCmpf306MakeSuggestions,
 } from "@/components/dashboard/cmpf-306-make-suggest-input";
+import { Cmpf306MultiPdfUpload } from "@/components/dashboard/cmpf-306-multi-pdf-upload";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import { suggestCmpf306EquipmentFromLicenseScope } from "@/lib/actions/cmpf-306-assistant";
 import {
@@ -30,6 +31,7 @@ const equipmentGridClass =
   "grid grid-cols-[minmax(140px,2fr)_minmax(70px,0.75fr)_minmax(80px,0.85fr)_minmax(80px,0.85fr)_minmax(90px,0.9fr)_minmax(70px,0.75fr)_minmax(70px,0.75fr)_auto] items-start gap-2";
 
 export function Cmpf306AddEquipmentForm({
+  projectId,
   isCodeId,
   isReference,
   isNumber,
@@ -39,8 +41,13 @@ export function Cmpf306AddEquipmentForm({
   licenseScopeFormat,
   licenseScopeRows,
   initialRows,
+  calibrationCertificates,
+  consentLetters,
   onRowsChange,
+  onCalibrationCertificatesChange,
+  onConsentLettersChange,
 }: {
+  projectId: string;
   isCodeId: string | null;
   isReference: string;
   isNumber: string | null;
@@ -50,7 +57,11 @@ export function Cmpf306AddEquipmentForm({
   licenseScopeFormat: LicenseScopeFormat;
   licenseScopeRows: StoredLicenseScopeRow[];
   initialRows: Cmpf306EquipmentRow[];
+  calibrationCertificates: string[];
+  consentLetters: string[];
   onRowsChange: (rows: Cmpf306EquipmentRow[]) => void;
+  onCalibrationCertificatesChange: (files: string[]) => void;
+  onConsentLettersChange: (files: string[]) => void;
 }) {
   const rowsRef = useRef(initialRows);
   const [form, setForm] = useState<Cmpf306AddEquipmentFormValues>(() => ({
@@ -149,7 +160,23 @@ export function Cmpf306AddEquipmentForm({
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
             Add Test Equipment
           </h3>
-          <div className="flex shrink-0 items-center gap-2">
+          <div className="flex shrink-0 flex-wrap items-start justify-end gap-2">
+            <Cmpf306MultiPdfUpload
+              label="Calibration Certificate"
+              projectId={projectId}
+              kind="calibration-certificate"
+              files={calibrationCertificates}
+              onChange={onCalibrationCertificatesChange}
+              buttonClassName="border-emerald-700/50 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-950/70"
+            />
+            <Cmpf306MultiPdfUpload
+              label="Consent Letter"
+              projectId={projectId}
+              kind="consent-letter"
+              files={consentLetters}
+              onChange={onConsentLettersChange}
+              buttonClassName="border-violet-700/50 bg-violet-950/40 text-violet-200 hover:bg-violet-950/70"
+            />
             {isCodeId ? (
               <button
                 type="button"

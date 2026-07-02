@@ -12,6 +12,8 @@ import {
 } from "@/lib/subcontracted-tests";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { buildRightAlignedSignatoryBlockHtml } from "@/lib/print/signatory-signature";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 
 export type SubcontractedTestsLetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -57,6 +59,12 @@ function formatLetterDate(dateStr: string): string {
   return esc(formatDisplayDate(raw, "_______________________"));
 }
 
+function formatApplicationNo(raw: string | undefined): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
+}
+
 function visibleRows(rows: SubcontractedTestStored[]): SubcontractedTestStored[] {
   return rows.filter(rowHasContent);
 }
@@ -92,7 +100,7 @@ function buildSubcontractedTestsTableHtml(rows: SubcontractedTestStored[]): stri
       <td style="${td}">${esc(r.clause_no) || "—"}</td>
       <td style="${td}">${esc(r.test_method) || "—"}</td>
       <td style="${td}">${esc(r.unit) || "—"}</td>
-      <td style="${tdLeft}">${esc(r.laboratory_name) || "—"}</td>
+      <td style="${td}">${esc(r.laboratory_name) || "—"}</td>
     </tr>`,
     )
     .join("");
@@ -113,11 +121,10 @@ function buildLetterBody(data: SubcontractedTestsLetterData): string {
     data.bisBranchCountry,
   );
   const letterDate = formatLetterDate(data.inspectionDate);
-  const place = data.city.trim() ? esc(data.city.trim()) : "_______________________";
+  const applicationNo = esc(formatApplicationNo(data.applicationNumber));
   const sigName =
-    esc(data.document.signatory_name) || esc(data.contactPerson) || "_______________________";
-  const sigDesig =
-    esc(data.document.signatory_designation) || "_______________________";
+    esc(data.document.signatory_name) || esc(data.contactPerson) || "—";
+  const sigDesig = esc(data.document.signatory_designation) || "—";
 
   return `
 <div style="text-align:center;margin-bottom:16px;">
@@ -135,7 +142,8 @@ function buildLetterBody(data: SubcontractedTestsLetterData): string {
       ${bisBranchLine}
     </div>
     <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
-      <strong>Date:</strong> ${letterDate}
+      <div><strong>Date:</strong> ${letterDate}</div>
+      <div style="margin-top:4px;"><strong>Application No.:</strong> ${applicationNo}</div>
     </div>
   </div>
 
@@ -163,20 +171,12 @@ function buildLetterBody(data: SubcontractedTestsLetterData): string {
     list of subcontracted test parameters or laboratories.
   </p>
 
-  <table style="width:100%;border-collapse:collapse;margin-top:36px;">
-    <tr>
-      <td style="width:50%;vertical-align:top;font-size:10px;line-height:1.8;">
-        <div>Place: ${place}</div>
-        <div>Date: ${letterDate}</div>
-      </td>
-      <td style="width:50%;vertical-align:top;text-align:right;font-size:10px;line-height:1.8;">
-        <div style="margin-top:32px;">Signature</div>
-        <div>Name: ${sigName}</div>
-        <div>Designation: ${sigDesig}</div>
-        <div style="margin-top:16px;font-weight:700;">Seal of the Firm</div>
-      </td>
-    </tr>
-  </table>
+  ${buildRightAlignedSignatoryBlockHtml({
+    companyName: esc(data.companyName),
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  })}
 </div>`;
 }
 

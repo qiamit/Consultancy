@@ -75,7 +75,7 @@ export function resolveCmpf311Document(input: {
   topManagement: TopManagementStored[];
   applicationNumber: string;
   dateOfApplication: string;
-  natureOfInspection: string;
+  productManualNumber: string;
 }): Cmpf311Stored {
   const defaults = resolveCmpf311Defaults(input);
   const appNo = input.applicationNumber.trim();
@@ -83,7 +83,7 @@ export function resolveCmpf311Document(input: {
     reference_letter_no: appNo ? formatApplicationNumberDisplay(appNo) : "",
     reference_letter_date: input.dateOfApplication.trim(),
     licence_for_standard: defaults.licence_for_standard ?? "",
-    sit_document_ref: input.natureOfInspection.trim(),
+    sit_document_ref: input.productManualNumber.trim(),
     signatory_name: defaults.signatory_name ?? "",
     signatory_designation: defaults.signatory_designation ?? "",
   };

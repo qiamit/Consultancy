@@ -329,22 +329,24 @@ export function DocumentPrintSettingsPanel({
             ))}
           </div>
         ) : topMgmtTableColumns && onTopMgmtTableColumnsChange ? (
-          <div className="space-y-2">
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Choose which columns appear in the top management table.
-            </p>
-            {TOP_MANAGEMENT_TABLE_COLUMN_OPTIONS.map(({ key, label }) => (
-              <CheckboxField
-                key={key}
-                label={label}
-                checked={topMgmtTableColumns.includes(key)}
-                onChange={() =>
-                  onTopMgmtTableColumnsChange(
-                    toggleTopManagementTableColumn(topMgmtTableColumns, key),
-                  )
-                }
-              />
-            ))}
+          <div className="space-y-3">
+            <div className="space-y-2">
+              <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                Choose which columns appear in the top management table.
+              </p>
+              {TOP_MANAGEMENT_TABLE_COLUMN_OPTIONS.map(({ key, label }) => (
+                <CheckboxField
+                  key={key}
+                  label={label}
+                  checked={topMgmtTableColumns.includes(key)}
+                  onChange={() =>
+                    onTopMgmtTableColumnsChange(
+                      toggleTopManagementTableColumn(topMgmtTableColumns, key),
+                    )
+                  }
+                />
+              ))}
+            </div>
           </div>
         ) : (
           <>

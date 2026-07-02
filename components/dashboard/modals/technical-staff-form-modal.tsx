@@ -18,10 +18,21 @@ import {
   defaultTechnicalStaffEntry,
   type TechnicalStaffRow,
 } from "@/lib/technical-staff";
+import type { TopManagementStored } from "@/lib/top-management";
 import {
   technicalStaffDocumentPath,
   uploadTechnicalStaffDocument,
 } from "@/lib/storage/technical-staff-documents";
+import { removeSignatureImageBackground } from "@/lib/signature-image-background";
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Failed to read file"));
+    reader.readAsDataURL(file);
+  });
+}
 
 function FileUploadField({
   label,
@@ -31,6 +42,7 @@ function FileUploadField({
   rowId,
   field,
   accept,
+  removeBackgroundOnUpload = false,
 }: {
   label: string;
   value: string;
@@ -39,24 +51,41 @@ function FileUploadField({
   rowId: string;
   field: string;
   accept?: string;
+  removeBackgroundOnUpload?: boolean;
 }) {
-  const [uploading, setUploading] = useState(false);
+  const [busyLabel, setBusyLabel] = useState<string | null>(null);
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploading(true);
+    setBusyLabel(removeBackgroundOnUpload && file.type.startsWith("image/") ? "Processing…" : "Uploading…");
     try {
       const supabase = createClient();
-      const path = technicalStaffDocumentPath(projectId, rowId, field, file.name);
-      const result = await uploadTechnicalStaffDocument(supabase, path, file);
+      let uploadFile: File | Blob = file;
+      let uploadName = file.name;
+      let contentType = file.type || undefined;
+
+      if (removeBackgroundOnUpload && file.type.startsWith("image/")) {
+        const dataUrl = await readFileAsDataUrl(file);
+        const processed = await removeSignatureImageBackground(dataUrl);
+        uploadFile = await (await fetch(processed)).blob();
+        const baseName = file.name.replace(/\.[^.]+$/, "") || field;
+        uploadName = `${baseName}.png`;
+        contentType = "image/png";
+        setBusyLabel("Uploading…");
+      }
+
+      const path = technicalStaffDocumentPath(projectId, rowId, field, uploadName);
+      const result = await uploadTechnicalStaffDocument(supabase, path, uploadFile, contentType);
       if ("error" in result) {
         window.alert("Upload failed: " + result.error);
         return;
       }
       onChange(result.ref);
+    } catch {
+      window.alert("Unable to process the image file.");
     } finally {
-      setUploading(false);
+      setBusyLabel(null);
       e.target.value = "";
     }
   }
@@ -68,13 +97,13 @@ function FileUploadField({
       </label>
       <div className="mt-1.5 flex flex-col items-stretch gap-1.5 sm:flex-row sm:flex-wrap sm:items-center">
         <label className="inline-flex cursor-pointer items-center justify-center gap-1 rounded-lg border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-[11px] font-medium text-zinc-200 hover:bg-zinc-700">
-          {uploading ? "Uploading…" : value ? "Replace" : "Upload"}
+          {busyLabel ?? (value ? "Replace" : "Upload")}
           <input
             type="file"
             className="hidden"
             accept={accept}
             onChange={(e) => void handleFile(e)}
-            disabled={uploading}
+            disabled={busyLabel !== null}
           />
         </label>
         {value ? (
@@ -94,6 +123,7 @@ function AppointmentLetterField({
   projectId,
   rowId,
   letterData,
+  topManagement,
   person,
 }: {
   value: string;
@@ -104,6 +134,7 @@ function AppointmentLetterField({
     ManufacturingScopeDeclarationData,
     "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
   >;
+  topManagement: TopManagementStored[];
   person: {
     person_name: string;
     designation: string;
@@ -181,6 +212,7 @@ function AppointmentLetterField({
           projectId={projectId}
           rowId={rowId}
           letterData={letterData}
+          topManagement={topManagement}
           person={person}
           onCreated={(url) => {
             onChange(url);
@@ -261,6 +293,7 @@ function TechnicalStaffDropdownField({
 export function TechnicalStaffFormModal({
   projectId,
   letterData,
+  topManagement,
   initial,
   onSave,
   onClose,
@@ -270,6 +303,7 @@ export function TechnicalStaffFormModal({
     ManufacturingScopeDeclarationData,
     "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
   >;
+  topManagement: TopManagementStored[];
   initial?: TechnicalStaffRow | null;
   onSave: (row: TechnicalStaffRow) => void;
   onClose: () => void;
@@ -290,6 +324,7 @@ export function TechnicalStaffFormModal({
     initial?.educational_certificate ?? "",
   );
   const [photo, setPhoto] = useState(initial?.photo ?? "");
+  const [sealSign, setSealSign] = useState(initial?.seal_sign ?? "");
   const [error, setError] = useState<string | null>(null);
   const [dropdownOptions, setDropdownOptions] = useState<
     Record<string, AppDropdownOptionRow[]>
@@ -355,6 +390,7 @@ export function TechnicalStaffFormModal({
       appointment_letter: appointmentLetter.trim(),
       educational_certificate: educationalCertificate.trim(),
       photo: photo.trim(),
+      seal_sign: sealSign.trim(),
     });
   }
 
@@ -445,13 +481,14 @@ export function TechnicalStaffFormModal({
             />
           </div>
 
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
             <AppointmentLetterField
               value={appointmentLetter}
               onChange={setAppointmentLetter}
               projectId={projectId}
               rowId={draftId}
               letterData={letterData}
+              topManagement={topManagement}
               person={{
                 person_name: personName,
                 designation,
@@ -475,6 +512,16 @@ export function TechnicalStaffFormModal({
               rowId={draftId}
               field="photo"
               accept="image/*"
+            />
+            <FileUploadField
+              label="Seal & Sign"
+              value={sealSign}
+              onChange={setSealSign}
+              projectId={projectId}
+              rowId={draftId}
+              field="seal-sign"
+              accept="image/*"
+              removeBackgroundOnUpload
             />
           </div>
 

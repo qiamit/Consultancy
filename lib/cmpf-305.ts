@@ -88,16 +88,12 @@ export function paginateMachineryRows(
 ): Cmpf305MachineryStored[][] {
   const visible = rows.filter(rowHasContent);
   if (visible.length === 0) {
-    return [Array.from({ length: rowsPerPage }, () => defaultCmpf305MachineryEntry())];
+    return [[]];
   }
 
   const pages: Cmpf305MachineryStored[][] = [];
   for (let i = 0; i < visible.length; i += rowsPerPage) {
-    const slice = visible.slice(i, i + rowsPerPage);
-    while (slice.length < rowsPerPage) {
-      slice.push(defaultCmpf305MachineryEntry());
-    }
-    pages.push(slice);
+    pages.push(visible.slice(i, i + rowsPerPage));
   }
   return pages;
 }

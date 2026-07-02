@@ -27,6 +27,21 @@ import {
   type Cmpf305MachineryStored,
 } from "@/lib/cmpf-305";
 import {
+  parseRawMaterialDetails,
+  rowHasContent as rawMaterialRowHasContent,
+  type RawMaterialStored,
+} from "@/lib/raw-material-details";
+import {
+  parseLegalDocuments,
+  rowHasContent as legalDocumentRowHasContent,
+  type LegalDocumentStored,
+} from "@/lib/legal-documents";
+import {
+  parseCertifiedReferenceMaterials,
+  rowHasContent as certifiedReferenceMaterialRowHasContent,
+  type CertifiedReferenceMaterialStored,
+} from "@/lib/certified-reference-materials";
+import {
   defaultCmpf306Document,
   documentHasContent as cmpf306DocumentHasContent,
   parseCmpf306,
@@ -56,6 +71,66 @@ import {
   parseUndertakingOption2,
   type UndertakingOption2Stored,
 } from "@/lib/undertaking-option-2";
+import {
+  defaultUndertakingGeneralIssDocument,
+  documentHasContent as undertakingGeneralIssDocumentHasContent,
+  parseUndertakingGeneralIss,
+  type UndertakingGeneralIssStored,
+} from "@/lib/undertaking-general-iss";
+import {
+  defaultAuthorizationLetterDocument,
+  documentHasContent as authorizationLetterDocumentHasContent,
+  parseAuthorizationLetter,
+  type AuthorizationLetterStored,
+} from "@/lib/authorization-letter";
+import {
+  defaultUndertakingLongDurationTestDocument,
+  documentHasContent as undertakingLongDurationTestDocumentHasContent,
+  parseUndertakingLongDurationTest,
+  type UndertakingLongDurationTestStored,
+} from "@/lib/undertaking-long-duration-test";
+import {
+  defaultUndertakingMinimumMarkingFeeDocument,
+  documentHasContent as undertakingMinimumMarkingFeeDocumentHasContent,
+  parseUndertakingMinimumMarkingFee,
+  type UndertakingMinimumMarkingFeeStored,
+} from "@/lib/undertaking-minimum-marking-fee";
+import {
+  defaultLocationMapDocument,
+  documentHasContent as locationMapDocumentHasContent,
+  parseLocationMap,
+  type LocationMapStored,
+} from "@/lib/location-map";
+import {
+  defaultPlantLayoutDocument,
+  documentHasContent as plantLayoutDocumentHasContent,
+  parsePlantLayout,
+  type PlantLayoutStored,
+} from "@/lib/plant-layout";
+import {
+  defaultProcessFlowChartDocument,
+  documentHasContent as processFlowChartDocumentHasContent,
+  parseProcessFlowChart,
+  type ProcessFlowChartStored,
+} from "@/lib/process-flow-chart";
+import {
+  defaultProcessDescriptionDocument,
+  documentHasContent as processDescriptionDocumentHasContent,
+  parseProcessDescription,
+  type ProcessDescriptionStored,
+} from "@/lib/process-description";
+import {
+  defaultUpdatedSchemeOfInspectionDocument,
+  documentHasContent as updatedSchemeOfInspectionDocumentHasContent,
+  parseUpdatedSchemeOfInspection,
+  type UpdatedSchemeOfInspectionStored,
+} from "@/lib/updated-scheme-of-inspection";
+import {
+  defaultSelfEvaluationFormDocument,
+  documentHasContent as selfEvaluationFormDocumentHasContent,
+  parseSelfEvaluationForm,
+  type SelfEvaluationFormStored,
+} from "@/lib/self-evaluation-form";
 
 export const APPLICATION_NUMBER_PREFIX = "CM/A-" as const;
 
@@ -97,6 +172,8 @@ export type ApplicationMeta = {
   date_of_inspection: string;
   marking_clause: string;
   packaging_clause: string;
+  product_manual_number: string;
+  firm_scale: string;
   weekly_off: string[];
 };
 
@@ -116,6 +193,8 @@ export function defaultApplicationMeta(): ApplicationMeta {
     date_of_inspection: "",
     marking_clause: "",
     packaging_clause: "",
+    product_manual_number: "",
+    firm_scale: "",
     weekly_off: [...DEFAULT_WEEKLY_OFF],
   };
 }
@@ -167,6 +246,8 @@ export function parseApplicationMeta(raw: unknown): ApplicationMeta {
     date_of_inspection: String(m.date_of_inspection ?? "").trim(),
     marking_clause: String(m.marking_clause ?? "").trim(),
     packaging_clause: String(m.packaging_clause ?? "").trim(),
+    product_manual_number: String(m.product_manual_number ?? "").trim(),
+    firm_scale: String(m.firm_scale ?? "").trim(),
     weekly_off: parseWeeklyOff(m.weekly_off),
   };
 }
@@ -184,11 +265,24 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
   subcontractedTests: SubcontractedTestStored[];
   subcontractedTestsDocument: SubcontractedTestsDocumentStored;
   cmpf305Machinery: Cmpf305MachineryStored[];
+  rawMaterialDetails: RawMaterialStored[];
+  certifiedReferenceMaterials: CertifiedReferenceMaterialStored[];
   cmpf306: Cmpf306Stored;
   cmpf307: Cmpf307Stored;
   cmpf310: Cmpf310Stored;
   cmpf311: Cmpf311Stored;
   undertakingOption2: UndertakingOption2Stored;
+  undertakingGeneralIss: UndertakingGeneralIssStored;
+  authorizationLetter: AuthorizationLetterStored;
+  undertakingLongDurationTest: UndertakingLongDurationTestStored;
+  undertakingMinimumMarkingFee: UndertakingMinimumMarkingFeeStored;
+  locationMap: LocationMapStored;
+  plantLayout: PlantLayoutStored;
+  processFlowChart: ProcessFlowChartStored;
+  processDescription: ProcessDescriptionStored;
+  updatedSchemeOfInspection: UpdatedSchemeOfInspectionStored;
+  selfEvaluationForm: SelfEvaluationFormStored;
+  legalDocuments: LegalDocumentStored[];
   meta: ApplicationMeta;
 } {
   const raw = (notes ?? "").trim();
@@ -206,11 +300,24 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       subcontractedTests: [],
       subcontractedTestsDocument: defaultSubcontractedTestsDocument(),
       cmpf305Machinery: [],
+      rawMaterialDetails: [],
+      certifiedReferenceMaterials: [],
       cmpf306: defaultCmpf306Document(),
       cmpf307: defaultCmpf307Document(),
       cmpf310: defaultCmpf310Document(),
       cmpf311: defaultCmpf311Document(),
       undertakingOption2: defaultUndertakingOption2Document(),
+      undertakingGeneralIss: defaultUndertakingGeneralIssDocument(),
+      authorizationLetter: defaultAuthorizationLetterDocument(),
+      undertakingLongDurationTest: defaultUndertakingLongDurationTestDocument(),
+      undertakingMinimumMarkingFee: defaultUndertakingMinimumMarkingFeeDocument(),
+      locationMap: defaultLocationMapDocument(),
+      plantLayout: defaultPlantLayoutDocument(),
+      processFlowChart: defaultProcessFlowChartDocument(),
+      processDescription: defaultProcessDescriptionDocument(),
+      updatedSchemeOfInspection: defaultUpdatedSchemeOfInspectionDocument(),
+      selfEvaluationForm: defaultSelfEvaluationFormDocument(),
+      legalDocuments: [],
       meta: defaultApplicationMeta(),
     };
   }
@@ -229,11 +336,24 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       subcontracted_tests?: unknown;
       subcontracted_tests_document?: unknown;
       cmpf_305_machinery?: unknown;
+      raw_material_details?: unknown;
+      certified_reference_materials?: unknown;
       cmpf_306?: unknown;
       cmpf_307?: unknown;
       cmpf_310?: unknown;
       cmpf_311?: unknown;
       undertaking_option_2?: unknown;
+      undertaking_general_iss?: unknown;
+      authorization_letter?: unknown;
+      undertaking_long_duration_test?: unknown;
+      undertaking_minimum_marking_fee?: unknown;
+      location_map?: unknown;
+      plant_layout?: unknown;
+      process_flow_chart?: unknown;
+      process_description?: unknown;
+      updated_scheme_of_inspection?: unknown;
+      self_evaluation_form?: unknown;
+      legal_documents?: unknown;
       meta?: unknown;
     };
     if (parsed.type !== "application_checklist") {
@@ -250,11 +370,24 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
         subcontractedTests: [],
         subcontractedTestsDocument: defaultSubcontractedTestsDocument(),
         cmpf305Machinery: [],
+        rawMaterialDetails: [],
+        certifiedReferenceMaterials: [],
         cmpf306: defaultCmpf306Document(),
         cmpf307: defaultCmpf307Document(),
         cmpf310: defaultCmpf310Document(),
         cmpf311: defaultCmpf311Document(),
         undertakingOption2: defaultUndertakingOption2Document(),
+        undertakingGeneralIss: defaultUndertakingGeneralIssDocument(),
+        authorizationLetter: defaultAuthorizationLetterDocument(),
+        undertakingLongDurationTest: defaultUndertakingLongDurationTestDocument(),
+        undertakingMinimumMarkingFee: defaultUndertakingMinimumMarkingFeeDocument(),
+        locationMap: defaultLocationMapDocument(),
+        plantLayout: defaultPlantLayoutDocument(),
+        processFlowChart: defaultProcessFlowChartDocument(),
+        processDescription: defaultProcessDescriptionDocument(),
+        updatedSchemeOfInspection: defaultUpdatedSchemeOfInspectionDocument(),
+        selfEvaluationForm: defaultSelfEvaluationFormDocument(),
+        legalDocuments: [],
         meta: defaultApplicationMeta(),
       };
     }
@@ -285,11 +418,32 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
         parsed.subcontracted_tests_document,
       ),
       cmpf305Machinery: parseCmpf305Machinery(parsed.cmpf_305_machinery),
+      rawMaterialDetails: parseRawMaterialDetails(parsed.raw_material_details),
+      certifiedReferenceMaterials: parseCertifiedReferenceMaterials(
+        parsed.certified_reference_materials,
+      ),
       cmpf306: parseCmpf306(parsed.cmpf_306),
       cmpf307: parseCmpf307(parsed.cmpf_307),
       cmpf310: parseCmpf310(parsed.cmpf_310),
       cmpf311: parseCmpf311(parsed.cmpf_311),
       undertakingOption2: parseUndertakingOption2(parsed.undertaking_option_2),
+      undertakingGeneralIss: parseUndertakingGeneralIss(parsed.undertaking_general_iss),
+      authorizationLetter: parseAuthorizationLetter(parsed.authorization_letter),
+      undertakingLongDurationTest: parseUndertakingLongDurationTest(
+        parsed.undertaking_long_duration_test,
+      ),
+      undertakingMinimumMarkingFee: parseUndertakingMinimumMarkingFee(
+        parsed.undertaking_minimum_marking_fee,
+      ),
+      locationMap: parseLocationMap(parsed.location_map),
+      plantLayout: parsePlantLayout(parsed.plant_layout),
+      processFlowChart: parseProcessFlowChart(parsed.process_flow_chart),
+      processDescription: parseProcessDescription(parsed.process_description),
+      updatedSchemeOfInspection: parseUpdatedSchemeOfInspection(
+        parsed.updated_scheme_of_inspection,
+      ),
+      selfEvaluationForm: parseSelfEvaluationForm(parsed.self_evaluation_form),
+      legalDocuments: parseLegalDocuments(parsed.legal_documents),
       meta: parseApplicationMeta(parsed.meta),
     };
   } catch {
@@ -306,11 +460,24 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       subcontractedTests: [],
       subcontractedTestsDocument: defaultSubcontractedTestsDocument(),
       cmpf305Machinery: [],
+      rawMaterialDetails: [],
+      certifiedReferenceMaterials: [],
       cmpf306: defaultCmpf306Document(),
       cmpf307: defaultCmpf307Document(),
       cmpf310: defaultCmpf310Document(),
       cmpf311: defaultCmpf311Document(),
       undertakingOption2: defaultUndertakingOption2Document(),
+      undertakingGeneralIss: defaultUndertakingGeneralIssDocument(),
+      authorizationLetter: defaultAuthorizationLetterDocument(),
+      undertakingLongDurationTest: defaultUndertakingLongDurationTestDocument(),
+      undertakingMinimumMarkingFee: defaultUndertakingMinimumMarkingFeeDocument(),
+      locationMap: defaultLocationMapDocument(),
+      plantLayout: defaultPlantLayoutDocument(),
+      processFlowChart: defaultProcessFlowChartDocument(),
+      processDescription: defaultProcessDescriptionDocument(),
+      updatedSchemeOfInspection: defaultUpdatedSchemeOfInspectionDocument(),
+      selfEvaluationForm: defaultSelfEvaluationFormDocument(),
+      legalDocuments: [],
       meta: defaultApplicationMeta(),
     };
   }
@@ -352,6 +519,24 @@ function nonEmptyCmpf305Machinery(
   return (rows ?? []).filter((r) => cmpf305RowHasContent(r));
 }
 
+function nonEmptyRawMaterialDetails(
+  rows: RawMaterialStored[] | undefined,
+): RawMaterialStored[] {
+  return (rows ?? []).filter((r) => rawMaterialRowHasContent(r));
+}
+
+function nonEmptyCertifiedReferenceMaterials(
+  rows: CertifiedReferenceMaterialStored[] | undefined,
+): CertifiedReferenceMaterialStored[] {
+  return (rows ?? []).filter((r) => certifiedReferenceMaterialRowHasContent(r));
+}
+
+function nonEmptyLegalDocuments(
+  rows: LegalDocumentStored[] | undefined,
+): LegalDocumentStored[] {
+  return (rows ?? []).filter((r) => legalDocumentRowHasContent(r));
+}
+
 function nonEmptyCmpf306(doc: Cmpf306Stored | undefined): Cmpf306Stored | null {
   if (!doc || !cmpf306DocumentHasContent(doc)) return null;
   return doc;
@@ -386,6 +571,72 @@ function nonEmptyUndertakingOption2(
   return doc;
 }
 
+function nonEmptyUndertakingGeneralIss(
+  doc: UndertakingGeneralIssStored | undefined,
+): UndertakingGeneralIssStored | null {
+  if (!doc || !undertakingGeneralIssDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyAuthorizationLetter(
+  doc: AuthorizationLetterStored | undefined,
+): AuthorizationLetterStored | null {
+  if (!doc || !authorizationLetterDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyUndertakingLongDurationTest(
+  doc: UndertakingLongDurationTestStored | undefined,
+): UndertakingLongDurationTestStored | null {
+  if (!doc || !undertakingLongDurationTestDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyUndertakingMinimumMarkingFee(
+  doc: UndertakingMinimumMarkingFeeStored | undefined,
+): UndertakingMinimumMarkingFeeStored | null {
+  if (!doc || !undertakingMinimumMarkingFeeDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyLocationMap(doc: LocationMapStored | undefined): LocationMapStored | null {
+  if (!doc || !locationMapDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyPlantLayout(doc: PlantLayoutStored | undefined): PlantLayoutStored | null {
+  if (!doc || !plantLayoutDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyProcessFlowChart(
+  doc: ProcessFlowChartStored | undefined,
+): ProcessFlowChartStored | null {
+  if (!doc || !processFlowChartDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyProcessDescription(
+  doc: ProcessDescriptionStored | undefined,
+): ProcessDescriptionStored | null {
+  if (!doc || !processDescriptionDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptyUpdatedSchemeOfInspection(
+  doc: UpdatedSchemeOfInspectionStored | undefined,
+): UpdatedSchemeOfInspectionStored | null {
+  if (!doc || !updatedSchemeOfInspectionDocumentHasContent(doc)) return null;
+  return doc;
+}
+
+function nonEmptySelfEvaluationForm(
+  doc: SelfEvaluationFormStored | undefined,
+): SelfEvaluationFormStored | null {
+  if (!doc || !selfEvaluationFormDocumentHasContent(doc)) return null;
+  return doc;
+}
+
 export function buildApplicationChecklistPayload(input: {
   items: unknown[];
   licenseScope?: string;
@@ -399,11 +650,24 @@ export function buildApplicationChecklistPayload(input: {
   subcontractedTests?: SubcontractedTestStored[];
   subcontractedTestsDocument?: SubcontractedTestsDocumentStored;
   cmpf305Machinery?: Cmpf305MachineryStored[];
+  rawMaterialDetails?: RawMaterialStored[];
+  certifiedReferenceMaterials?: CertifiedReferenceMaterialStored[];
   cmpf306?: Cmpf306Stored;
   cmpf307?: Cmpf307Stored;
   cmpf310?: Cmpf310Stored;
   cmpf311?: Cmpf311Stored;
   undertakingOption2?: UndertakingOption2Stored;
+  undertakingGeneralIss?: UndertakingGeneralIssStored;
+  authorizationLetter?: AuthorizationLetterStored;
+  undertakingLongDurationTest?: UndertakingLongDurationTestStored;
+  undertakingMinimumMarkingFee?: UndertakingMinimumMarkingFeeStored;
+  locationMap?: LocationMapStored;
+  plantLayout?: PlantLayoutStored;
+  processFlowChart?: ProcessFlowChartStored;
+  processDescription?: ProcessDescriptionStored;
+  updatedSchemeOfInspection?: UpdatedSchemeOfInspectionStored;
+  selfEvaluationForm?: SelfEvaluationFormStored;
+  legalDocuments?: LegalDocumentStored[];
   meta?: ApplicationMeta;
 }): string {
   const payload: Record<string, unknown> = {
@@ -437,6 +701,14 @@ export function buildApplicationChecklistPayload(input: {
   if (subTestDoc) payload.subcontracted_tests_document = subTestDoc;
   const cmpf305Rows = nonEmptyCmpf305Machinery(input.cmpf305Machinery);
   if (cmpf305Rows.length > 0) payload.cmpf_305_machinery = cmpf305Rows;
+  const rawMaterialRows = nonEmptyRawMaterialDetails(input.rawMaterialDetails);
+  if (rawMaterialRows.length > 0) payload.raw_material_details = rawMaterialRows;
+  const certifiedReferenceMaterialRows = nonEmptyCertifiedReferenceMaterials(
+    input.certifiedReferenceMaterials,
+  );
+  if (certifiedReferenceMaterialRows.length > 0) {
+    payload.certified_reference_materials = certifiedReferenceMaterialRows;
+  }
   const cmpf306Doc = nonEmptyCmpf306(input.cmpf306);
   if (cmpf306Doc) payload.cmpf_306 = cmpf306Doc;
   const cmpf307Doc = nonEmptyCmpf307(input.cmpf307);
@@ -447,6 +719,40 @@ export function buildApplicationChecklistPayload(input: {
   if (cmpf311Doc) payload.cmpf_311 = cmpf311Doc;
   const undertakingOption2Doc = nonEmptyUndertakingOption2(input.undertakingOption2);
   if (undertakingOption2Doc) payload.undertaking_option_2 = undertakingOption2Doc;
+  const undertakingGeneralIssDoc = nonEmptyUndertakingGeneralIss(input.undertakingGeneralIss);
+  if (undertakingGeneralIssDoc) payload.undertaking_general_iss = undertakingGeneralIssDoc;
+  const authorizationLetterDoc = nonEmptyAuthorizationLetter(input.authorizationLetter);
+  if (authorizationLetterDoc) payload.authorization_letter = authorizationLetterDoc;
+  const undertakingLongDurationTestDoc = nonEmptyUndertakingLongDurationTest(
+    input.undertakingLongDurationTest,
+  );
+  if (undertakingLongDurationTestDoc) {
+    payload.undertaking_long_duration_test = undertakingLongDurationTestDoc;
+  }
+  const undertakingMinimumMarkingFeeDoc = nonEmptyUndertakingMinimumMarkingFee(
+    input.undertakingMinimumMarkingFee,
+  );
+  if (undertakingMinimumMarkingFeeDoc) {
+    payload.undertaking_minimum_marking_fee = undertakingMinimumMarkingFeeDoc;
+  }
+  const locationMapDoc = nonEmptyLocationMap(input.locationMap);
+  if (locationMapDoc) payload.location_map = locationMapDoc;
+  const plantLayoutDoc = nonEmptyPlantLayout(input.plantLayout);
+  if (plantLayoutDoc) payload.plant_layout = plantLayoutDoc;
+  const processFlowChartDoc = nonEmptyProcessFlowChart(input.processFlowChart);
+  if (processFlowChartDoc) payload.process_flow_chart = processFlowChartDoc;
+  const processDescriptionDoc = nonEmptyProcessDescription(input.processDescription);
+  if (processDescriptionDoc) payload.process_description = processDescriptionDoc;
+  const updatedSchemeOfInspectionDoc = nonEmptyUpdatedSchemeOfInspection(
+    input.updatedSchemeOfInspection,
+  );
+  if (updatedSchemeOfInspectionDoc) {
+    payload.updated_scheme_of_inspection = updatedSchemeOfInspectionDoc;
+  }
+  const selfEvaluationFormDoc = nonEmptySelfEvaluationForm(input.selfEvaluationForm);
+  if (selfEvaluationFormDoc) payload.self_evaluation_form = selfEvaluationFormDoc;
+  const legalDocumentRows = nonEmptyLegalDocuments(input.legalDocuments);
+  if (legalDocumentRows.length > 0) payload.legal_documents = legalDocumentRows;
   return JSON.stringify(payload);
 }
 

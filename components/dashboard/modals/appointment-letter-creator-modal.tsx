@@ -31,6 +31,11 @@ import {
   downloadAppointmentLetterWord,
 } from "@/lib/print/appointment-letter-export";
 import type { PrintSettings } from "@/lib/print/types";
+import {
+  resolvePrimaryTopManagementPerson,
+  withDocumentSignatureImage,
+  type TopManagementStored,
+} from "@/lib/top-management";
 
 const APPOINTMENT_LETTER_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with appointment letters for technical staff in BIS licence applications:
@@ -57,6 +62,7 @@ export function AppointmentLetterCreatorModal({
   projectId,
   rowId,
   letterData,
+  topManagement,
   person,
   onCreated,
   onClose,
@@ -67,6 +73,7 @@ export function AppointmentLetterCreatorModal({
     ManufacturingScopeDeclarationData,
     "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
   >;
+  topManagement: TopManagementStored[];
   person: {
     person_name: string;
     designation: string;
@@ -77,7 +84,7 @@ export function AppointmentLetterCreatorModal({
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState<AppointmentLetterData>(() =>
-    defaultAppointmentLetterDraft(letterData, person),
+    defaultAppointmentLetterDraft(letterData, person, topManagement),
   );
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultAppointmentLetterPrintSettings(),
@@ -104,9 +111,26 @@ export function AppointmentLetterCreatorModal({
     }));
   }
 
+  const previewData = useMemo((): AppointmentLetterData => {
+    const primary = resolvePrimaryTopManagementPerson(topManagement);
+    return withDocumentSignatureImage(
+      {
+        ...draft,
+        signatory_name:
+          primary.person_name ||
+          draft.signatory_name.trim() ||
+          letterData.contactPerson?.trim() ||
+          "",
+        signatory_designation:
+          primary.designation || draft.signatory_designation.trim() || "",
+      },
+      topManagement,
+    );
+  }, [draft, topManagement, letterData.contactPerson]);
+
   const previewHtml = useMemo(
-    () => buildAppointmentLetterHtml(draft, printSettings),
-    [draft, printSettings],
+    () => buildAppointmentLetterHtml(previewData, printSettings),
+    [previewData, printSettings],
   );
 
   const refreshPreview = useCallback(() => {
@@ -137,13 +161,13 @@ export function AppointmentLetterCreatorModal({
   }
 
   function handleDownloadWord() {
-    void downloadAppointmentLetterWord(draft, printSettings).catch(() =>
+    void downloadAppointmentLetterWord(previewData, printSettings).catch(() =>
       window.alert("Unable to download Word file."),
     );
   }
 
   function handleDownloadExcel() {
-    void downloadAppointmentLetterExcel(draft).catch(() =>
+    void downloadAppointmentLetterExcel(previewData).catch(() =>
       window.alert("Unable to download Excel file."),
     );
   }
@@ -369,33 +393,6 @@ export function AppointmentLetterCreatorModal({
                     value={draft.reference_no}
                     onChange={(e) => patchDraft({ reference_no: e.target.value })}
                     placeholder="Optional…"
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="al_signatory" className={labelClass}>
-                    Signatory Name
-                  </label>
-                  <input
-                    id="al_signatory"
-                    type="text"
-                    value={draft.signatory_name}
-                    onChange={(e) => patchDraft({ signatory_name: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="al_signatory_desig" className={labelClass}>
-                    Signatory Designation
-                  </label>
-                  <input
-                    id="al_signatory_desig"
-                    type="text"
-                    value={draft.signatory_designation}
-                    onChange={(e) => patchDraft({ signatory_designation: e.target.value })}
                     className={inputClass}
                   />
                 </div>

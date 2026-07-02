@@ -43,22 +43,19 @@ import type { AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
 import type { FtrTestParameterSeed } from "@/lib/factory-test-report";
 
 import {
-
   createSubcontractedTestRow,
-
   editorRowsFromStored,
-
   mergeSubcontractedTestsDocumentWithDefaults,
-
   mergeTestParametersIntoSubcontractedRows,
-
   storedFromEditor,
-
   type SubcontractedTestStored,
-
   type SubcontractedTestsDocumentStored,
-
 } from "@/lib/subcontracted-tests";
+import {
+  resolvePrimaryTopManagementPerson,
+  withDocumentSignatureImage,
+  type TopManagementStored,
+} from "@/lib/top-management";
 
 type ClientPickerRow = {
   id: string;
@@ -98,6 +95,8 @@ export function SubcontractedTestsModal({
 
   letterData,
 
+  topManagement,
+
   isCodeId,
 
   isNumber,
@@ -121,6 +120,8 @@ export function SubcontractedTestsModal({
     "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
 
   >;
+
+  topManagement: TopManagementStored[];
 
   isCodeId: string | null;
 
@@ -219,18 +220,25 @@ export function SubcontractedTestsModal({
 
 
   const previewData = useMemo((): SubcontractedTestsLetterData => {
-
-    return {
-
-      ...letterData,
-
-      rows: storedFromEditor(rows),
-
-      document,
-
-    };
-
-  }, [letterData, rows, document]);
+    const primary = resolvePrimaryTopManagementPerson(topManagement);
+    return withDocumentSignatureImage(
+      {
+        ...letterData,
+        rows: storedFromEditor(rows),
+        document: {
+          ...document,
+          signatory_name:
+            primary.person_name ||
+            document.signatory_name.trim() ||
+            letterData.contactPerson?.trim() ||
+            "",
+          signatory_designation:
+            primary.designation || document.signatory_designation.trim() || "",
+        },
+      },
+      topManagement,
+    );
+  }, [letterData, topManagement, rows, document]);
 
 
 
@@ -561,14 +569,6 @@ export function SubcontractedTestsModal({
             >
 
               <div className="shrink-0 space-y-3 border-b border-zinc-800 px-4 py-3">
-
-                <p className="rounded-lg border border-amber-800/40 bg-amber-950/30 px-3 py-2 text-xs leading-relaxed text-amber-100/90">
-
-                  Declare test parameters not available in your in-house facility and subcontracted to BIS
-                  Recognized / ISO/IEC 17025 accredited laboratories. Fill signatory details for the printed
-                  declaration.
-
-                </p>
 
                 <button
 

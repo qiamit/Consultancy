@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
 import { uploadTechnicalStaffDocument } from "@/lib/storage/technical-staff-documents";
-import { updateBisProjectTargetDate, updateBisProjectNotes } from "@/lib/actions/bis-projects";
+import { updateBisProjectTargetDate, updateBisProjectNotes, convertLicenseToApplication } from "@/lib/actions/bis-projects";
 import {
   updateBisNewApplicationNotes,
   updateBisNewApplicationTargetDate,
@@ -23,15 +23,26 @@ import { FactoryTestReportModal } from "@/components/dashboard/modals/factory-te
 import { SubcontractedTestsModal } from "@/components/dashboard/modals/subcontracted-tests-modal";
 import { Cmpf305Modal } from "@/components/dashboard/modals/cmpf-305-modal";
 import { Cmpf306Modal } from "@/components/dashboard/modals/cmpf-306-modal";
+import { RawMaterialDetailsModal } from "@/components/dashboard/modals/raw-material-details-modal";
+import { CertifiedReferenceMaterialsModal } from "@/components/dashboard/modals/certified-reference-materials-modal";
 import { Cmpf307Modal } from "@/components/dashboard/modals/cmpf-307-modal";
 import { Cmpf310Modal } from "@/components/dashboard/modals/cmpf-310-modal";
 import { Cmpf311Modal } from "@/components/dashboard/modals/cmpf-311-modal";
 import { UndertakingOption2Modal } from "@/components/dashboard/modals/undertaking-option-2-modal";
+import { UndertakingLongDurationTestModal } from "@/components/dashboard/modals/undertaking-long-duration-test-modal";
+import { UndertakingMinimumMarkingFeeModal } from "@/components/dashboard/modals/undertaking-minimum-marking-fee-modal";
+import { UndertakingGeneralIssModal } from "@/components/dashboard/modals/undertaking-general-iss-modal";
+import { PlantLayoutModal } from "@/components/dashboard/modals/plant-layout-modal";
+import { ProcessFlowChartModal } from "@/components/dashboard/modals/process-flow-chart-modal";
+import { ProcessDescriptionModal } from "@/components/dashboard/modals/process-description-modal";
+import { UpdatedSchemeOfInspectionModal } from "@/components/dashboard/modals/updated-scheme-of-inspection-modal";
+import { LocationMapModal } from "@/components/dashboard/modals/location-map-modal";
+import { AuthorizationLetterModal } from "@/components/dashboard/modals/authorization-letter-modal";
+import { ApplicationDetailsModal } from "@/components/dashboard/modals/application-details-modal";
+import { SelfEvaluationFormModal } from "@/components/dashboard/modals/self-evaluation-form-modal";
 import { IsCodeEditModal } from "@/components/dashboard/modals/is-code-edit-modal";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import {
-  APPLICATION_NUMBER_PREFIX,
-  APPLICATION_WEEKDAYS,
   buildApplicationChecklistPayload,
   parseApplicationChecklistNotes,
   type ApplicationMeta,
@@ -47,27 +58,33 @@ import type { TechnicalStaffStored } from "@/lib/technical-staff";
 import type { FactoryTestReportStored, FtrSampleSource } from "@/lib/factory-test-report";
 import type { SubcontractedTestStored, SubcontractedTestsDocumentStored } from "@/lib/subcontracted-tests";
 import type { Cmpf305MachineryStored } from "@/lib/cmpf-305";
+import type { RawMaterialStored } from "@/lib/raw-material-details";
+import type { CertifiedReferenceMaterialStored } from "@/lib/certified-reference-materials";
 import type { Cmpf306Stored } from "@/lib/cmpf-306";
 import type { Cmpf307Stored } from "@/lib/cmpf-307";
 import type { Cmpf310Stored } from "@/lib/cmpf-310";
 import type { Cmpf311Stored } from "@/lib/cmpf-311";
 import type { UndertakingOption2Stored } from "@/lib/undertaking-option-2";
+import type { UndertakingLongDurationTestStored } from "@/lib/undertaking-long-duration-test";
+import type { UndertakingMinimumMarkingFeeStored } from "@/lib/undertaking-minimum-marking-fee";
+import type { UndertakingGeneralIssStored } from "@/lib/undertaking-general-iss";
+import type { AuthorizationLetterStored } from "@/lib/authorization-letter";
+import type { LocationMapStored } from "@/lib/location-map";
+import type { PlantLayoutStored } from "@/lib/plant-layout";
+import type { ProcessFlowChartStored } from "@/lib/process-flow-chart";
+import type { ProcessDescriptionStored } from "@/lib/process-description";
+import type { UpdatedSchemeOfInspectionStored } from "@/lib/updated-scheme-of-inspection";
+import type { SelfEvaluationFormStored } from "@/lib/self-evaluation-form";
+import {
+  editorRowsFromStored,
+  storedFromEditor,
+  type LegalDocumentRow,
+  type LegalDocumentStored,
+} from "@/lib/legal-documents";
 import { formatClientAddressLine } from "@/lib/format-client-address";
 import { formatDisplayDate } from "@/lib/format-date";
 import type { LicenseScopeSavePayload } from "@/components/dashboard/modals/license-scope-editor-modal";
-import {
-  BIS_APPLICATION_DROPDOWN_KEYS,
-  DROPDOWN_KEY_BIS_APPLICATION_BRANCH,
-  DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_DESIGNATION,
-  DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_NAME,
-  DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_DESIGNATION,
-  DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_NAME,
-  DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_DESIGNATION,
-  DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_NAME,
-  DROPDOWN_KEY_BIS_APPLICATION_NATURE_OF_INSPECTION,
-  DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE,
-  DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE,
-} from "@/lib/dropdown-keys";
+import { BIS_APPLICATION_DROPDOWN_KEYS, DROPDOWN_KEY_CLIENT_COMPANY_SCALE } from "@/lib/dropdown-keys";
 import type { ClientDetail as SavedClientDetail } from "@/lib/actions/renewals";
 import { AppDropdownCombobox } from "@/components/modules/client-master/app-dropdown-combobox";
 import { type AppDropdownOptionRow } from "@/lib/types/app-dropdown-option";
@@ -115,6 +132,7 @@ type IsCodeDetail = {
   is_code_title: string | null;
   aspect_of_is: string | null;
   unit_of_is: string | null;
+  product_manual_number: string | null;
   testing_charges: number | null;
   mmf_large_scale: number | null;
   mmf_medium_scale: number | null;
@@ -267,148 +285,6 @@ function ParticularCell({
   return <span className="text-xs text-zinc-400">—</span>;
 }
 
-const APP_META_FIELD_LABEL =
-  "mb-1 block text-sm font-medium leading-tight text-zinc-600 dark:text-zinc-400";
-
-const APP_META_INPUT_SHELL =
-  "flex overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950";
-
-function ApplicationMetaDropdown({
-  label,
-  optionKey,
-  dialogTitle,
-  addPlaceholder,
-  manageAriaLabel,
-  value,
-  onChange,
-  options,
-  onOptionsChanged,
-}: {
-  label: string;
-  optionKey: string;
-  dialogTitle: string;
-  addPlaceholder: string;
-  manageAriaLabel: string;
-  value: string;
-  onChange: (value: string) => void;
-  options: AppDropdownOptionRow[];
-  onOptionsChanged: () => void;
-}) {
-  return (
-    <div className="min-w-0">
-      <label className={APP_META_FIELD_LABEL}>{label}</label>
-      <AppDropdownCombobox
-        optionKey={optionKey}
-        name={optionKey}
-        label={label}
-        dialogTitle={dialogTitle}
-        addPlaceholder={addPlaceholder}
-        manageAriaLabel={manageAriaLabel}
-        value={value}
-        onChange={onChange}
-        options={options}
-        selectedValue={value}
-        onClearSelection={() => onChange("")}
-        hideLabel
-        listZIndexClass="z-[60]"
-        overlayZIndexClass="z-[70]"
-        inputRowShellClassName={APP_META_INPUT_SHELL}
-        onOptionAdded={onOptionsChanged}
-        onOptionDeleted={onOptionsChanged}
-        commitOnBlur
-      />
-    </div>
-  );
-}
-
-function ApplicationWeeklyOffSelector({
-  value,
-  onChange,
-}: {
-  value: string[];
-  onChange: (days: string[]) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const rootRef = useRef<HTMLDivElement>(null);
-  const selected = new Set(value);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDocClick(e: MouseEvent) {
-      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
-    }
-    document.addEventListener("mousedown", onDocClick);
-    return () => document.removeEventListener("mousedown", onDocClick);
-  }, [open]);
-
-  function toggle(day: string) {
-    const next = new Set(selected);
-    if (next.has(day)) next.delete(day);
-    else next.add(day);
-    onChange(APPLICATION_WEEKDAYS.filter((d) => next.has(d)));
-  }
-
-  const summary =
-    value.length === 0
-      ? "Select days…"
-      : APPLICATION_WEEKDAYS.filter((d) => selected.has(d)).join(", ");
-
-  return (
-    <div className="relative min-w-0" ref={rootRef}>
-      <label htmlFor="weekly_off_dropdown" className={APP_META_FIELD_LABEL}>
-        Weekly Off
-      </label>
-      <button
-        id="weekly_off_dropdown"
-        type="button"
-        onClick={() => setOpen((prev) => !prev)}
-        aria-expanded={open}
-        aria-haspopup="listbox"
-        className={`${APP_META_INPUT_SHELL} flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-sm outline-none focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-500/30 ${
-          value.length === 0
-            ? "text-zinc-400 dark:text-zinc-500"
-            : "text-zinc-900 dark:text-zinc-100"
-        }`}
-      >
-        <span className="min-w-0 truncate">{summary}</span>
-        <svg
-          className={`h-4 w-4 shrink-0 text-zinc-500 transition ${open ? "rotate-180" : ""}`}
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          viewBox="0 0 24 24"
-          aria-hidden
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {open ? (
-        <ul
-          role="listbox"
-          aria-multiselectable="true"
-          aria-label="Weekly off days"
-          className="absolute left-0 right-0 top-full z-[60] mt-1 max-h-56 overflow-y-auto rounded-lg border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-900"
-          onMouseDown={(e) => e.preventDefault()}
-        >
-          {APPLICATION_WEEKDAYS.map((day) => (
-            <li key={day} role="option" aria-selected={selected.has(day)}>
-              <label className="flex cursor-pointer items-center gap-2.5 px-3 py-2 text-sm text-zinc-800 hover:bg-zinc-50 dark:text-zinc-100 dark:hover:bg-zinc-800">
-                <input
-                  type="checkbox"
-                  checked={selected.has(day)}
-                  onChange={() => toggle(day)}
-                  className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500 dark:border-zinc-600 dark:bg-zinc-950"
-                />
-                {day}
-              </label>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-    </div>
-  );
-}
-
 function DocumentTemplateModal({
   item,
   client,
@@ -531,16 +407,230 @@ function DocumentTemplateModal({
   );
 }
 
-const APP_DOC_SHORTCUT_BTN_BASE =
-  "group inline-flex h-14 w-[5.75rem] shrink-0 flex-col items-center justify-center gap-1 rounded-lg border border-zinc-200 bg-white px-1.5 py-1.5 text-center shadow-sm transition sm:h-[62px] sm:w-[7.5rem] sm:px-2 sm:py-2 dark:border-zinc-700 dark:bg-zinc-800";
+const APP_DOC_TABLE_BTN_BASE =
+  "inline-flex items-center gap-0.5 rounded-md border px-2 py-0.5 text-[11px] font-semibold leading-none shadow-sm transition";
 
-const APP_DOC_SHORTCUT_LABEL =
-  "line-clamp-2 w-full text-[10px] font-semibold leading-tight text-zinc-800 sm:text-[11px] dark:text-zinc-100";
+const APP_DOC_TABLE_CELL = "px-2.5 py-0.5";
+
+const APP_DOC_TABLE_ROWS_PER_SECTION = 15;
+
+const APP_DOC_TABLE_BTN_TEAL =
+  `${APP_DOC_TABLE_BTN_BASE} border-teal-200 bg-teal-50 text-teal-700 hover:border-teal-300 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300 dark:hover:border-teal-600`;
+
+const APP_DOC_TABLE_BTN_VIOLET =
+  `${APP_DOC_TABLE_BTN_BASE} border-violet-200 bg-violet-50 text-violet-700 hover:border-violet-300 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:border-violet-600`;
+
+type AppDocShortcutAccent = "teal" | "violet";
+
+type AppDocShortcutRow = {
+  description: string;
+  accent: AppDocShortcutAccent;
+  icon: React.ReactNode;
+  onOpen: () => void;
+};
+
+function AppDocShortcutIcon({ kind }: { kind: string }) {
+  const cls = "h-3 w-3 shrink-0";
+  switch (kind) {
+    case "details":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+        </svg>
+      );
+    case "license-scope":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      );
+    case "sample":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+        </svg>
+      );
+    case "people":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+        </svg>
+      );
+    case "staff":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
+        </svg>
+      );
+    case "evaluation":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+        </svg>
+      );
+    case "chart":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      );
+    case "transfer":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+        </svg>
+      );
+    case "machinery":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+        </svg>
+      );
+    case "equipment":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+        </svg>
+      );
+    case "package":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
+        </svg>
+      );
+    case "document":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      );
+    case "brand":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
+        </svg>
+      );
+    case "fee":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        </svg>
+      );
+    case "shield":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        </svg>
+      );
+    case "map":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l5.447 2.724A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+        </svg>
+      );
+    case "layout":
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zm10 0a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+        </svg>
+      );
+    default:
+      return (
+        <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+        </svg>
+      );
+  }
+}
+
+function ApplicationDocumentShortcutsTable({
+  rows,
+  startIndex = 1,
+  className = "",
+}: {
+  rows: AppDocShortcutRow[];
+  startIndex?: number;
+  className?: string;
+}) {
+  if (rows.length === 0) return null;
+
+  return (
+    <div
+      className={`overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 ${className}`}
+    >
+      <table className="w-full border-collapse text-xs table-auto">
+        <colgroup>
+          <col className="w-0" />
+          <col />
+          <col className="w-0" />
+        </colgroup>
+        <thead>
+          <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/60">
+            <th className={`whitespace-nowrap ${APP_DOC_TABLE_CELL} text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300`}>
+              Sr. No.
+            </th>
+            <th className={`${APP_DOC_TABLE_CELL} text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300`}>
+              Description of Document / Information
+            </th>
+            <th className={`whitespace-nowrap ${APP_DOC_TABLE_CELL} text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300`}>
+              Documents
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr
+              key={row.description}
+              className="border-b border-zinc-100 last:border-b-0 dark:border-zinc-800"
+            >
+              <td className={`whitespace-nowrap ${APP_DOC_TABLE_CELL} text-center text-xs font-medium leading-none text-zinc-700 dark:text-zinc-200`}>
+                {startIndex + index}
+              </td>
+              <td className={`${APP_DOC_TABLE_CELL} text-xs leading-snug text-zinc-800 dark:text-zinc-100`}>
+                {row.description}
+              </td>
+              <td className={`whitespace-nowrap ${APP_DOC_TABLE_CELL}`}>
+                <button
+                  type="button"
+                  onClick={row.onOpen}
+                  className={row.accent === "violet" ? APP_DOC_TABLE_BTN_VIOLET : APP_DOC_TABLE_BTN_TEAL}
+                >
+                  {row.icon}
+                  Open
+                </button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ApplicationDocumentShortcutsTables({ rows }: { rows: AppDocShortcutRow[] }) {
+  const firstTableRows = rows.slice(0, APP_DOC_TABLE_ROWS_PER_SECTION);
+  const secondTableRows = rows.slice(APP_DOC_TABLE_ROWS_PER_SECTION, APP_DOC_TABLE_ROWS_PER_SECTION * 2);
+
+  return (
+    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 xl:gap-4">
+      <ApplicationDocumentShortcutsTable rows={firstTableRows} startIndex={1} />
+      <ApplicationDocumentShortcutsTable
+        rows={secondTableRows}
+        startIndex={APP_DOC_TABLE_ROWS_PER_SECTION + 1}
+      />
+    </div>
+  );
+}
 
 function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: () => void }) {
   const initialNotes = parseApplicationChecklistNotes(row.notes);
   const initialScope = parseBisProjectLicenseScopeNotes(row.notes);
   const [descOptions, setDescOptions] = useState<AppDropdownOptionRow[]>([]);
+  const applicationDropdownKeys = useMemo(
+    () => [...BIS_APPLICATION_DROPDOWN_KEYS, DROPDOWN_KEY_CLIENT_COMPANY_SCALE] as const,
+    [],
+  );
   const [appDropdownOptions, setAppDropdownOptions] = useState<
     Record<string, AppDropdownOptionRow[]>
   >({});
@@ -562,6 +652,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [docTemplateItem, setDocTemplateItem] = useState<ChecklistRow | null>(null);
   const [showClientEdit, setShowClientEdit] = useState(false);
   const [showIsCodeEdit, setShowIsCodeEdit] = useState(false);
+  const [showApplicationDetails, setShowApplicationDetails] = useState(false);
   const [showLicenseScopeEditor, setShowLicenseScopeEditor] = useState(false);
   const [showOslSampleRequirements, setShowOslSampleRequirements] = useState(false);
   const [showPiSampleRequirements, setShowPiSampleRequirements] = useState(false);
@@ -571,10 +662,22 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [showSubcontractedTests, setShowSubcontractedTests] = useState(false);
   const [showCmpf305, setShowCmpf305] = useState(false);
   const [showCmpf306, setShowCmpf306] = useState(false);
+  const [showRawMaterialDetails, setShowRawMaterialDetails] = useState(false);
+  const [showCertifiedReferenceMaterials, setShowCertifiedReferenceMaterials] = useState(false);
   const [showCmpf307, setShowCmpf307] = useState(false);
   const [showCmpf310, setShowCmpf310] = useState(false);
   const [showCmpf311, setShowCmpf311] = useState(false);
   const [showUndertakingOption2, setShowUndertakingOption2] = useState(false);
+  const [showUndertakingLongDurationTest, setShowUndertakingLongDurationTest] = useState(false);
+  const [showUndertakingMinimumMarkingFee, setShowUndertakingMinimumMarkingFee] = useState(false);
+  const [showAuthorizationLetter, setShowAuthorizationLetter] = useState(false);
+  const [showLocationMap, setShowLocationMap] = useState(false);
+  const [showPlantLayout, setShowPlantLayout] = useState(false);
+  const [showProcessFlowChart, setShowProcessFlowChart] = useState(false);
+  const [showProcessDescription, setShowProcessDescription] = useState(false);
+  const [showUpdatedSchemeOfInspection, setShowUpdatedSchemeOfInspection] = useState(false);
+  const [showSelfEvaluationForm, setShowSelfEvaluationForm] = useState(false);
+  const [showUndertakingGeneralIss, setShowUndertakingGeneralIss] = useState(false);
   const [reopenFtrAfterSampleEdit, setReopenFtrAfterSampleEdit] = useState(false);
   const [sampleOfferLetterFocusIndex, setSampleOfferLetterFocusIndex] = useState<number | null>(
     null,
@@ -613,6 +716,12 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [cmpf305Machinery, setCmpf305Machinery] = useState<Cmpf305MachineryStored[]>(
     initialNotes.cmpf305Machinery,
   );
+  const [rawMaterialDetails, setRawMaterialDetails] = useState<RawMaterialStored[]>(
+    initialNotes.rawMaterialDetails,
+  );
+  const [certifiedReferenceMaterials, setCertifiedReferenceMaterials] = useState<
+    CertifiedReferenceMaterialStored[]
+  >(initialNotes.certifiedReferenceMaterials);
   const [cmpf306, setCmpf306] = useState<Cmpf306Stored>(initialNotes.cmpf306);
   const [cmpf307, setCmpf307] = useState<Cmpf307Stored>(initialNotes.cmpf307);
   const [cmpf310, setCmpf310] = useState<Cmpf310Stored>(initialNotes.cmpf310);
@@ -620,7 +729,35 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [undertakingOption2, setUndertakingOption2] = useState<UndertakingOption2Stored>(
     initialNotes.undertakingOption2,
   );
+  const [undertakingGeneralIss, setUndertakingGeneralIss] = useState<UndertakingGeneralIssStored>(
+    initialNotes.undertakingGeneralIss,
+  );
+  const [authorizationLetter, setAuthorizationLetter] = useState<AuthorizationLetterStored>(
+    initialNotes.authorizationLetter,
+  );
+  const [undertakingLongDurationTest, setUndertakingLongDurationTest] =
+    useState<UndertakingLongDurationTestStored>(initialNotes.undertakingLongDurationTest);
+  const [undertakingMinimumMarkingFee, setUndertakingMinimumMarkingFee] =
+    useState<UndertakingMinimumMarkingFeeStored>(initialNotes.undertakingMinimumMarkingFee);
+  const [locationMap, setLocationMap] = useState<LocationMapStored>(initialNotes.locationMap);
+  const [plantLayout, setPlantLayout] = useState<PlantLayoutStored>(initialNotes.plantLayout);
+  const [processFlowChart, setProcessFlowChart] = useState<ProcessFlowChartStored>(
+    initialNotes.processFlowChart,
+  );
+  const [processDescription, setProcessDescription] = useState<ProcessDescriptionStored>(
+    initialNotes.processDescription,
+  );
+  const [updatedSchemeOfInspection, setUpdatedSchemeOfInspection] =
+    useState<UpdatedSchemeOfInspectionStored>(initialNotes.updatedSchemeOfInspection);
+  const [selfEvaluationForm, setSelfEvaluationForm] = useState<SelfEvaluationFormStored>(
+    initialNotes.selfEvaluationForm,
+  );
   const [applicationMeta, setApplicationMeta] = useState<ApplicationMeta>(initialNotes.meta);
+  const [legalDocumentRows, setLegalDocumentRows] = useState<LegalDocumentRow[]>(() =>
+    editorRowsFromStored(initialNotes.legalDocuments),
+  );
+  const productManualPrefilledRef = useRef(false);
+  const firmScalePrefilledRef = useRef(false);
   const [saving, startSave] = useTransition();
   const saveNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNotesSaveRef = useRef<{
@@ -637,11 +774,24 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     subcontractedTests?: SubcontractedTestStored[];
     subcontractedTestsDocument?: SubcontractedTestsDocumentStored;
     cmpf305Machinery?: Cmpf305MachineryStored[];
+    rawMaterialDetails?: RawMaterialStored[];
+    certifiedReferenceMaterials?: CertifiedReferenceMaterialStored[];
     cmpf306?: Cmpf306Stored;
     cmpf307?: Cmpf307Stored;
     cmpf310?: Cmpf310Stored;
     cmpf311?: Cmpf311Stored;
     undertakingOption2?: UndertakingOption2Stored;
+    undertakingGeneralIss?: UndertakingGeneralIssStored;
+    authorizationLetter?: AuthorizationLetterStored;
+    undertakingLongDurationTest?: UndertakingLongDurationTestStored;
+    undertakingMinimumMarkingFee?: UndertakingMinimumMarkingFeeStored;
+    locationMap?: LocationMapStored;
+    plantLayout?: PlantLayoutStored;
+    processFlowChart?: ProcessFlowChartStored;
+    processDescription?: ProcessDescriptionStored;
+    updatedSchemeOfInspection?: UpdatedSchemeOfInspectionStored;
+    selfEvaluationForm?: SelfEvaluationFormStored;
+    legalDocuments?: LegalDocumentStored[];
   }>({});
 
   const flushNotesSave = useCallback(() => {
@@ -662,11 +812,28 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         subcontractedTestsDocument:
           overrides.subcontractedTestsDocument ?? subcontractedTestsDocument,
         cmpf305Machinery: overrides.cmpf305Machinery ?? cmpf305Machinery,
+        rawMaterialDetails: overrides.rawMaterialDetails ?? rawMaterialDetails,
+        certifiedReferenceMaterials:
+          overrides.certifiedReferenceMaterials ?? certifiedReferenceMaterials,
         cmpf306: overrides.cmpf306 ?? cmpf306,
         cmpf307: overrides.cmpf307 ?? cmpf307,
         cmpf310: overrides.cmpf310 ?? cmpf310,
         cmpf311: overrides.cmpf311 ?? cmpf311,
         undertakingOption2: overrides.undertakingOption2 ?? undertakingOption2,
+        undertakingGeneralIss: overrides.undertakingGeneralIss ?? undertakingGeneralIss,
+        authorizationLetter: overrides.authorizationLetter ?? authorizationLetter,
+        undertakingLongDurationTest:
+          overrides.undertakingLongDurationTest ?? undertakingLongDurationTest,
+        undertakingMinimumMarkingFee:
+          overrides.undertakingMinimumMarkingFee ?? undertakingMinimumMarkingFee,
+        locationMap: overrides.locationMap ?? locationMap,
+        plantLayout: overrides.plantLayout ?? plantLayout,
+        processFlowChart: overrides.processFlowChart ?? processFlowChart,
+        processDescription: overrides.processDescription ?? processDescription,
+        updatedSchemeOfInspection:
+          overrides.updatedSchemeOfInspection ?? updatedSchemeOfInspection,
+        selfEvaluationForm: overrides.selfEvaluationForm ?? selfEvaluationForm,
+        legalDocuments: overrides.legalDocuments ?? storedFromEditor(legalDocumentRows),
         meta: overrides.meta ?? applicationMeta,
       });
       if (row.source === "bis_new_applications") {
@@ -675,7 +842,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         await updateBisProjectNotes(row.id, payload);
       }
     });
-  }, [row.id, row.source, items, licenseScope, licenseScopeFormat, licenseScopeRows, oslSampleRequirements, piSampleRequirements, topManagement, technicalStaff, factoryTestReports, subcontractedTests, subcontractedTestsDocument, cmpf305Machinery, cmpf306, cmpf307, cmpf310, cmpf311, undertakingOption2, applicationMeta]);
+  }, [row.id, row.source, items, licenseScope, licenseScopeFormat, licenseScopeRows, oslSampleRequirements, piSampleRequirements, topManagement, technicalStaff, factoryTestReports, subcontractedTests, subcontractedTestsDocument, cmpf305Machinery, rawMaterialDetails, certifiedReferenceMaterials, cmpf306, cmpf307, cmpf310, cmpf311, undertakingOption2, undertakingGeneralIss, authorizationLetter, undertakingLongDurationTest, undertakingMinimumMarkingFee, locationMap, plantLayout, processFlowChart, processDescription, updatedSchemeOfInspection, selfEvaluationForm, legalDocumentRows, applicationMeta]);
 
   const saveNotesToDb = useCallback(
     (overrides?: {
@@ -692,11 +859,24 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       subcontractedTests?: SubcontractedTestStored[];
       subcontractedTestsDocument?: SubcontractedTestsDocumentStored;
       cmpf305Machinery?: Cmpf305MachineryStored[];
+      rawMaterialDetails?: RawMaterialStored[];
+      certifiedReferenceMaterials?: CertifiedReferenceMaterialStored[];
       cmpf306?: Cmpf306Stored;
       cmpf307?: Cmpf307Stored;
       cmpf310?: Cmpf310Stored;
       cmpf311?: Cmpf311Stored;
       undertakingOption2?: UndertakingOption2Stored;
+      undertakingGeneralIss?: UndertakingGeneralIssStored;
+      authorizationLetter?: AuthorizationLetterStored;
+      undertakingLongDurationTest?: UndertakingLongDurationTestStored;
+      undertakingMinimumMarkingFee?: UndertakingMinimumMarkingFeeStored;
+      locationMap?: LocationMapStored;
+      plantLayout?: PlantLayoutStored;
+      processFlowChart?: ProcessFlowChartStored;
+      processDescription?: ProcessDescriptionStored;
+      updatedSchemeOfInspection?: UpdatedSchemeOfInspectionStored;
+      selfEvaluationForm?: SelfEvaluationFormStored;
+      legalDocuments?: LegalDocumentStored[];
     }) => {
       pendingNotesSaveRef.current = {
         ...pendingNotesSaveRef.current,
@@ -740,18 +920,18 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     const { data } = await supabase
       .from("app_dropdown_options")
       .select("*")
-      .in("option_key", [...BIS_APPLICATION_DROPDOWN_KEYS])
+      .in("option_key", [...applicationDropdownKeys])
       .order("value", { ascending: true });
 
     const grouped: Record<string, AppDropdownOptionRow[]> = {};
-    for (const key of BIS_APPLICATION_DROPDOWN_KEYS) grouped[key] = [];
+    for (const key of applicationDropdownKeys) grouped[key] = [];
     for (const opt of (data ?? []) as (AppDropdownOptionRow & { option_key?: string })[]) {
       const key = opt.option_key ?? "";
       if (!grouped[key]) grouped[key] = [];
       grouped[key].push(opt);
     }
     setAppDropdownOptions(grouped);
-  }, []);
+  }, [applicationDropdownKeys]);
 
   useEffect(() => {
     let cancelled = false;
@@ -771,13 +951,13 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       const { data } = await supabase
         .from("app_dropdown_options")
         .select("*")
-        .in("option_key", [...BIS_APPLICATION_DROPDOWN_KEYS])
+        .in("option_key", [...applicationDropdownKeys])
         .order("value", { ascending: true });
 
       if (cancelled) return;
 
       const grouped: Record<string, AppDropdownOptionRow[]> = {};
-      for (const key of BIS_APPLICATION_DROPDOWN_KEYS) grouped[key] = [];
+      for (const key of applicationDropdownKeys) grouped[key] = [];
       for (const opt of (data ?? []) as (AppDropdownOptionRow & { option_key?: string })[]) {
         const key = opt.option_key ?? "";
         if (!grouped[key]) grouped[key] = [];
@@ -833,7 +1013,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           supabase
             .from("is_codes")
             .select(
-              "is_number, revision_year, is_code_title, aspect_of_is, unit_of_is, mmf_large_scale, mmf_medium_scale, mmf_small_scale, mmf_micro_scale, slab_1_rate",
+              "is_number, revision_year, is_code_title, aspect_of_is, unit_of_is, product_manual_number, mmf_large_scale, mmf_medium_scale, mmf_small_scale, mmf_micro_scale, slab_1_rate",
             )
             .eq("id", row.is_code_id)
             .single()
@@ -860,6 +1040,65 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     setApplicationMeta(next);
     saveNotesToDb({ meta: next });
   }
+
+  function updateLegalDocuments(rows: LegalDocumentRow[]) {
+    setLegalDocumentRows(rows);
+    saveNotesToDb({ legalDocuments: storedFromEditor(rows) });
+  }
+
+  function updateFirmScale(value: string) {
+    const next = { ...applicationMeta, firm_scale: value };
+    setApplicationMeta(next);
+    saveNotesToDb({ meta: next });
+
+    if (!row.client_id) return;
+
+    const clientId = row.client_id;
+    const scaleValue = value.trim() || null;
+    void (async () => {
+      const supabase = createClient();
+      const { error } = await supabase
+        .from("clients")
+        .update({ company_scale: scaleValue })
+        .eq("id", clientId);
+      if (error) {
+        window.alert(`Firm scale saved on application but Client Master update failed: ${error.message}`);
+        return;
+      }
+      setClient((prev) => (prev ? { ...prev, company_scale: scaleValue } : prev));
+    })();
+  }
+
+  useEffect(() => {
+    productManualPrefilledRef.current = false;
+    firmScalePrefilledRef.current = false;
+  }, [row.id]);
+
+  useEffect(() => {
+    if (firmScalePrefilledRef.current) return;
+    const fromClient = client?.company_scale?.trim() ?? "";
+    if (applicationMeta.firm_scale.trim()) {
+      firmScalePrefilledRef.current = true;
+      return;
+    }
+    if (!fromClient) return;
+    firmScalePrefilledRef.current = true;
+    const next = { ...applicationMeta, firm_scale: fromClient };
+    setApplicationMeta(next);
+    saveNotesToDb({ meta: next });
+  }, [client?.company_scale, applicationMeta.firm_scale]);
+
+  useEffect(() => {
+    if (productManualPrefilledRef.current) return;
+    const fromIs = isCode?.product_manual_number?.trim() ?? "";
+    if (applicationMeta.product_manual_number.trim()) {
+      productManualPrefilledRef.current = true;
+      return;
+    }
+    if (!fromIs) return;
+    productManualPrefilledRef.current = true;
+    updateMeta({ product_manual_number: fromIs });
+  }, [isCode?.product_manual_number, applicationMeta.product_manual_number]);
 
   function updateItem(id: string, patch: Partial<ChecklistRow>) {
     const newItems = items.map((item) => (item.id === id ? { ...item, ...patch } : item));
@@ -933,6 +1172,16 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     saveNotesToDb({ cmpf305Machinery: rows });
   }
 
+  function saveRawMaterialDetails(rows: RawMaterialStored[]) {
+    setRawMaterialDetails(rows);
+    saveNotesToDb({ rawMaterialDetails: rows });
+  }
+
+  function saveCertifiedReferenceMaterials(rows: CertifiedReferenceMaterialStored[]) {
+    setCertifiedReferenceMaterials(rows);
+    saveNotesToDb({ certifiedReferenceMaterials: rows });
+  }
+
   function saveCmpf306(document: Cmpf306Stored) {
     setCmpf306(document);
     saveNotesToDb({ cmpf306: document });
@@ -956,6 +1205,56 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   function saveUndertakingOption2(document: UndertakingOption2Stored) {
     setUndertakingOption2(document);
     saveNotesToDb({ undertakingOption2: document });
+  }
+
+  function saveUndertakingGeneralIss(document: UndertakingGeneralIssStored) {
+    setUndertakingGeneralIss(document);
+    saveNotesToDb({ undertakingGeneralIss: document });
+  }
+
+  function saveAuthorizationLetter(document: AuthorizationLetterStored) {
+    setAuthorizationLetter(document);
+    saveNotesToDb({ authorizationLetter: document });
+  }
+
+  function saveUndertakingLongDurationTest(document: UndertakingLongDurationTestStored) {
+    setUndertakingLongDurationTest(document);
+    saveNotesToDb({ undertakingLongDurationTest: document });
+  }
+
+  function saveUndertakingMinimumMarkingFee(document: UndertakingMinimumMarkingFeeStored) {
+    setUndertakingMinimumMarkingFee(document);
+    saveNotesToDb({ undertakingMinimumMarkingFee: document });
+  }
+
+  function saveLocationMap(document: LocationMapStored) {
+    setLocationMap(document);
+    saveNotesToDb({ locationMap: document });
+  }
+
+  function savePlantLayout(document: PlantLayoutStored) {
+    setPlantLayout(document);
+    saveNotesToDb({ plantLayout: document });
+  }
+
+  function saveProcessFlowChart(document: ProcessFlowChartStored) {
+    setProcessFlowChart(document);
+    saveNotesToDb({ processFlowChart: document });
+  }
+
+  function saveProcessDescription(document: ProcessDescriptionStored) {
+    setProcessDescription(document);
+    saveNotesToDb({ processDescription: document });
+  }
+
+  function saveUpdatedSchemeOfInspection(document: UpdatedSchemeOfInspectionStored) {
+    setUpdatedSchemeOfInspection(document);
+    saveNotesToDb({ updatedSchemeOfInspection: document });
+  }
+
+  function saveSelfEvaluationForm(document: SelfEvaluationFormStored) {
+    setSelfEvaluationForm(document);
+    saveNotesToDb({ selfEvaluationForm: document });
   }
 
   function handleEditSampleFromFtr(source: FtrSampleSource, sampleIndex: number) {
@@ -1005,8 +1304,162 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       bisBranchState: client?.state ?? "",
       bisBranchCountry: client?.country ?? "India",
       inspectionDate: row.target_date ?? "",
+      applicationNumber: applicationMeta.application_number,
     };
   }
+
+  const applicationDocShortcuts = useMemo((): AppDocShortcutRow[] => [
+    {
+      description: "Application Details",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="details" />,
+      onOpen: () => setShowApplicationDetails(true),
+    },
+    {
+      description: "Top Management Details",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="people" />,
+      onOpen: () => setShowTopManagement(true),
+    },
+    {
+      description: "Technical Staff Details",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="staff" />,
+      onOpen: () => setShowTechnicalStaff(true),
+    },
+    {
+      description: "Location Map",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="map" />,
+      onOpen: () => setShowLocationMap(true),
+    },
+    {
+      description: "Plant Layout",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="layout" />,
+      onOpen: () => setShowPlantLayout(true),
+    },
+    {
+      description: "Process Flow Chart",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="document" />,
+      onOpen: () => setShowProcessFlowChart(true),
+    },
+    {
+      description: "Process Description",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="document" />,
+      onOpen: () => setShowProcessDescription(true),
+    },
+    {
+      description: "Undertaking for License Scope",
+      accent: "violet",
+      icon: <AppDocShortcutIcon kind="license-scope" />,
+      onOpen: () => setShowLicenseScopeEditor(true),
+    },
+    {
+      description: "Sample for Out Side Lab",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="sample" />,
+      onOpen: () => setShowOslSampleRequirements(true),
+    },
+    {
+      description: "List of Plant & Machinery - CMPF 305",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="machinery" />,
+      onOpen: () => setShowCmpf305(true),
+    },
+    {
+      description: "List of Testing Equipments - CMPF - 306",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="equipment" />,
+      onOpen: () => setShowCmpf306(true),
+    },
+    {
+      description: "Brand Name Declaration - CMPF 307",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="brand" />,
+      onOpen: () => setShowCmpf307(true),
+    },
+    {
+      description: "Acceptance of Marking Fee - CMPF 310",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="fee" />,
+      onOpen: () => setShowCmpf310(true),
+    },
+    {
+      description: "Acceptance of Scheme of Inspection & Testing CMPF 311",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="shield" />,
+      onOpen: () => setShowCmpf311(true),
+    },
+    {
+      description: "Undertaking For Raw Material",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="package" />,
+      onOpen: () => setShowRawMaterialDetails(true),
+    },
+    {
+      description: "List of Certified Reference Material",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="equipment" />,
+      onOpen: () => setShowCertifiedReferenceMaterials(true),
+    },
+    {
+      description: "Undertaking for Simplified Procedure",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="document" />,
+      onOpen: () => setShowUndertakingOption2(true),
+    },
+    {
+      description: "Undertaking for General ISS",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="document" />,
+      onOpen: () => setShowUndertakingGeneralIss(true),
+    },
+    {
+      description: "Self Evaluation Form",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="evaluation" />,
+      onOpen: () => setShowSelfEvaluationForm(true),
+    },
+    {
+      description: "Authorization Letter",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="document" />,
+      onOpen: () => setShowAuthorizationLetter(true),
+    },
+    {
+      description: "Sample Offer for Inspection",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="sample" />,
+      onOpen: () => setShowPiSampleRequirements(true),
+    },
+    {
+      description: "Factory Test Reports",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="chart" />,
+      onOpen: () => setShowFactoryTestReport(true),
+    },
+    {
+      description: "Updated Scheme of Inspection & Testing",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="shield" />,
+      onOpen: () => setShowUpdatedSchemeOfInspection(true),
+    },
+    {
+      description: "Undertaking for Long Duration Test",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="document" />,
+      onOpen: () => setShowUndertakingLongDurationTest(true),
+    },
+    {
+      description: "Undertaking for Minimum Marking Fee",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="fee" />,
+      onOpen: () => setShowUndertakingMinimumMarkingFee(true),
+    },
+  ], []);
 
   function syncClientFromSaved(updated: SavedClientDetail) {
     setClient({
@@ -1036,6 +1489,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       is_code_title: updated.is_code_title,
       aspect_of_is: updated.aspect_of_is,
       unit_of_is: prev?.unit_of_is ?? null,
+      product_manual_number: prev?.product_manual_number ?? null,
       testing_charges: prev?.testing_charges ?? null,
       mmf_large_scale: prev?.mmf_large_scale ?? null,
       mmf_medium_scale: prev?.mmf_medium_scale ?? null,
@@ -1114,370 +1568,9 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        {/* Application details & documents */}
+        {/* Application documents */}
         <div className="border-b border-zinc-200 bg-zinc-50 px-3 py-3 sm:px-5 sm:py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
-            <div className="min-w-0">
-              <label htmlFor="application_procedure" className={APP_META_FIELD_LABEL}>
-                Application Procedure
-              </label>
-              <select
-                id="application_procedure"
-                value={applicationMeta.application_procedure}
-                onChange={(e) =>
-                  updateMeta({
-                    application_procedure: e.target.value as ApplicationMeta["application_procedure"],
-                  })
-                }
-                className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-              >
-                <option value="Simplified">Simplified</option>
-                <option value="Normal">Normal</option>
-              </select>
-            </div>
-
-            <div className="min-w-0">
-              <label htmlFor="application_number" className={APP_META_FIELD_LABEL}>
-                Application Number
-              </label>
-              <div className={APP_META_INPUT_SHELL}>
-                <span className="inline-flex shrink-0 items-center border-r border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
-                  {APPLICATION_NUMBER_PREFIX}
-                </span>
-                <input
-                  id="application_number"
-                  type="text"
-                  value={applicationMeta.application_number}
-                  onChange={(e) => updateMeta({ application_number: e.target.value })}
-                  placeholder="Enter number…"
-                  className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm text-zinc-900 outline-none dark:text-zinc-100"
-                />
-              </div>
-            </div>
-
-            <div className="min-w-0">
-              <label htmlFor="date_of_application" className={APP_META_FIELD_LABEL}>
-                Date of Application
-              </label>
-              <input
-                id="date_of_application"
-                type="date"
-                value={applicationMeta.date_of_application}
-                onChange={(e) => updateMeta({ date_of_application: e.target.value })}
-                className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-              />
-            </div>
-
-            <ApplicationMetaDropdown
-              label="BIS Branch Name"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_BRANCH}
-              dialogTitle="Manage BIS Branch Names"
-              addPlaceholder="Add branch name…"
-              manageAriaLabel="Add or remove BIS branch names"
-              value={applicationMeta.bis_branch_name}
-              onChange={(v) => updateMeta({ bis_branch_name: v })}
-              options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_BRANCH] ?? []}
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-
-            <ApplicationMetaDropdown
-              label="Marking Clause"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE}
-              dialogTitle="Manage Marking Clauses"
-              addPlaceholder="Add marking clause…"
-              manageAriaLabel="Add or remove marking clauses"
-              value={applicationMeta.marking_clause}
-              onChange={(v) => updateMeta({ marking_clause: v })}
-              options={
-                appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE] ?? []
-              }
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-
-            <ApplicationMetaDropdown
-              label="Packaging Clause"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE}
-              dialogTitle="Manage Packaging Clauses"
-              addPlaceholder="Add packaging clause…"
-              manageAriaLabel="Add or remove packaging clauses"
-              value={applicationMeta.packaging_clause}
-              onChange={(v) => updateMeta({ packaging_clause: v })}
-              options={
-                appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE] ?? []
-              }
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            <ApplicationMetaDropdown
-              label="Name of Branch Head"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_NAME}
-              dialogTitle="Manage Branch Head Names"
-              addPlaceholder="Add branch head name…"
-              manageAriaLabel="Add or remove branch head names"
-              value={applicationMeta.branch_head_name}
-              onChange={(v) => updateMeta({ branch_head_name: v })}
-              options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_NAME] ?? []}
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-
-            <ApplicationMetaDropdown
-              label="Designation of Branch Head"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_DESIGNATION}
-              dialogTitle="Manage Branch Head Designations"
-              addPlaceholder="Add designation…"
-              manageAriaLabel="Add or remove branch head designations"
-              value={applicationMeta.branch_head_designation}
-              onChange={(v) => updateMeta({ branch_head_designation: v })}
-              options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_DESIGNATION] ?? []}
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-
-            <ApplicationMetaDropdown
-              label="Name of Dealing Officer"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_NAME}
-              dialogTitle="Manage Dealing Officer Names"
-              addPlaceholder="Add officer name…"
-              manageAriaLabel="Add or remove dealing officer names"
-              value={applicationMeta.dealing_officer_name}
-              onChange={(v) => updateMeta({ dealing_officer_name: v })}
-              options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_NAME] ?? []}
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-
-            <ApplicationMetaDropdown
-              label="Designation of Dealing Officer"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_DESIGNATION}
-              dialogTitle="Manage Dealing Officer Designations"
-              addPlaceholder="Add designation…"
-              manageAriaLabel="Add or remove dealing officer designations"
-              value={applicationMeta.dealing_officer_designation}
-              onChange={(v) => updateMeta({ dealing_officer_designation: v })}
-              options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_DEALING_OFFICER_DESIGNATION] ?? []}
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-
-            <ApplicationMetaDropdown
-              label="Name of Inspection Officer"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_NAME}
-              dialogTitle="Manage Inspection Officer Names"
-              addPlaceholder="Add officer name…"
-              manageAriaLabel="Add or remove inspection officer names"
-              value={applicationMeta.inspection_officer_name}
-              onChange={(v) => updateMeta({ inspection_officer_name: v })}
-              options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_NAME] ?? []}
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-
-            <ApplicationMetaDropdown
-              label="Designation of Inspection Officer"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_DESIGNATION}
-              dialogTitle="Manage Inspection Officer Designations"
-              addPlaceholder="Add designation…"
-              manageAriaLabel="Add or remove inspection officer designations"
-              value={applicationMeta.inspection_officer_designation}
-              onChange={(v) => updateMeta({ inspection_officer_designation: v })}
-              options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_DESIGNATION] ?? []}
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-          </div>
-
-          <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1 sm:mx-0 sm:flex-wrap sm:gap-3 sm:overflow-visible sm:px-0 sm:pb-0">
-            <button
-              type="button"
-              onClick={() => setShowLicenseScopeEditor(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-violet-300 hover:shadow-md dark:hover:border-violet-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-violet-100 text-violet-700 group-hover:bg-violet-200 dark:bg-violet-950/40 dark:text-violet-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>License Scope</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowOslSampleRequirements(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>Sample for OSL</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowPiSampleRequirements(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>Sample for PI</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowTopManagement(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>Top Management</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowTechnicalStaff(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>Technical Staff</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowFactoryTestReport(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>FTR</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowSubcontractedTests(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>Test Subcontracted</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCmpf305(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 305</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCmpf306(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 306</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCmpf307(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 307</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCmpf310(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 310</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowCmpf311(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>CMPF 311</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowUndertakingOption2(true)}
-              className={`${APP_DOC_SHORTCUT_BTN_BASE} hover:border-teal-300 hover:shadow-md dark:hover:border-teal-600`}
-            >
-              <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-teal-100 text-teal-700 group-hover:bg-teal-200 dark:bg-teal-950/40 dark:text-teal-300">
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-              </div>
-              <span className={APP_DOC_SHORTCUT_LABEL}>Undertaking Option 2</span>
-            </button>
-          </div>
-
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-5">
-            <ApplicationMetaDropdown
-              label="Nature of Inspection"
-              optionKey={DROPDOWN_KEY_BIS_APPLICATION_NATURE_OF_INSPECTION}
-              dialogTitle="Manage Nature of Inspection"
-              addPlaceholder="Add nature of inspection…"
-              manageAriaLabel="Add or remove nature of inspection options"
-              value={applicationMeta.nature_of_inspection}
-              onChange={(v) => updateMeta({ nature_of_inspection: v })}
-              options={
-                appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_NATURE_OF_INSPECTION] ?? []
-              }
-              onOptionsChanged={reloadApplicationDropdowns}
-            />
-
-            <div className="min-w-0">
-              <label htmlFor="date_of_inspection" className={APP_META_FIELD_LABEL}>
-                Date of Inspection
-              </label>
-              <input
-                id="date_of_inspection"
-                type="date"
-                value={applicationMeta.date_of_inspection}
-                onChange={(e) => updateMeta({ date_of_inspection: e.target.value })}
-                className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-              />
-            </div>
-
-            <div className="min-w-0">
-              <ApplicationWeeklyOffSelector
-                value={applicationMeta.weekly_off}
-                onChange={(weekly_off) => updateMeta({ weekly_off })}
-              />
-            </div>
-          </div>
+          <ApplicationDocumentShortcutsTables rows={applicationDocShortcuts} />
         </div>
 
         {total > 0 && (
@@ -1692,6 +1785,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       {showLicenseScopeEditor && (
         <LicenseScopeEditorModal
           declarationData={buildDeclarationData()}
+          topManagement={topManagement}
           licenseScope={licenseScope}
           licenseScopeFormat={licenseScopeFormat}
           licenseScopeRows={licenseScopeRows}
@@ -1707,6 +1801,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         <OslSampleRequirementsModal
           variant="osl"
           letterData={buildDeclarationData()}
+          topManagement={topManagement}
           isCodeNumber={isCode?.is_number ?? row.is_number}
           isCodeId={row.is_code_id}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
@@ -1721,6 +1816,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         <OslSampleRequirementsModal
           variant="pi"
           letterData={buildDeclarationData()}
+          topManagement={topManagement}
           isCodeNumber={isCode?.is_number ?? row.is_number}
           isCodeId={row.is_code_id}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
@@ -1747,6 +1843,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         <TechnicalStaffModal
           projectId={row.id}
           letterData={buildDeclarationData()}
+          topManagement={topManagement}
           isCodeNumber={isCode?.is_number ?? row.is_number}
           isCodeId={row.is_code_id}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
@@ -1785,6 +1882,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       {showSubcontractedTests && (
         <SubcontractedTestsModal
           letterData={buildDeclarationData()}
+          topManagement={topManagement}
           isCodeId={row.is_code_id}
           isNumber={isCode?.is_number ?? row.is_number}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
@@ -1818,6 +1916,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
 
       {showCmpf306 && (
         <Cmpf306Modal
+          projectId={row.id}
           letterData={buildDeclarationData()}
           applicationNumber={applicationMeta.application_number}
           dateOfApplication={applicationMeta.date_of_application}
@@ -1834,6 +1933,32 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           document={cmpf306}
           onSave={saveCmpf306}
           onClose={() => setShowCmpf306(false)}
+        />
+      )}
+
+      {showRawMaterialDetails && (
+        <RawMaterialDetailsModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          topManagement={topManagement}
+          rows={rawMaterialDetails}
+          onSave={saveRawMaterialDetails}
+          onClose={() => setShowRawMaterialDetails(false)}
+        />
+      )}
+
+      {showCertifiedReferenceMaterials && (
+        <CertifiedReferenceMaterialsModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          topManagement={topManagement}
+          rows={certifiedReferenceMaterials}
+          onSave={saveCertifiedReferenceMaterials}
+          onClose={() => setShowCertifiedReferenceMaterials(false)}
         />
       )}
 
@@ -1870,7 +1995,11 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           applicationNumber={applicationMeta.application_number}
           dateOfApplication={applicationMeta.date_of_application}
           dateOfInspection={applicationMeta.date_of_inspection}
-          natureOfInspection={applicationMeta.nature_of_inspection}
+          productManualNumber={
+            applicationMeta.product_manual_number.trim() ||
+            isCode?.product_manual_number?.trim() ||
+            ""
+          }
           topManagement={topManagement}
           onSave={saveCmpf311}
           onClose={() => setShowCmpf311(false)}
@@ -1884,8 +2013,162 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           dateOfApplication={applicationMeta.date_of_application}
           dateOfInspection={applicationMeta.date_of_inspection}
           topManagement={topManagement}
+          storedDocument={undertakingOption2}
           onSave={saveUndertakingOption2}
           onClose={() => setShowUndertakingOption2(false)}
+        />
+      )}
+
+      {showApplicationDetails && (
+        <ApplicationDetailsModal
+          companyName={client?.company_name ?? row.client_name}
+          applicationMeta={applicationMeta}
+          onUpdateMeta={updateMeta}
+          appDropdownOptions={appDropdownOptions}
+          onReloadDropdowns={reloadApplicationDropdowns}
+          isCodeProductManualNumber={isCode?.product_manual_number}
+          onFirmScaleChange={updateFirmScale}
+          projectId={row.id}
+          legalDocumentRows={legalDocumentRows}
+          onLegalDocumentsChange={updateLegalDocuments}
+          onClose={() => setShowApplicationDetails(false)}
+        />
+      )}
+
+      {showUndertakingGeneralIss && (
+        <UndertakingGeneralIssModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          markingClause={applicationMeta.marking_clause}
+          packagingClause={applicationMeta.packaging_clause}
+          weeklyOff={applicationMeta.weekly_off}
+          topManagement={topManagement}
+          storedDocument={undertakingGeneralIss}
+          onSave={saveUndertakingGeneralIss}
+          onClose={() => setShowUndertakingGeneralIss(false)}
+        />
+      )}
+
+      {showUndertakingLongDurationTest && (
+        <UndertakingLongDurationTestModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          topManagement={topManagement}
+          storedDocument={undertakingLongDurationTest}
+          onSave={saveUndertakingLongDurationTest}
+          onClose={() => setShowUndertakingLongDurationTest(false)}
+        />
+      )}
+
+      {showUndertakingMinimumMarkingFee && (
+        <UndertakingMinimumMarkingFeeModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          isCode={isCode}
+          licenseScopeRows={licenseScopeRows}
+          topManagement={topManagement}
+          storedDocument={undertakingMinimumMarkingFee}
+          onSave={saveUndertakingMinimumMarkingFee}
+          onClose={() => setShowUndertakingMinimumMarkingFee(false)}
+        />
+      )}
+
+      {showLocationMap && (
+        <LocationMapModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          topManagement={topManagement}
+          storedDocument={locationMap}
+          onSave={saveLocationMap}
+          onClose={() => setShowLocationMap(false)}
+        />
+      )}
+
+      {showUpdatedSchemeOfInspection && (
+        <UpdatedSchemeOfInspectionModal
+          letterData={buildDeclarationData()}
+          revisionYear={isCode?.revision_year ?? row.is_revision_year}
+          storedDocument={updatedSchemeOfInspection}
+          onSave={saveUpdatedSchemeOfInspection}
+          onClose={() => setShowUpdatedSchemeOfInspection(false)}
+        />
+      )}
+
+      {showPlantLayout && (
+        <PlantLayoutModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          topManagement={topManagement}
+          storedDocument={plantLayout}
+          onSave={savePlantLayout}
+          onClose={() => setShowPlantLayout(false)}
+        />
+      )}
+
+      {showProcessFlowChart && (
+        <ProcessFlowChartModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          topManagement={topManagement}
+          storedDocument={processFlowChart}
+          onSave={saveProcessFlowChart}
+          onClose={() => setShowProcessFlowChart(false)}
+        />
+      )}
+
+      {showProcessDescription && (
+        <ProcessDescriptionModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          topManagement={topManagement}
+          isCodeId={row.is_code_id}
+          licenseScope={licenseScope}
+          licenseScopeFormat={licenseScopeFormat}
+          licenseScopeRows={licenseScopeRows}
+          processFlowChart={processFlowChart}
+          storedDocument={processDescription}
+          onSave={saveProcessDescription}
+          onClose={() => setShowProcessDescription(false)}
+        />
+      )}
+
+      {showAuthorizationLetter && (
+        <AuthorizationLetterModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          topManagement={topManagement}
+          storedDocument={authorizationLetter}
+          onSave={saveAuthorizationLetter}
+          onClose={() => setShowAuthorizationLetter(false)}
+        />
+      )}
+
+      {showSelfEvaluationForm && (
+        <SelfEvaluationFormModal
+          letterData={buildDeclarationData()}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          markingClause={applicationMeta.marking_clause}
+          rawMaterialDetails={rawMaterialDetails}
+          technicalStaff={technicalStaff}
+          cmpf307={cmpf307}
+          topManagement={topManagement}
+          storedDocument={selfEvaluationForm}
+          onSave={saveSelfEvaluationForm}
+          onClose={() => setShowSelfEvaluationForm(false)}
         />
       )}
 
@@ -2027,6 +2310,8 @@ export function PendingApplicationsSection({
   const [isCodeView, setIsCodeView] = useState<{ id: string; is_number: string | null; revision_year: number | null } | null>(null);
   const [targetDates, setTargetDates] = useState<Record<string, string>>({});
   const [convertedIds, setConvertedIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [convertingId, setConvertingId] = useState<string | null>(null);
+  const [isConverting, startConvert] = useTransition();
 
   const visibleRows = useMemo(() => {
     const base =
@@ -2050,6 +2335,29 @@ export function PendingApplicationsSection({
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const isExpired = variant === "expired_licenses";
+
+  function handleConvertToApplication(row: ApplicationRow) {
+    const label = row.client_name || "this client";
+    if (
+      !window.confirm(
+        `Convert the expired license for ${label} into a new application? The record will move to the Applications tab.`,
+      )
+    ) {
+      return;
+    }
+    setConvertingId(row.id);
+    startConvert(async () => {
+      const res = await convertLicenseToApplication(row.id);
+      setConvertingId(null);
+      if (!res.ok) {
+        window.alert(res.error);
+        return;
+      }
+      setConvertedIds((prev) => new Set(prev).add(row.id));
+      router.refresh();
+    });
+  }
 
   return (
     <>
@@ -2137,25 +2445,28 @@ export function PendingApplicationsSection({
             No applications match your search.
           </p>
         ) : (
-          <table className="dashboard-section-table w-full min-w-[980px] text-sm">
+          <table
+            className={`dashboard-section-table w-full text-sm ${isExpired ? "min-w-[720px]" : "min-w-[980px]"}`}
+          >
             <thead className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/60">
               <tr>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Client Name</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">IS Number</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Start Date</th>
-                <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Target Date</th>
-                {variant === "expired_licenses" && (
+                {!isExpired && (
+                  <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Target Date</th>
+                )}
+                {isExpired && (
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">License Validity</th>
                 )}
-                <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Convert to License</th>
+                {!isExpired && (
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Convert to License</th>
+                )}
                 <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {paginated.map((r) => {
-                const convertMode =
-                  variant === "expired_licenses" ? "update_license" : "convert_application";
-                return (
+              {paginated.map((r) => (
                 <tr key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
                   <td className="px-4 py-3 text-left">
                     <button
@@ -2182,46 +2493,63 @@ export function PendingApplicationsSection({
                   <td className="px-4 py-3 text-xs text-zinc-700 dark:text-zinc-300">
                     {formatDate(r.created_at)}
                   </td>
-                  <td className="px-4 py-3">
-                    <TargetDateCell
-                      projectId={r.id}
-                      targetDate={targetDates[r.id] ?? r.target_date}
-                      source={r.source}
-                      onUpdate={(id, date) => setTargetDates((prev) => ({ ...prev, [id]: date }))}
-                    />
-                  </td>
-                  {variant === "expired_licenses" && (
+                  {!isExpired && (
+                    <td className="px-4 py-3">
+                      <TargetDateCell
+                        projectId={r.id}
+                        targetDate={targetDates[r.id] ?? r.target_date}
+                        source={r.source}
+                        onUpdate={(id, date) => setTargetDates((prev) => ({ ...prev, [id]: date }))}
+                      />
+                    </td>
+                  )}
+                  {isExpired && (
                     <td className="px-4 py-3 text-xs text-zinc-700 dark:text-zinc-300">
                       {formatDate(r.license_validity_date)}
                     </td>
                   )}
+                  {!isExpired && (
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setConvertRow(r)}
+                        className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                        </svg>
+                        Convert
+                      </button>
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setConvertRow(r)}
-                      className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                      </svg>
-                      {convertMode === "update_license" ? "Renew" : "Convert"}
-                    </button>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <button
-                      type="button"
-                      onClick={() => setApplyRow(r)}
-                      className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 dark:bg-sky-700 dark:hover:bg-sky-600"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                      </svg>
-                      Apply
-                    </button>
+                    {isExpired ? (
+                      <button
+                        type="button"
+                        onClick={() => handleConvertToApplication(r)}
+                        disabled={isConverting && convertingId === r.id}
+                        className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                        {isConverting && convertingId === r.id ? "Converting…" : "Convert into Application"}
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => setApplyRow(r)}
+                        className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 dark:bg-sky-700 dark:hover:bg-sky-600"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                        </svg>
+                        Apply
+                      </button>
+                    )}
                   </td>
                 </tr>
-              );
-              })}
+              ))}
             </tbody>
           </table>
         )}
@@ -2231,7 +2559,7 @@ export function PendingApplicationsSection({
     {viewRow && <ClientSnapshotModal row={viewRow} onClose={() => setViewRow(null)} />}
     {isCodeView && <IsCodeViewModal isCodeId={isCodeView.id} isNumber={isCodeView.is_number} revisionYear={isCodeView.revision_year} onClose={() => setIsCodeView(null)} />}
     {applyRow && <ApplicationFormModal row={applyRow} onClose={() => setApplyRow(null)} />}
-    {convertRow && (
+    {convertRow && !isExpired && (
       <ConvertToLicenseModal
         projectId={convertRow.id}
         clientName={convertRow.client_name}
@@ -2240,7 +2568,7 @@ export function PendingApplicationsSection({
             ? `${convertRow.is_number}${convertRow.is_revision_year ? `: ${convertRow.is_revision_year}` : ""}`
             : "—"
         }
-        mode={variant === "expired_licenses" ? "update_license" : "convert_application"}
+        mode="convert_application"
         source={convertRow.source ?? "bis_projects"}
         onClose={() => setConvertRow(null)}
         onConverted={() => {

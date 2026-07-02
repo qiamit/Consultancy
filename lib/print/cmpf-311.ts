@@ -9,6 +9,7 @@ import type { Cmpf311Stored } from "@/lib/cmpf-311";
 import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { buildClassSignatoryBlockHtml } from "@/lib/print/signatory-signature";
 
 export type Cmpf311LetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -17,6 +18,8 @@ export type Cmpf311LetterData = Omit<
   applicationNumber: string;
   dateOfApplication: string;
   dateOfInspection: string;
+  firmRepName: string;
+  firmRepDesignation: string;
   document: Cmpf311Stored;
 };
 
@@ -40,56 +43,50 @@ function formatApplicationNo(raw: string): string {
   return formatApplicationNumberDisplay(v);
 }
 
-function formatAddressWithIndia(address: string, city: string, state: string): string {
-  const parts = [address.trim(), city.trim(), state.trim()].filter(Boolean);
-  const line = parts.length > 0 ? parts.join(", ") : "______________________________";
-  return `${esc(line)}, INDIA`;
-}
-
 function formatBisBranchLine(branchName: string, state: string): string {
   const branch = branchName.trim() || "________________";
   const st = state.trim() || "________________";
   return `${esc(branch)}, ${esc(st)}, INDIA`;
 }
 
-function buildHeaderGridHtml(data: Cmpf311LetterData): string {
+function buildFormHeaderHtml(data: Cmpf311LetterData): string {
   const appNo = formatApplicationNo(data.applicationNumber);
-  const dateApp = formatMetaDate(data.dateOfApplication);
-  const dateInsp = formatMetaDate(data.dateOfInspection);
-  const isCode = esc(data.isNumber) || "—";
-  const applicant = esc(data.companyName) || "—";
-
-  const cell =
-    "border:1px solid #111;padding:4px 6px;font-size:10px;vertical-align:middle;line-height:1.35;";
-  const lbl = `${cell}font-weight:700;width:18%;background:#eef2f7;`;
-  const val = `${cell}font-weight:600;`;
+  const letterDate = formatMetaDate(data.dateOfApplication);
 
   return `
 <div class="cmpf-form-id">CMPF - 311</div>
 <h1 class="cmpf-title">Acceptance of Scheme of Inspection &amp; Testing</h1>
-<table class="cmpf-header-grid" style="width:100%;border-collapse:collapse;margin-bottom:4px;">
-  <tr>
-    <td style="${lbl}">Applicant Name</td>
-    <td style="${val}" colspan="3">${applicant}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">Applicant Address</td>
-    <td style="${val}" colspan="3">${formatAddressWithIndia(data.address, data.city, data.bisBranchState)}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">Application No.</td>
-    <td style="${val}">${esc(appNo)}</td>
-    <td style="${lbl}width:22%;">Date of Application</td>
-    <td style="${val}">${esc(dateApp)}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">IS Code</td>
-    <td style="${val}">${isCode}</td>
-    <td style="${lbl}">Date of Inspection</td>
-    <td style="${val}">${esc(dateInsp)}</td>
-  </tr>
-</table>
-<div class="cmpf-page-indicator">Page 01 of 01</div>`;
+<div class="cmpf-meta-block">
+  <div><strong>Date:</strong> ${esc(letterDate)}</div>
+  <div><strong>Application No.:</strong> ${esc(appNo)}</div>
+</div>`;
+}
+
+function buildPageIndicatorHtml(): string {
+  return `<div class="cmpf-page-indicator">Page 01 of 01</div>`;
+}
+
+export function cmpf311DeclarationPlainText(
+  licenceFor: string,
+  productManualNo: string,
+): string {
+  return `We hereby undertake that, upon grant of a licence for ${licenceFor}, we shall faithfully implement the Scheme of Inspection and Testing as specified in Product Manual No. ${productManualNo}, and shall maintain all prescribed records in accordance with the requirements of the Bureau of Indian Standards.`;
+}
+
+function buildSignatoryBlockHtml(data: Cmpf311LetterData): string {
+  const sigName = esc(data.firmRepName) || esc(data.contactPerson) || "—";
+  const sigDesig = esc(data.firmRepDesignation) || "—";
+
+  return buildClassSignatoryBlockHtml({
+    blockClass: "cmpf-signatory-block",
+    forClass: "cmpf-signatory-for",
+    sigWrapClass: "cmpf-signatory-sig",
+    lineClass: "cmpf-signatory-line",
+    companyName: esc(data.companyName),
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  });
 }
 
 function buildBodyHtml(data: Cmpf311LetterData): string {
@@ -99,49 +96,33 @@ function buildBodyHtml(data: Cmpf311LetterData): string {
     ? esc(formatMetaDate(doc.reference_letter_date))
     : "________________";
   const licenceFor = esc(doc.licence_for_standard) || esc(data.isNumber) || "________________";
-  const sitDoc = esc(doc.sit_document_ref) || "________________";
-  const place = esc(data.city) || "________________";
-  const dateVal = formatMetaDate(data.dateOfInspection);
-  const sigName = esc(doc.signatory_name) || esc(data.contactPerson) || "—";
-  const sigDesig = esc(doc.signatory_designation) || "—";
+  const productManualNo = esc(doc.sit_document_ref) || "________________";
 
   return `
 <div class="cmpf-to-block">
   To<br/>
   The Director &amp; Head<br/>
-  Bureau of Indian Standard<br/>
+  Bureau of Indian Standards<br/>
   ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
 </div>
 
 <p class="cmpf-ref-line">
-  This is with reference to your letter No. <strong>${refNo}</strong> &nbsp;&nbsp;&nbsp; Dated <strong>${refDate}</strong>
+  This has reference to your letter No. <strong>${refNo}</strong> dated <strong>${refDate}</strong>.
 </p>
 
 <p class="cmpf-declaration">
-  We hereby agree that after a licence is granted to us for according to <strong>${licenceFor}</strong> we shall follow the scheme of Testing and Inspection (Doc: <strong>${sitDoc}</strong>) strictly and maintain all records properly.
+  We hereby undertake that, upon grant of a licence for <strong>${licenceFor}</strong>, we shall faithfully implement the Scheme of Inspection and Testing as specified in Product Manual No. <strong>${productManualNo}</strong>, and shall maintain all prescribed records in accordance with the requirements of the Bureau of Indian Standards.
 </p>
 
-<table style="width:100%;border-collapse:collapse;margin-top:36px;">
-  <tr>
-    <td style="width:50%;vertical-align:top;font-size:10px;line-height:1.8;">
-      <div>Place :- ${place}</div>
-      <div>Date :- ${esc(dateVal)}</div>
-    </td>
-    <td style="width:50%;vertical-align:top;text-align:right;font-size:10px;line-height:1.8;">
-      <div style="margin-top:32px;">Signature</div>
-      <div>Name:- ${sigName}</div>
-      <div>Designation:- ${sigDesig}</div>
-      <div style="margin-top:16px;font-weight:700;">Seal of the Firm</div>
-    </td>
-  </tr>
-</table>`;
+${buildSignatoryBlockHtml(data)}`;
 }
 
 function buildFormBody(data: Cmpf311LetterData): string {
   return `
 <div class="cmpf-sheet">
-  ${buildHeaderGridHtml(data)}
+  ${buildFormHeaderHtml(data)}
   ${buildBodyHtml(data)}
+  ${buildPageIndicatorHtml()}
 </div>`;
 }
 
@@ -152,7 +133,8 @@ export function buildCmpf311Company(data: Cmpf311LetterData): PrintCompanyInfo {
 export function defaultCmpf311PrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
-    show_letterhead: false,
+    orientation: "portrait",
+    show_letterhead: true,
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
@@ -161,12 +143,16 @@ export function defaultCmpf311PrintSettings(): PrintSettings {
 }
 
 export function buildCmpf311Html(data: Cmpf311LetterData, settings: PrintSettings): string {
+  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
       color: #111;
       font-size: 10px;
       position: relative;
+      min-height: ${sheetMinHeight};
+      box-sizing: border-box;
+      padding-bottom: 4mm;
     }
     .cmpf-form-id {
       text-align: right;
@@ -183,10 +169,21 @@ export function buildCmpf311Html(data: Cmpf311LetterData, settings: PrintSetting
       line-height: 1.35;
     }
     .cmpf-page-indicator {
-      text-align: right;
+      position: absolute;
+      right: 0;
+      bottom: 0;
       font-size: 10px;
       font-weight: 600;
-      margin: 2px 0 8px;
+      text-align: right;
+    }
+    .cmpf-meta-block {
+      text-align: right;
+      font-size: 10px;
+      line-height: 1.55;
+      margin: 0 0 10px;
+    }
+    .cmpf-meta-block div + div {
+      margin-top: 4px;
     }
     .cmpf-to-block {
       font-size: 11px;
@@ -198,10 +195,35 @@ export function buildCmpf311Html(data: Cmpf311LetterData, settings: PrintSetting
       font-size: 10px;
     }
     .cmpf-declaration {
-      margin: 0;
+      margin: 0 0 24px;
       font-size: 10px;
       line-height: 1.55;
-      text-align: center;
+      text-align: justify;
+    }
+    .cmpf-signatory-block {
+      margin-top: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      font-size: 10px;
+      line-height: 1.6;
+      text-align: right;
+    }
+    .cmpf-signatory-for {
+      font-weight: 700;
+      text-align: right;
+    }
+    .cmpf-signatory-sig {
+      margin-top: 32px;
+      min-width: 200px;
+      text-align: right;
+    }
+    .cmpf-signatory-line {
+      border-top: 1px solid #94a3b8;
+      padding-top: 2px;
+      font-size: 10px;
+      line-height: 1.35;
+      text-align: right;
     }
   `;
 

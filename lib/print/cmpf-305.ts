@@ -14,6 +14,7 @@ import {
 import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { signatorySignatureOverlayHtml } from "@/lib/print/signatory-signature";
 
 export type Cmpf305LetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -49,10 +50,15 @@ function formatApplicationNo(raw: string): string {
   return formatApplicationNumberDisplay(v);
 }
 
-function formatAddressWithIndia(address: string, city: string, state: string): string {
-  const parts = [address.trim(), city.trim(), state.trim()].filter(Boolean);
-  const line = parts.length > 0 ? parts.join(", ") : "______________________________";
-  return `${esc(line)}, INDIA`;
+export function formatCmpf305ApplicantAddress(address: string): string {
+  const line = (address ?? "").trim();
+  if (!line) return "______________________________, INDIA";
+  if (/\bindia\b/i.test(line)) return line;
+  return `${line}, INDIA`;
+}
+
+function formatApplicantAddress(address: string): string {
+  return esc(formatCmpf305ApplicantAddress(address));
 }
 
 function formatBisBranchLine(branchName: string, state: string): string {
@@ -65,7 +71,7 @@ function padPageNum(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-function buildHeaderGridHtml(data: Cmpf305LetterData, pageNum: number, totalPages: number): string {
+function buildHeaderGridHtml(data: Cmpf305LetterData): string {
   const appNo = formatApplicationNo(data.applicationNumber);
   const dateApp = formatMetaDate(data.dateOfApplication);
   const dateInsp = formatMetaDate(data.dateOfInspection);
@@ -87,7 +93,7 @@ function buildHeaderGridHtml(data: Cmpf305LetterData, pageNum: number, totalPage
   </tr>
   <tr>
     <td style="${lbl}">Applicant Address</td>
-    <td style="${val}" colspan="3">${formatAddressWithIndia(data.address, data.city, data.bisBranchState)}</td>
+    <td style="${val}" colspan="3">${formatApplicantAddress(data.address)}</td>
   </tr>
   <tr>
     <td style="${lbl}">Application No.</td>
@@ -101,8 +107,11 @@ function buildHeaderGridHtml(data: Cmpf305LetterData, pageNum: number, totalPage
     <td style="${lbl}">Date of Inspection</td>
     <td style="${val}">${esc(dateInsp)}</td>
   </tr>
-</table>
-<div class="cmpf-page-indicator">Page ${padPageNum(pageNum)} of ${padPageNum(totalPages)}</div>`;
+</table>`;
+}
+
+function buildPageIndicatorHtml(pageNum: number, totalPages: number): string {
+  return `<div class="cmpf-page-indicator">Page ${padPageNum(pageNum)} of ${padPageNum(totalPages)}</div>`;
 }
 
 function machineryTableColgroup(settings: PrintSettings): string {
@@ -165,37 +174,65 @@ function buildFooterHtml(data: Cmpf305LetterData): string {
   const dateInsp = formatMetaDate(data.dateOfInspection);
 
   const box =
-    "border:1px solid #111;padding:8px 10px;font-size:9px;line-height:1.45;vertical-align:top;width:50%;";
-  const boxBis = `${box}text-align:right;`;
-  const sigLine = "margin-top:14px;font-size:9px;line-height:1.6;";
+    "border:1px solid #111;padding:0;vertical-align:top;width:50%;";
+  const cellInner =
+    "display:flex;flex-direction:column;min-height:200px;height:100%;";
+  const declBlock = "padding:8px 10px 4px;font-size:9px;line-height:1.45;";
+  const sigArea =
+    "flex:1;background:#eef2f7;padding:8px 10px;display:flex;flex-direction:column;min-height:110px;";
+  const sigSpacer = "flex:1;min-height:40px;";
+  const sigLine = "font-size:9px;line-height:1.6;";
 
   return `
 <p class="cmpf-extra-note"><em>Note: Attach Extra Sheet, If Required</em></p>
-<table style="width:100%;border-collapse:collapse;margin-top:6px;">
+<table style="width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed;">
   <tr>
     <td style="${box}">
-      <p style="margin:0 0 8px;text-align:justify;">
-        I hereby declare that the machinery of which details are given overleaf is owned by me and are actually installed in the premises.*
-      </p>
-      <p style="margin:0 0 8px;text-align:justify;">
-        I also declare that in case of grant of licence, I will send prior intimation to BIS whenever any machinery is takenout of the premises of the firm due to any reason.
-      </p>
-      <div style="${sigLine}">
-        <div>Sig. of Firm's Representative :-</div>
-        <div>Name :- ${firmName}</div>
-        <div>Designation :- ${firmDesig}</div>
-        <div>Date :- ${esc(dateInsp)}</div>
+      <div style="${cellInner}">
+        <div style="${declBlock}">
+          <p style="margin:0 0 8px;text-align:justify;">
+            I hereby declare that the machinery of which details are given overleaf is owned by me and are actually installed in the premises.*
+          </p>
+          <p style="margin:0;text-align:justify;">
+            I also declare that in case of grant of licence, I will send prior intimation to BIS whenever any machinery is takenout of the premises of the firm due to any reason.
+          </p>
+        </div>
+        <div style="${sigArea}">
+          <div style="${sigSpacer}"></div>
+          <div style="${sigLine}">
+            <div>Sig. of Firm's Representative :-</div>
+            <div style="position:relative;display:inline-block;min-width:200px;">
+              ${signatorySignatureOverlayHtml(data.signatureImageUrl, {
+                left: "20mm",
+                top: "calc(-50px + 10mm)",
+                right: "auto",
+                maxHeight: "64px",
+                maxWidth: "160px",
+              })}
+              <div style="position:relative;z-index:1;">Name :- ${firmName}</div>
+            </div>
+            <div>Designation :- ${firmDesig}</div>
+            <div>Date :- ${esc(dateInsp)}</div>
+          </div>
+        </div>
       </div>
     </td>
-    <td style="${boxBis}">
-      <p style="margin:0 0 8px;text-align:right;">
-        I have checked and found that Machinery of which details are given overleaf was available during my Inspection
-      </p>
-      <div style="${sigLine}">
-        <div>Sig. of BIS Certification Officer :-</div>
-        <div>Name :- ${bisName}</div>
-        <div>Designation :- ${bisDesig}</div>
-        <div>Date :- ${esc(dateInsp)}</div>
+    <td style="${box}">
+      <div style="${cellInner}">
+        <div style="${declBlock}">
+          <p style="margin:0;text-align:right;">
+            I have checked and found that Machinery of which details are given overleaf was available during my Inspection
+          </p>
+        </div>
+        <div style="${sigArea}">
+          <div style="${sigSpacer}"></div>
+          <div style="${sigLine};text-align:right;">
+            <div>Sig. of BIS Certification Officer :-</div>
+            <div>Name :- ${bisName}</div>
+            <div>Designation :- ${bisDesig}</div>
+            <div>Date :- ${esc(dateInsp)}</div>
+          </div>
+        </div>
       </div>
     </td>
   </tr>
@@ -224,10 +261,11 @@ function buildSinglePageHtml(
 
   return `
 <div class="cmpf-sheet${pageNum > 1 ? " page-break" : ""}">
-  ${buildHeaderGridHtml(data, pageNum, totalPages)}
+  ${buildHeaderGridHtml(data)}
   ${pageNum === 1 ? toBlock : ""}
   ${buildMachineryTableHtml(pageRows, startIndex, settings)}
   ${isLastPage ? buildFooterHtml(data) : ""}
+  ${buildPageIndicatorHtml(pageNum, totalPages)}
 </div>`;
 }
 
@@ -271,6 +309,7 @@ export function defaultCmpf305PrintSettings(): PrintSettings {
 }
 
 export function buildCmpf305Html(data: Cmpf305LetterData, settings: PrintSettings): string {
+  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -278,6 +317,9 @@ export function buildCmpf305Html(data: Cmpf305LetterData, settings: PrintSetting
       font-size: 10px;
       position: relative;
       width: 100%;
+      min-height: ${sheetMinHeight};
+      box-sizing: border-box;
+      padding-bottom: 4mm;
     }
     .cmpf-form-id {
       text-align: right;
@@ -294,10 +336,12 @@ export function buildCmpf305Html(data: Cmpf305LetterData, settings: PrintSetting
       letter-spacing: 0.02em;
     }
     .cmpf-page-indicator {
-      text-align: right;
+      position: absolute;
+      right: 0;
+      bottom: 0;
       font-size: 10px;
       font-weight: 600;
-      margin: 2px 0 8px;
+      text-align: right;
     }
     .cmpf-to-block {
       font-size: 11px;

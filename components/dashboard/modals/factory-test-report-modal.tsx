@@ -11,6 +11,8 @@ import type { ManufacturingScopeDeclarationData } from "@/lib/print/manufacturin
 import {
   buildFactoryTestReportHtml,
   defaultFactoryTestReportPrintSettings,
+  ftrPrintPageCount,
+  ftrPrintPaginationOptionsFromSettings,
   iframeSizeForFactoryTestReportPrintSettings,
   type FactoryTestReportLetterData,
   type FactoryTestReportPrintSettings,
@@ -287,6 +289,14 @@ export function FactoryTestReportModal({
 
   const iframeSize = iframeSizeForFactoryTestReportPrintSettings(printSettings);
 
+  const previewPageCount = useMemo(() => {
+    if (!activeReport) return 1;
+    return ftrPrintPageCount(
+      activeReport.test_rows,
+      ftrPrintPaginationOptionsFromSettings(printSettings),
+    );
+  }, [activeReport, printSettings]);
+
   function patchPrintSettings(patch: Partial<FactoryTestReportPrintSettings>) {
     setPrintSettings((prev) => ({ ...prev, ...patch }));
   }
@@ -450,6 +460,17 @@ export function FactoryTestReportModal({
           </button>
           <button
             type="button"
+            onClick={() => toggleSettingsPanel("page")}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+              settingsPanel === "page"
+                ? "border-indigo-500 bg-indigo-600 text-white"
+                : "border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+            }`}
+          >
+            Page Settings
+          </button>
+          <button
+            type="button"
             onClick={onClose}
             className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
             aria-label="Close"
@@ -590,7 +611,7 @@ export function FactoryTestReportModal({
               <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
                 Print Preview
                 {activeReport
-                  ? ` — FTR ${reports.findIndex((r) => r.id === activeReport.id) + 1}`
+                  ? ` — FTR ${reports.findIndex((r) => r.id === activeReport.id) + 1} (${previewPageCount} page${previewPageCount === 1 ? "" : "s"})`
                   : ""}
               </p>
             </div>
@@ -598,10 +619,10 @@ export function FactoryTestReportModal({
               <iframe
                 ref={iframeRef}
                 title="Factory Test Report preview"
-                className="mx-auto max-w-full border-0 bg-white shadow-2xl"
+                className="mx-auto max-w-full border-0 bg-slate-400 shadow-2xl"
                 style={{
                   width: `min(100%, ${iframeSize.widthMm}mm)`,
-                  minHeight: `${iframeSize.heightMm}mm`,
+                  minHeight: `${iframeSize.heightMm * previewPageCount + Math.max(0, previewPageCount - 1) * 8}mm`,
                 }}
               />
             </div>

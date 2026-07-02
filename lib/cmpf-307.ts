@@ -56,6 +56,11 @@ export function brandRowHasContent(row: Cmpf307BrandStored): boolean {
   );
 }
 
+/** Rows included in the CMPF 307 print table (must have a brand / trade mark name). */
+export function brandRowsForPrintTable(brands: Cmpf307BrandStored[]): Cmpf307BrandStored[] {
+  return brands.filter((row) => row.brand_name.trim().length > 0);
+}
+
 export function documentHasContent(doc: Cmpf307Stored): boolean {
   return (
     doc.brands_without_mark_reasons.trim().length > 0 ||
@@ -124,18 +129,14 @@ export function paginateBrandRows(
   brands: Cmpf307BrandStored[],
   rowsPerPage = CMPF307_ROWS_PER_PAGE,
 ): Cmpf307BrandStored[][] {
-  const visible = brands.filter(brandRowHasContent);
+  const visible = brandRowsForPrintTable(brands);
   if (visible.length === 0) {
-    return [Array.from({ length: rowsPerPage }, () => defaultCmpf307BrandEntry())];
+    return [[]];
   }
 
   const pages: Cmpf307BrandStored[][] = [];
   for (let i = 0; i < visible.length; i += rowsPerPage) {
-    const slice = visible.slice(i, i + rowsPerPage);
-    while (slice.length < rowsPerPage) {
-      slice.push(defaultCmpf307BrandEntry());
-    }
-    pages.push(slice);
+    pages.push(visible.slice(i, i + rowsPerPage));
   }
   return pages;
 }

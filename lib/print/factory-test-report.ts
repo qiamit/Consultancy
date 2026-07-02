@@ -1,12 +1,16 @@
-import { buildPrintDocument } from "@/lib/print/engine";
+import { buildLetterheadHtml, buildPrintDocument } from "@/lib/print/engine";
 import {
   buildManufacturingScopeCompany,
   defaultDeclarationPrintSettings,
   iframeSizeForPrintSettings,
   type ManufacturingScopeDeclarationData,
 } from "@/lib/print/manufacturing-scope-declaration";
-import type { FactoryTestReportStored, FtrTestRowStored } from "@/lib/factory-test-report";
-import { normalizeFtrRemark, sortFtrTestRowsByClause } from "@/lib/factory-test-report";
+import type { FactoryTestReportStored, FtrTestRowStored, FtrPrintPaginationOptions } from "@/lib/factory-test-report";
+import {
+  normalizeFtrRemark,
+  paginateFtrPrintTestRows,
+  sortFtrTestRowsByClause,
+} from "@/lib/factory-test-report";
 import { formatFtrObservedForDisplay } from "@/lib/ftr-observed-formula";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate, parseToDate } from "@/lib/format-date";
@@ -15,6 +19,18 @@ export type FactoryTestReportPrintSettings = PrintSettings & {
   show_witnessed_by: boolean;
   show_tested_by: boolean;
 };
+
+export function ftrPrintPaginationOptionsFromSettings(
+  settings: FactoryTestReportPrintSettings,
+): FtrPrintPaginationOptions {
+  return {
+    showLetterhead: settings.show_letterhead,
+    showWitnessedBy: settings.show_witnessed_by,
+    showTestedBy: settings.show_tested_by,
+    marginTopMm: settings.margin_top,
+    marginBottomMm: settings.margin_bottom,
+  };
+}
 
 export type FactoryTestReportLetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -82,24 +98,25 @@ function stackedCell(
   return `<div style="line-height:1.3;${alignStyle}">${primaryText}</div>${secondaryBlock}`;
 }
 
-function buildTestTableHtml(rows: FtrTestRowStored[]): string {
+function buildTestTableHtmlFromRows(rows: FtrTestRowStored[]): string {
+  if (rows.length === 0) return "";
+
   const th =
     "padding:4px 6px;border:1px solid #94a3b8;background:#e2e8f0;font-size:9px;font-weight:700;text-align:center;vertical-align:middle;line-height:1.3;";
   const td =
     "padding:4px 6px;border:1px solid #cbd5e1;font-size:9px;vertical-align:middle;line-height:1.35;";
 
-  const sortedTests = sortFtrTestRowsByClause(rows);
-
-  let body = "";
-  for (const row of sortedTests) {
-    body += `<tr>
+  const body = rows
+    .map(
+      (row) => `<tr>
       <td style="${td}">${stackedCell(row.test_name, row.unit)}</td>
       <td style="${td}text-align:center;">${stackedCell(row.is_reference, row.clause_no, "center")}</td>
       <td style="${td}text-align:center;">${esc(row.specified_requirements) || "—"}</td>
       <td style="${td}text-align:center;font-weight:600;">${esc(formatFtrObservedForDisplay(row.observed_value, row.observed_decimals)) || "—"}</td>
       <td style="${td}text-align:center;">${esc(normalizeFtrRemark(row.remark))}</td>
-    </tr>`;
-  }
+    </tr>`,
+    )
+    .join("");
 
   return `<table style="width:100%;border-collapse:collapse;margin-top:8px;">
     <thead>
@@ -115,46 +132,20 @@ function buildTestTableHtml(rows: FtrTestRowStored[]): string {
   </table>`;
 }
 
-function buildSignaturesHtml(
-  data: FactoryTestReportLetterData,
-  settings: FactoryTestReportPrintSettings,
-): string {
-  const left =
-    settings.show_witnessed_by
-      ? `<div class="ftr-sig-block ftr-sig-left">
-      <div class="sig-title">Witnessed By</div>
-      <div class="sig-space"></div>
-      <div class="sig-name">${esc(data.inspectionOfficerName) || "—"}</div>
-      ${data.inspectionOfficerDesignation.trim() ? `<div class="sig-designation">${esc(data.inspectionOfficerDesignation)}</div>` : ""}
-      <div class="sig-org">Bureau of Indian Standards</div>
-    </div>`
-      : "";
-
-  const right =
-    settings.show_tested_by
-      ? `<div class="ftr-sig-block ftr-sig-right">
-      <div class="sig-title">Tested By</div>
-      <div class="sig-space"></div>
-      <div class="sig-name">${esc(data.qualityControlInchargeName) || "—"}</div>
-      ${data.qualityControlInchargeDesignation.trim() ? `<div class="sig-designation">${esc(data.qualityControlInchargeDesignation)}</div>` : ""}
-      <div class="sig-org">${esc(data.companyName) || "—"}</div>
-    </div>`
-      : "";
-
-  if (!left && !right) return "";
-  return `<div class="ftr-signatures">${left}${right}</div>`;
+function buildTestTableHtml(rows: FtrTestRowStored[]): string {
+  return buildTestTableHtmlFromRows(sortFtrTestRowsByClause(rows));
 }
 
-function buildSingleReportHtml(
-  report: FactoryTestReportStored,
-  index: number,
-  data: FactoryTestReportLetterData,
-  settings: FactoryTestReportPrintSettings,
-): string {
-  return `
-    <div class="ftr-sheet${index > 0 ? " page-break" : ""}">
-      <h1 class="ftr-title">Factory Test Report</h1>
-      <table class="ftr-meta">
+function padPageNum(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+function buildPageIndicatorHtml(pageNum: number, totalPages: number): string {
+  return `<div class="ftr-page-indicator">Page ${padPageNum(pageNum)} of ${padPageNum(totalPages)}</div>`;
+}
+
+function buildMetaTableHtml(report: FactoryTestReportStored): string {
+  return `<table class="ftr-meta">
         ${fieldRowPair(
           "Application No.",
           report.application_number,
@@ -192,10 +183,74 @@ function buildSingleReportHtml(
           "Date of Testing Completion",
           report.date_of_testing_completion,
         )}
-      </table>
-      ${buildTestTableHtml(report.test_rows)}
-      ${buildSignaturesHtml(data, settings)}
+      </table>`;
+}
+
+function buildSignaturesHtml(
+  data: FactoryTestReportLetterData,
+  settings: FactoryTestReportPrintSettings,
+): string {
+  const left =
+    settings.show_witnessed_by
+      ? `<div class="ftr-sig-block ftr-sig-left">
+      <div class="sig-title">Witnessed By</div>
+      <div class="sig-space"></div>
+      <div class="sig-name">${esc(data.inspectionOfficerName) || "—"}</div>
+      ${data.inspectionOfficerDesignation.trim() ? `<div class="sig-designation">${esc(data.inspectionOfficerDesignation)}</div>` : ""}
+      <div class="sig-org">Bureau of Indian Standards</div>
+    </div>`
+      : "";
+
+  const right =
+    settings.show_tested_by
+      ? `<div class="ftr-sig-block ftr-sig-right">
+      <div class="sig-title">Tested By</div>
+      <div class="sig-space"></div>
+      <div class="sig-name">${esc(data.qualityControlInchargeName) || "—"}</div>
+      ${data.qualityControlInchargeDesignation.trim() ? `<div class="sig-designation">${esc(data.qualityControlInchargeDesignation)}</div>` : ""}
+      <div class="sig-org">${esc(data.companyName) || "—"}</div>
+    </div>`
+      : "";
+
+  if (!left && !right) return "";
+  return `<div class="ftr-signatures">${left}${right}</div>`;
+}
+
+function buildSingleReportHtml(
+  report: FactoryTestReportStored,
+  reportIndex: number,
+  data: FactoryTestReportLetterData,
+  settings: FactoryTestReportPrintSettings,
+  letterheadHtml: string,
+): string {
+  const paginationOptions = ftrPrintPaginationOptionsFromSettings(settings);
+  const testPages = paginateFtrPrintTestRows(report.test_rows, paginationOptions);
+  const totalPages = testPages.length;
+
+  return testPages
+    .map((pageRows, pageIndex) => {
+      const isFirstPage = pageIndex === 0;
+      const needsBreak = (reportIndex > 0 && isFirstPage) || pageIndex > 0;
+      const letterheadBlock = letterheadHtml
+        ? `<div class="ftr-sheet-letterhead">${letterheadHtml}</div>`
+        : "";
+
+      return `
+    <div class="ftr-sheet${needsBreak ? " ftr-page-break" : ""}">
+      <div class="ftr-sheet-inner">
+        ${letterheadBlock}
+        <div class="ftr-sheet-body">
+          ${isFirstPage ? `<h1 class="ftr-title">Factory Test Report</h1>${buildMetaTableHtml(report)}` : ""}
+          ${buildTestTableHtmlFromRows(pageRows)}
+        </div>
+        <div class="ftr-sheet-footer">
+          ${buildSignaturesHtml(data, settings)}
+          ${buildPageIndicatorHtml(pageIndex + 1, totalPages)}
+        </div>
+      </div>
     </div>`;
+    })
+    .join("");
 }
 
 export function buildFactoryTestReportHtml(
@@ -209,21 +264,73 @@ export function buildFactoryTestReportHtml(
       r.test_rows.length > 0,
   );
 
+  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const company = buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  const letterheadHtml = settings.show_letterhead
+    ? buildLetterheadHtml(company, settings)
+    : "";
+
   const body =
     reports.length > 0
-      ? reports.map((r, i) => buildSingleReportHtml(r, i, data, settings)).join("")
+      ? reports
+          .map((r, i) => buildSingleReportHtml(r, i, data, settings, letterheadHtml))
+          .join("")
       : `<p style="text-align:center;color:#64748b;padding:40px;">No factory test reports. Add samples in Sample for OSL / PI first.</p>`;
 
   const styles = `
-    .ftr-sheet { font-family: Arial, Helvetica, sans-serif; color: #111; font-size: 10px; }
+    .ftr-sheet {
+      font-family: Arial, Helvetica, sans-serif;
+      color: #111;
+      font-size: 10px;
+      position: relative;
+      box-sizing: border-box;
+      height: ${sheetMinHeight};
+      min-height: ${sheetMinHeight};
+      display: flex;
+      flex-direction: column;
+      page-break-after: always;
+      break-after: page;
+    }
+    .ftr-sheet:last-of-type {
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .ftr-sheet-inner {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 100%;
+      height: 100%;
+    }
+    .ftr-sheet-letterhead .lh-wrap {
+      margin-bottom: 6px;
+    }
+    .ftr-sheet-body {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    .ftr-sheet-footer {
+      flex-shrink: 0;
+      margin-top: auto;
+      position: relative;
+      padding-bottom: 14px;
+    }
     .ftr-title { text-align: center; font-size: 16px; font-weight: 700; margin: 0 0 12px; }
+    .ftr-page-indicator {
+      position: absolute;
+      right: 0;
+      bottom: 0;
+      font-size: 10px;
+      font-weight: 600;
+      text-align: right;
+    }
     .ftr-meta { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
     .ftr-meta .lbl { width: 22%; font-weight: 600; padding: 3px 4px; vertical-align: top; }
     .ftr-meta .lbl.right { padding-left: 16px; }
     .ftr-meta .sep { width: 2%; text-align: center; padding: 3px 2px; }
     .ftr-meta .val { padding: 3px 4px; vertical-align: top; }
     .ftr-meta .val.ftr-val-bold { font-weight: 700; }
-    .ftr-signatures { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; margin-top: 32px; width: 100%; }
+    .ftr-signatures { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; margin-top: 12px; width: 100%; }
     .ftr-sig-block { flex: 0 0 42%; max-width: 42%; }
     .ftr-sig-left { text-align: left; margin-right: auto; }
     .ftr-sig-right { text-align: right; margin-left: auto; }
@@ -232,22 +339,43 @@ export function buildFactoryTestReportHtml(
     .sig-name { font-size: 10px; font-weight: 600; line-height: 1.4; }
     .sig-designation { font-size: 9px; color: #475569; line-height: 1.35; margin-top: 2px; }
     .sig-org { font-size: 9px; font-weight: 700; margin-top: 4px; line-height: 1.35; }
-    .page-break { page-break-before: always; }
+    .ftr-page-break { page-break-before: always; break-before: page; }
+    @media screen {
+      body {
+        background: #94a3b8;
+      }
+      .doc-page {
+        background: transparent;
+      }
+      .ftr-sheet {
+        margin-bottom: 20px;
+        background: #fff;
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.18);
+      }
+      .ftr-page-break {
+        margin-top: 4px;
+      }
+    }
   `;
 
   return buildPrintDocument({
     title: "Factory Test Report",
     bodyHtml: body,
     extraStyles: styles,
-    settings,
-    company: buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    settings: { ...settings, show_letterhead: false, show_page_numbers: false },
+    company,
   });
 }
+
+export { ftrPrintPageCount } from "@/lib/factory-test-report";
 
 export function defaultFactoryTestReportPrintSettings(): FactoryTestReportPrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
-    orientation: "landscape",
+    orientation: "portrait",
+    show_letterhead: true,
+    show_page_numbers: false,
+    show_footer_line: false,
     show_witnessed_by: true,
     show_tested_by: true,
   };
@@ -256,5 +384,5 @@ export function defaultFactoryTestReportPrintSettings(): FactoryTestReportPrintS
 export function iframeSizeForFactoryTestReportPrintSettings(
   settings: FactoryTestReportPrintSettings,
 ) {
-  return iframeSizeForPrintSettings({ ...settings, orientation: "landscape" });
+  return iframeSizeForPrintSettings(settings);
 }

@@ -14,7 +14,9 @@ import {
 } from "@/lib/dropdown-keys";
 import {
   isApplicationProjectKind,
+  isLicenseProjectKind,
   licenseProjectKindDbValue,
+  applicationProjectKindDbValue,
 } from "@/lib/bis-project-kind";
 import { createClient } from "@/lib/supabase/server";
 
@@ -820,5 +822,53 @@ export async function updateBisProjectLicenseDetails(
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/bis-projects");
+  return { ok: true };
+}
+
+/** Convert an expired / existing license row into a fresh application. */
+export async function convertLicenseToApplication(
+  projectId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = projectId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid project" };
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("bis_projects")
+    .select("project_kind")
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!existing) return { ok: false, error: "Project not found." };
+  if (isApplicationProjectKind(existing.project_kind)) {
+    return { ok: false, error: "This record is already an application." };
+  }
+  if (!isLicenseProjectKind(existing.project_kind)) {
+    return { ok: false, error: "Only license records can be converted to an application." };
+  }
+
+  const applicationKind = await applicationProjectKindDbValue(supabase);
+
+  const { error } = await supabase
+    .from("bis_projects")
+    .update({
+      project_kind: applicationKind,
+      license_validity_date: null,
+      cm_l_digits: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/bis-new-applications");
   return { ok: true };
 }

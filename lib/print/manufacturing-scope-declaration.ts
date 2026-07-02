@@ -11,6 +11,8 @@ import {
   type PrintSettings,
 } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
+import { signatorySignatureOverlayHtml } from "@/lib/print/signatory-signature";
 
 export type ManufacturingScopeDeclarationData = {
   companyName: string;
@@ -29,6 +31,11 @@ export type ManufacturingScopeDeclarationData = {
   bisBranchState: string;
   bisBranchCountry: string;
   inspectionDate: string;
+  applicationNumber?: string;
+  signatoryName?: string;
+  signatoryDesignation?: string;
+  /** Top Management Sr 1 signature when apply-on-documents is Yes. */
+  signatureImageUrl?: string;
 };
 
 function formatBisBranchLine(
@@ -48,6 +55,12 @@ function formatInspectionDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "";
   return formatDisplayDate(raw, "");
+}
+
+function formatApplicationNo(raw: string | undefined): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
 }
 
 function esc(s: string): string {
@@ -93,6 +106,11 @@ function buildDeclarationBody(data: ManufacturingScopeDeclarationData): string {
     data.bisBranchCountry,
   );
   const inspectionDate = formatInspectionDate(data.inspectionDate);
+  const dateLabel = inspectionDate ? esc(inspectionDate) : "_______________________";
+  const applicationNo = formatApplicationNo(data.applicationNumber);
+  const sigName = esc(data.signatoryName ?? "") || esc(data.contactPerson) || "—";
+  const sigDesig = esc(data.signatoryDesignation ?? "") || "—";
+  const signatureOverlay = signatorySignatureOverlayHtml(data.signatureImageUrl);
 
   return `
 <div style="text-align:center;margin-bottom:18px;">
@@ -110,7 +128,8 @@ function buildDeclarationBody(data: ManufacturingScopeDeclarationData): string {
       ${esc(bisBranchLine)}
     </div>
     <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
-      <strong>Date:</strong> ${inspectionDate ? esc(inspectionDate) : "_______________________"}
+      <div><strong>Date:</strong> ${dateLabel}</div>
+      <div style="margin-top:4px;"><strong>Application No.:</strong> ${esc(applicationNo)}</div>
     </div>
   </div>
 
@@ -139,17 +158,14 @@ function buildDeclarationBody(data: ManufacturingScopeDeclarationData): string {
     We undertake to inform BIS of any change in the manufacturing scope covered under the licence.
   </p>
 
-  <div style="margin-top:36px;display:table;width:100%;">
-    <div style="display:table-cell;width:50%;vertical-align:top;">
-      <div>Place: ${data.city.trim() ? esc(data.city.trim()) : "_______________________"}</div>
-    </div>
-    <div style="display:table-cell;width:50%;vertical-align:top;text-align:right;">
+  <div style="margin-top:36px;text-align:right;">
       <div style="margin-top:24px;font-weight:700;">For ${esc(data.companyName)}</div>
-      <div style="margin-top:48px;border-top:1px solid #94a3b8;display:inline-block;min-width:180px;padding-top:6px;font-size:11px;">
-        Authorised Signatory
+      <div style="position:relative;margin-top:32px;display:inline-block;min-width:200px;text-align:right;">
+        ${signatureOverlay}
+        <div style="position:relative;z-index:1;border-top:1px solid #94a3b8;padding-top:6px;min-width:180px;"></div>
+        <div style="margin-top:8px;font-size:11px;text-align:right;"><strong>Name:</strong> ${sigName}</div>
+        <div style="margin-top:4px;font-size:11px;text-align:right;"><strong>Designation:</strong> ${sigDesig}</div>
       </div>
-      ${data.contactPerson ? `<div style="margin-top:4px;font-size:10px;color:#64748b;">(${esc(data.contactPerson)})</div>` : ""}
-    </div>
   </div>
 </div>`;
 }

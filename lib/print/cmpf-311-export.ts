@@ -1,13 +1,14 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   Packer,
   Paragraph,
   TextRun,
 } from "docx";
-import { buildWorkbookBuffer } from "@/lib/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import type { Cmpf311LetterData } from "@/lib/print/cmpf-311";
+import { cmpf311DeclarationPlainText } from "@/lib/print/cmpf-311";
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
 
@@ -57,9 +58,10 @@ function plainParagraph(text: string, centered = false): Paragraph {
 
 async function buildCmpf311Docx(data: Cmpf311LetterData): Promise<Document> {
   const doc = data.document;
-  const addressParts = [data.address, data.city, data.bisBranchState].filter((p) => p.trim());
-  const addressLine = addressParts.length > 0 ? `${addressParts.join(", ")}, INDIA` : "—";
   const licenceFor = doc.licence_for_standard || data.isNumber || "—";
+  const productManualNo = doc.sit_document_ref || "—";
+  const sigName = data.firmRepName || data.contactPerson || "—";
+  const sigDesig = data.firmRepDesignation || "—";
 
   const children: Paragraph[] = [
     new Paragraph({
@@ -71,20 +73,44 @@ async function buildCmpf311Docx(data: Cmpf311LetterData): Promise<Document> {
       spacing: { after: 200 },
       children: [bodyRun("Acceptance of Scheme of Inspection & Testing", true)],
     }),
-    plainParagraph(`Applicant Name: ${data.companyName}`),
-    plainParagraph(`Applicant Address: ${addressLine}`),
-    plainParagraph(`Application No.: ${formatApplicationNo(data.applicationNumber)}`),
-    plainParagraph(`IS Code: ${data.isNumber || "—"}`),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [bodyRun("Page 01 of 01", true)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 40 },
+      children: [bodyRun(`Date: ${formatMetaDate(data.dateOfApplication)}`)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 120 },
+      children: [bodyRun(`Application No.: ${formatApplicationNo(data.applicationNumber)}`)],
+    }),
     plainParagraph(
       `Reference Letter No.: ${doc.reference_letter_no || "—"}  Dated: ${formatMetaDate(doc.reference_letter_date)}`,
     ),
     plainParagraph(
-      `We hereby agree that after a licence is granted to us for according to ${licenceFor} we shall follow the scheme of Testing and Inspection (Doc: ${doc.sit_document_ref || "—"}) strictly and maintain all records properly.`,
-      true,
+      cmpf311DeclarationPlainText(licenceFor, productManualNo),
     ),
-    plainParagraph(
-      `Place: ${data.city || "—"}\nDate: ${formatMetaDate(data.dateOfInspection)}\nName: ${doc.signatory_name || data.contactPerson || "—"}\nDesignation: ${doc.signatory_designation || "—"}`,
-    ),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 360, after: 0 },
+      children: [bodyRun(`For ${data.companyName || "—"}`, true)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 320, after: 0 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
+      },
+      children: [bodyRun(`Name: ${sigName}`)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`)],
+    }),
   ];
 
   return new Document({ sections: [{ properties: {}, children }] });
@@ -94,40 +120,7 @@ export async function downloadCmpf311Word(
   data: Cmpf311LetterData,
   _settings: PrintSettings,
 ): Promise<void> {
-  const doc = await buildCmpf311Docx(data);
-  const blob = await Packer.toBlob(doc);
+  const docx = await buildCmpf311Docx(data);
+  const blob = await Packer.toBlob(docx);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
-}
-
-export async function downloadCmpf311Excel(data: Cmpf311LetterData): Promise<void> {
-  const doc = data.document;
-  const rows: (string | number)[][] = [
-    ["Acceptance of Scheme of Inspection & Testing (CMPF - 311)"],
-    [],
-    ["Applicant Name", data.companyName],
-    ["Application No.", formatApplicationNo(data.applicationNumber)],
-    ["IS Code", data.isNumber || "—"],
-    ["Reference Letter No.", doc.reference_letter_no || "—"],
-    ["Reference Letter Date", formatMetaDate(doc.reference_letter_date)],
-    ["Licence For (Standard)", doc.licence_for_standard || data.isNumber || "—"],
-    ["SIT Document Ref (Doc:)", doc.sit_document_ref || "—"],
-    ["Signatory Name", doc.signatory_name || data.contactPerson || "—"],
-    ["Signatory Designation", doc.signatory_designation || "—"],
-  ];
-
-  const buffer = await buildWorkbookBuffer([
-    {
-      name: "CMPF 311",
-      rows,
-      cols: [{ wch: 28 }, { wch: 40 }],
-      merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }],
-    },
-  ]);
-
-  triggerBlobDownload(
-    new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-    `${exportFilenameBase(data)}.xlsx`,
-  );
 }

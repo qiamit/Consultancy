@@ -24,6 +24,7 @@ import type { TechnicalStaffStored } from "@/lib/technical-staff";
 import { rowHasContent } from "@/lib/technical-staff";
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 24;
@@ -36,6 +37,12 @@ function formatInspectionDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "N/A";
   return formatDisplayDate(raw, "N/A");
+}
+
+function formatApplicationNo(raw: string | undefined): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
 }
 
 function bisBranchLine(data: TechnicalStaffLetterData): string {
@@ -81,6 +88,8 @@ function cellPlainText(
       return row.educational_certificate.trim() ? "Attached" : "—";
     case "photo":
       return row.photo.trim() ? "Attached" : "—";
+    case "seal_sign":
+      return row.seal_sign.trim() ? "Attached" : "—";
     default:
       return "—";
   }
@@ -209,7 +218,9 @@ async function buildTechnicalStaffDocx(
   const isRef = isStandardRef(data);
   const bisBranch = bisBranchLine(data);
   const inspectionDate = formatInspectionDate(data.inspectionDate);
-  const placeLabel = data.city.trim() || "_______________________";
+  const applicationNo = formatApplicationNo(data.applicationNumber);
+  const sigName = data.signatoryName.trim() || data.contactPerson.trim() || "—";
+  const sigDesig = data.signatoryDesignation.trim() || "—";
   const visible = visibleRows(data.rows);
 
   const tableSection: (Paragraph | Table)[] =
@@ -240,6 +251,8 @@ async function buildTechnicalStaffDocx(
       bodyRun(bisBranch, true),
       bodyRun("\t\t\t\tDate: "),
       bodyRun(inspectionDate, true),
+      bodyRun("\n\t\t\t\tApplication No.: "),
+      bodyRun(applicationNo, true),
     ]),
     bodyParagraph([
       bodyRun("Sub: "),
@@ -264,29 +277,24 @@ async function buildTechnicalStaffDocx(
     plainParagraph(
       "We declare that the information furnished above is true and correct to the best of our knowledge and belief. The persons listed above are responsible for technical operations and compliance of the unit with respect to BIS certification requirements.",
     ),
-    bodyParagraph([bodyRun(`Place: ${placeLabel}`)]),
-    bodyParagraph([bodyRun(`Date: ${inspectionDate}`)]),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 480, after: 120 },
+      spacing: { before: 360, after: 0 },
       children: [bodyRun(`For ${data.companyName}`, true)],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 720, after: 80 },
+      spacing: { before: 320, after: 0 },
       border: {
         top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
       },
-      children: [bodyRun("Authorised Signatory")],
+      children: [bodyRun(`Name: ${sigName}`)],
     }),
-    ...(data.contactPerson.trim()
-      ? [
-          new Paragraph({
-            alignment: AlignmentType.RIGHT,
-            children: [bodyRun(`(${data.contactPerson})`)],
-          }),
-        ]
-      : []),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`)],
+    }),
   ];
 
   return new Document({ sections: [{ properties: {}, children }] });
@@ -319,6 +327,7 @@ export async function downloadTechnicalStaffExcel(
   rows.push(["IS Title", data.isTitle]);
   rows.push(["BIS Branch", bisBranchLine(data)]);
   rows.push(["Date", formatInspectionDate(data.inspectionDate)]);
+  rows.push(["Application No.", formatApplicationNo(data.applicationNumber)]);
   rows.push([]);
   rows.push(["Technical Staff Details"]);
 

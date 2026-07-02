@@ -25,6 +25,7 @@ import {
   type SampleOfferLetterVariant,
 } from "@/lib/print/sample-offer-letter-variant";
 import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
 
@@ -39,6 +40,12 @@ function formatInspectionDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "N/A";
   return formatDisplayDate(raw, "N/A");
+}
+
+function formatApplicationNo(raw: string): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
 }
 
 function formatDateDisplay(ymd: string): string {
@@ -165,8 +172,11 @@ function bodyParagraph(
   });
 }
 
-function plainParagraph(text: string, bold = false): Paragraph {
-  return bodyParagraph([bodyRun(text, bold)]);
+function plainParagraph(text: string, bold = false, center = false): Paragraph {
+  return bodyParagraph(
+    [bodyRun(text, bold)],
+    center ? AlignmentType.CENTER : AlignmentType.LEFT,
+  );
 }
 
 function buildLetterheadParagraphs(
@@ -222,7 +232,7 @@ function buildSampleTableDocx(
     children: columnDefs.map(
       (col) =>
         new TableCell({
-          children: [plainParagraph(col.label, true)],
+          children: [plainParagraph(col.label, true, Boolean(col.cellCenter))],
         }),
     ),
   });
@@ -232,7 +242,9 @@ function buildSampleTableDocx(
       children: columnDefs.map(
         (col) =>
           new TableCell({
-            children: [plainParagraph(cellPlainText(col.key, row, i))],
+            children: [
+              plainParagraph(cellPlainText(col.key, row, i), false, Boolean(col.cellCenter)),
+            ],
           }),
       ),
     }),
@@ -254,7 +266,9 @@ async function buildOslSampleDocx(
   const isRef = isStandardRef(data);
   const bisBranch = bisBranchLine(data);
   const inspectionDate = formatInspectionDate(data.inspectionDate);
-  const placeLabel = data.city.trim() || "_______________________";
+  const applicationNo = formatApplicationNo(data.applicationNumber);
+  const sigName = data.signatoryName.trim() || data.contactPerson.trim() || "—";
+  const sigDesig = data.signatoryDesignation.trim() || "—";
   const visible = visibleSampleRows(data.rows);
 
   const sampleSectionLabel =
@@ -288,6 +302,8 @@ async function buildOslSampleDocx(
       bodyRun(bisBranch, true),
       bodyRun("\t\t\t\tDate: "),
       bodyRun(inspectionDate, true),
+      bodyRun("\n\t\t\t\tApplication No.: "),
+      bodyRun(applicationNo, true),
     ]),
     bodyParagraph([
       bodyRun("Sub: "),
@@ -324,33 +340,24 @@ async function buildOslSampleDocx(
     plainParagraph(
       "We declare that the above samples have been prepared prior to grant of the BIS licence, are drawn from trial production, and are being manufactured for the purpose of obtaining BIS licence. The information furnished above is true and correct to the best of our knowledge and belief.",
     ),
-    bodyParagraph([
-      bodyRun(`Place: ${placeLabel}`),
-    ]),
-    bodyParagraph([
-      bodyRun(`Date: ${inspectionDate}`),
-    ]),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 480, after: 120 },
+      spacing: { before: 360, after: 0 },
       children: [bodyRun(`For ${data.companyName}`, true)],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 720, after: 80 },
+      spacing: { before: 320, after: 0 },
       border: {
         top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
       },
-      children: [bodyRun("Authorised Signatory")],
+      children: [bodyRun(`Name: ${sigName}`)],
     }),
-    ...(data.contactPerson.trim()
-      ? [
-          new Paragraph({
-            alignment: AlignmentType.RIGHT,
-            children: [bodyRun(`(${data.contactPerson})`)],
-          }),
-        ]
-      : []),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`)],
+    }),
   ];
 
   return new Document({ sections: [{ properties: {}, children }] });
@@ -390,6 +397,7 @@ export async function downloadOslSampleRequirementsExcel(
   rows.push(["IS Title", data.isTitle]);
   rows.push(["BIS Branch", bisBranchLine(data)]);
   rows.push(["Date", formatInspectionDate(data.inspectionDate)]);
+  rows.push(["Application No.", formatApplicationNo(data.applicationNumber)]);
   rows.push([]);
   rows.push([
     variant === "pi" ? "Sample Details for PI" : "Sample Details for OSL",

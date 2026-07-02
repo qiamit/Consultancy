@@ -33,6 +33,7 @@ export default async function DashboardHomePage() {
     proformaRes,
     creditNotesRes,
     statementsRes,
+    surveillanceRes,
   ] = await Promise.all([
     supabase.from("clients").select("id", { count: "exact", head: true }),
     supabase.from("is_codes").select("id", { count: "exact", head: true }),
@@ -98,6 +99,13 @@ export default async function DashboardHomePage() {
     supabase.from("finance_proforma_invoices").select("id", { count: "exact", head: true }),
     supabase.from("finance_credit_notes").select("id", { count: "exact", head: true }),
     supabase.from("finance_customer_statements").select("id", { count: "exact", head: true }),
+    supabase
+      .from("license_surveillance")
+      .select(
+        "id, surveillance_date, allotted_employee_name, cm_l_digits, project_kind, client_id, bis_project_id, is_code_id, created_at, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)",
+      )
+      .order("surveillance_date", { ascending: false })
+      .limit(200),
   ]);
 
   type ClientJoin = { name: string | null; company_name: string | null } | null;
@@ -143,6 +151,31 @@ export default async function DashboardHomePage() {
   const cancelledRows = (cancelledRes.data ?? []).map(mapBisRow);
   const expiredRows = (expiredRes.data ?? []).map(mapBisRow);
 
+  const surveillanceRows = (surveillanceRes.data ?? []).map((r) => {
+    const row = r as Record<string, unknown>;
+    const c = (Array.isArray(row.clients) ? row.clients[0] : row.clients) as ClientJoin;
+    const ic = (Array.isArray(row.is_codes) ? row.is_codes[0] : row.is_codes) as {
+      is_number?: string;
+      revision_year?: number;
+      is_code_title?: string;
+    } | null;
+    return {
+      id: row.id as string,
+      surveillance_date: row.surveillance_date as string,
+      allotted_employee_name: row.allotted_employee_name as string,
+      cm_l_digits: (row.cm_l_digits as string | null) ?? null,
+      project_kind: (row.project_kind as string | null) ?? null,
+      client_id: row.client_id as string,
+      bis_project_id: (row.bis_project_id as string | null) ?? null,
+      is_code_id: (row.is_code_id as string | null) ?? null,
+      client_name: c?.company_name ?? c?.name ?? "Unknown Client",
+      is_number: ic?.is_number ?? null,
+      is_revision_year: ic?.revision_year ?? null,
+      is_code_title: ic?.is_code_title ?? null,
+      created_at: row.created_at as string,
+    };
+  });
+
   const financeModules = [
     { label: "Quotations",          count: quotationsRes.count ?? 0,    href: "/dashboard/finance/sales/quotations",          color: "text-sky-600 dark:text-sky-400",     bg: "bg-sky-50 dark:bg-sky-950/30" },
     { label: "Sales Orders",        count: salesOrdersRes.count ?? 0,   href: "/dashboard/finance/sales/sales-orders",        color: "text-indigo-600 dark:text-indigo-400", bg: "bg-indigo-50 dark:bg-indigo-950/30" },
@@ -160,6 +193,7 @@ export default async function DashboardHomePage() {
         applicationRows={applicationRows}
         deferredRows={deferredRows}
         stopMarkingRows={stopMarkingRows}
+        surveillanceRows={surveillanceRows}
         expiredRows={expiredRows}
         cancelledRows={cancelledRows}
         stats={{

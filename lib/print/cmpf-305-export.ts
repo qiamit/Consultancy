@@ -14,6 +14,7 @@ import { buildWorkbookBuffer } from "@/lib/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import { rowHasContent, type Cmpf305MachineryStored } from "@/lib/cmpf-305";
 import type { Cmpf305LetterData } from "@/lib/print/cmpf-305";
+import { formatCmpf305ApplicantAddress } from "@/lib/print/cmpf-305";
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
 
@@ -128,8 +129,7 @@ function machineryTableSection(rows: Cmpf305MachineryStored[]): (Paragraph | Tab
 }
 
 async function buildCmpf305Docx(data: Cmpf305LetterData): Promise<Document> {
-  const addressParts = [data.address, data.city, data.bisBranchState].filter((p) => p.trim());
-  const addressLine = addressParts.length > 0 ? `${addressParts.join(", ")}, INDIA` : "—";
+  const addressLine = formatCmpf305ApplicantAddress(data.address);
 
   const children: (Paragraph | Table)[] = [
     new Paragraph({
@@ -192,7 +192,7 @@ export async function downloadCmpf305Excel(data: Cmpf305LetterData): Promise<voi
     ["Declaration Regarding Manufacturing Machinery (Form - I / CMPF 305)"],
     [],
     ["Applicant Name", data.companyName],
-    ["Applicant Address", data.address],
+    ["Applicant Address", formatCmpf305ApplicantAddress(data.address)],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
     ["Date of Application", formatMetaDate(data.dateOfApplication)],
     ["IS Code", data.isNumber || "—"],

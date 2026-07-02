@@ -1,5 +1,6 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   Packer,
   Paragraph,
@@ -11,7 +12,7 @@ import {
 } from "docx";
 import { buildWorkbookBuffer } from "@/lib/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
-import { brandRowHasContent, type Cmpf307BrandStored } from "@/lib/cmpf-307";
+import { brandRowsForPrintTable, type Cmpf307BrandStored } from "@/lib/cmpf-307";
 import type { Cmpf307LetterData } from "@/lib/print/cmpf-307";
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
@@ -78,45 +79,28 @@ function brandTableSection(rows: Cmpf307BrandStored[]): Table {
       }),
   );
 
-  const visible = rows.filter(brandRowHasContent);
-  const dataRows =
-    visible.length > 0
-      ? visible.map((row, i) =>
-          new TableRow({
+  const visible = brandRowsForPrintTable(rows);
+  const dataRows = visible.map((row, i) =>
+    new TableRow({
+      children: [
+        String(i + 1),
+        row.brand_name.trim() || "—",
+        row.owned_by.trim() || "—",
+        row.registered_status.trim() || "—",
+        row.registration_date.trim() || "—",
+      ].map(
+        (text) =>
+          new TableCell({
             children: [
-              String(i + 1),
-              row.brand_name.trim() || "—",
-              row.owned_by.trim() || "—",
-              row.registered_status.trim() || "—",
-              row.registration_date.trim() || "—",
-            ].map(
-              (text) =>
-                new TableCell({
-                  children: [
-                    new Paragraph({
-                      alignment: AlignmentType.CENTER,
-                      children: [bodyRun(text)],
-                    }),
-                  ],
-                }),
-            ),
-          }),
-        )
-      : [
-          new TableRow({
-            children: [
-              new TableCell({
-                columnSpan: 5,
-                children: [
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    children: [bodyRun("No brand names entered yet.")],
-                  }),
-                ],
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                children: [bodyRun(text)],
               }),
             ],
           }),
-        ];
+      ),
+    }),
+  );
 
   return new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
@@ -125,8 +109,11 @@ function brandTableSection(rows: Cmpf307BrandStored[]): Table {
 }
 
 async function buildCmpf307Docx(data: Cmpf307LetterData): Promise<Document> {
-  const addressParts = [data.address, data.city, data.bisBranchState].filter((p) => p.trim());
-  const addressLine = addressParts.length > 0 ? `${addressParts.join(", ")}, INDIA` : "—";
+  const bisBranch = [data.bisBranchName, data.bisBranchState, data.bisBranchCountry]
+    .filter((p) => p.trim())
+    .join(", ") || "—";
+  const sigName = data.firmRepName || data.contactPerson || "—";
+  const sigDesig = data.firmRepDesignation || "—";
 
   const children: (Paragraph | Table)[] = [
     new Paragraph({
@@ -138,15 +125,17 @@ async function buildCmpf307Docx(data: Cmpf307LetterData): Promise<Document> {
       spacing: { after: 200 },
       children: [bodyRun("Declaration of Brand Names Proposed to be Covered Under Certification", true)],
     }),
-    plainParagraph(`Applicant Name: ${data.companyName}`),
-    plainParagraph(`Applicant Address: ${addressLine}`),
-    plainParagraph(`Application No.: ${formatApplicationNo(data.applicationNumber)}`),
-    plainParagraph(`Date of Application: ${formatMetaDate(data.dateOfApplication)}`),
-    plainParagraph(`IS Code: ${data.isNumber || "—"}`),
-    plainParagraph(`Date of Inspection: ${formatMetaDate(data.dateOfInspection)}`),
-    plainParagraph(
-      `To\nThe Director & Head\nBureau of Indian Standard\n${data.bisBranchName || "—"}, ${data.bisBranchState || "—"}, INDIA`,
-    ),
+    new Paragraph({
+      spacing: { after: 200 },
+      children: [
+        bodyRun("To\nThe Director & Head\nBureau of Indian Standard\n"),
+        bodyRun(bisBranch),
+        bodyRun("\t\t\t\tDate: "),
+        bodyRun(formatMetaDate(data.dateOfApplication), true),
+        bodyRun("\n\t\t\t\tApplication No.: "),
+        bodyRun(formatApplicationNo(data.applicationNumber), true),
+      ],
+    }),
     plainParagraph("4. Brand/Trade Names Being Used:-"),
     brandTableSection(data.document.brands),
     plainParagraph(
@@ -162,8 +151,32 @@ async function buildCmpf307Docx(data: Cmpf307LetterData): Promise<Document> {
       "6. I/We understand that in the event of a dispute with any other party over the use of the above Brand Names/ Trade Marks, the responsibility is entirely ours and BIS would not be involved in such disputes.",
     ),
     plainParagraph(
-      `Place: ${data.city || "—"}\nDate: ${formatMetaDate(data.dateOfInspection)}\nName: ${data.firmRepName || data.contactPerson || "—"}\nDesignation: ${data.firmRepDesignation || "—"}`,
+      "7. I/We also understand that in the event of any change, I/We will submit a revised declaration in the prescribed proforma before introducing the change in brand use including deletion or addition.",
     ),
+    plainParagraph(
+      "8. I/We also understand to maintain production and dispatch records of the product covered under the licence under each brand separately.",
+    ),
+    plainParagraph(
+      "9. I/We also understand that, as far as possible, the entire production under the above brands and which conforms to the specification shall be marked with the Standard Mark.",
+    ),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 360, after: 0 },
+      children: [bodyRun(`For ${data.companyName || "—"}`, true)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 320, after: 0 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
+      },
+      children: [bodyRun(`Name: ${sigName}`)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`)],
+    }),
   ];
 
   return new Document({ sections: [{ properties: {}, children }] });
@@ -179,16 +192,12 @@ export async function downloadCmpf307Word(
 }
 
 export async function downloadCmpf307Excel(data: Cmpf307LetterData): Promise<void> {
-  const visible = data.document.brands.filter(brandRowHasContent);
+  const visible = brandRowsForPrintTable(data.document.brands);
   const rows: (string | number)[][] = [
     ["Declaration of Brand Names (CMPF - 307)"],
     [],
-    ["Applicant Name", data.companyName],
-    ["Applicant Address", data.address],
+    ["Date", formatMetaDate(data.dateOfApplication)],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
-    ["Date of Application", formatMetaDate(data.dateOfApplication)],
-    ["IS Code", data.isNumber || "—"],
-    ["Date of Inspection", formatMetaDate(data.dateOfInspection)],
     [],
     ["4. Brand/Trade Names Being Used"],
     [
@@ -201,7 +210,7 @@ export async function downloadCmpf307Excel(data: Cmpf307LetterData): Promise<voi
   ];
 
   if (visible.length === 0) {
-    rows.push(["No brand names entered yet."]);
+    // Header only — no placeholder data rows
   } else {
     visible.forEach((row, i) => {
       rows.push([

@@ -12,11 +12,7 @@ import {
   iframeSizeForCmpf305PrintSettings,
   type Cmpf305LetterData,
 } from "@/lib/print/cmpf-305";
-import {
-  downloadCmpf305Excel,
-  downloadCmpf305ImportTemplate,
-  downloadCmpf305Word,
-} from "@/lib/print/cmpf-305-export";
+import { downloadCmpf305ImportTemplate } from "@/lib/print/cmpf-305-export";
 import type { PrintSettings } from "@/lib/print/types";
 import {
   editorRowsFromStored,
@@ -26,6 +22,7 @@ import {
 import { editorRowsFromImported, importCmpf305MachineryFromXlsx } from "@/lib/cmpf-305-import";
 import {
   resolvePrimaryTopManagementPerson,
+  withDocumentSignatureImage,
   type TopManagementStored,
 } from "@/lib/top-management";
 import type { LicenseScopeFormat, StoredLicenseScopeRow } from "@/lib/license-scope-format";
@@ -97,17 +94,20 @@ export function Cmpf305Modal({
   }, [topManagement, letterData.contactPerson]);
 
   const previewData = useMemo((): Cmpf305LetterData => {
-    return {
-      ...letterData,
-      applicationNumber,
-      dateOfApplication,
-      dateOfInspection,
-      inspectionOfficerName,
-      inspectionOfficerDesignation,
-      firmRepName,
-      firmRepDesignation,
-      rows: storedFromEditor(rows),
-    };
+    return withDocumentSignatureImage(
+      {
+        ...letterData,
+        applicationNumber,
+        dateOfApplication,
+        dateOfInspection,
+        inspectionOfficerName,
+        inspectionOfficerDesignation,
+        firmRepName,
+        firmRepDesignation,
+        rows: storedFromEditor(rows),
+      },
+      topManagement,
+    );
   }, [
     letterData,
     applicationNumber,
@@ -118,6 +118,7 @@ export function Cmpf305Modal({
     firmRepName,
     firmRepDesignation,
     rows,
+    topManagement,
   ]);
 
   const refreshPreview = useCallback(() => {
@@ -156,18 +157,6 @@ export function Cmpf305Modal({
   function handlePrint() {
     iframeRef.current?.contentWindow?.focus();
     iframeRef.current?.contentWindow?.print();
-  }
-
-  function handleDownloadWord() {
-    void downloadCmpf305Word(previewData, printSettings).catch(() =>
-      window.alert("Unable to download Word file."),
-    );
-  }
-
-  function handleDownloadExcel() {
-    void downloadCmpf305Excel(previewData).catch(() =>
-      window.alert("Unable to download Excel file."),
-    );
   }
 
   function handleDownloadImportTemplate() {
@@ -258,20 +247,6 @@ export function Cmpf305Modal({
               className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
             >
               Print
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadWord}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-            >
-              Download Word File
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadExcel}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-            >
-              Download Excel File
             </button>
             <button
               type="button"

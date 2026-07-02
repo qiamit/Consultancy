@@ -11,17 +11,13 @@ import {
 import { TechnicalStaffFormModal } from "@/components/dashboard/modals/technical-staff-form-modal";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
-import type { ManufacturingScopeDeclarationData } from "@/lib/print/manufacturing-scope-declaration";
 import {
   buildTechnicalStaffHtml,
   defaultTechnicalStaffPrintSettings,
   iframeSizeForTechnicalStaffPrintSettings,
   type TechnicalStaffLetterData,
 } from "@/lib/print/technical-staff";
-import {
-  downloadTechnicalStaffExcel,
-  downloadTechnicalStaffWord,
-} from "@/lib/print/technical-staff-export";
+import { downloadTechnicalStaffWord } from "@/lib/print/technical-staff-export";
 import type { PrintSettings } from "@/lib/print/types";
 import {
   editorRowsFromStored,
@@ -29,6 +25,11 @@ import {
   type TechnicalStaffRow,
   type TechnicalStaffStored,
 } from "@/lib/technical-staff";
+import {
+  resolvePrimaryTopManagementPerson,
+  withDocumentSignatureImage,
+  type TopManagementStored,
+} from "@/lib/top-management";
 
 const TECH_STAFF_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Technical Staff details for BIS licence applications:
@@ -48,6 +49,7 @@ const TECH_STAFF_QE_STARTERS = [
 export function TechnicalStaffModal({
   projectId,
   letterData,
+  topManagement,
   isCodeNumber,
   isCodeId,
   revisionYear,
@@ -57,9 +59,10 @@ export function TechnicalStaffModal({
 }: {
   projectId: string;
   letterData: Omit<
-    ManufacturingScopeDeclarationData,
-    "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
+    TechnicalStaffLetterData,
+    "rows" | "signatoryName" | "signatoryDesignation"
   >;
+  topManagement: TopManagementStored[];
   isCodeNumber: string | null;
   isCodeId: string | null;
   revisionYear: number | null;
@@ -85,11 +88,17 @@ export function TechnicalStaffModal({
   const isTitle = letterData.isTitle ?? "";
 
   const previewData = useMemo((): TechnicalStaffLetterData => {
-    return {
-      ...letterData,
-      rows: storedFromEditor(rows),
-    };
-  }, [letterData, rows]);
+    const primary = resolvePrimaryTopManagementPerson(topManagement);
+    return withDocumentSignatureImage(
+      {
+        ...letterData,
+        signatoryName: primary.person_name || letterData.contactPerson?.trim() || "",
+        signatoryDesignation: primary.designation,
+        rows: storedFromEditor(rows),
+      },
+      topManagement,
+    );
+  }, [letterData, topManagement, rows]);
 
   const refreshPreview = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
@@ -133,12 +142,6 @@ export function TechnicalStaffModal({
   function handleDownloadWord() {
     void downloadTechnicalStaffWord(previewData, printSettings).catch(() =>
       window.alert("Unable to download Word file."),
-    );
-  }
-
-  function handleDownloadExcel() {
-    void downloadTechnicalStaffExcel(previewData).catch(() =>
-      window.alert("Unable to download Excel file."),
     );
   }
 
@@ -214,13 +217,6 @@ export function TechnicalStaffModal({
               className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
             >
               Download Word File
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadExcel}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-            >
-              Download Excel File
             </button>
             <button
               type="button"
@@ -369,6 +365,7 @@ export function TechnicalStaffModal({
         <TechnicalStaffFormModal
           projectId={projectId}
           letterData={letterData}
+          topManagement={topManagement}
           initial={editingStaff}
           onSave={handleStaffFormSave}
           onClose={() => {

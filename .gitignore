@@ -79,6 +79,18 @@ Desktop.ini
 
 # local documents
 Instructions.docx
+*.docx.local
+
+# local generated exports / uploads (dev scratch)
+exports/
+downloads/
+scratch/
+uploads/
+
+# temp / backup
+*.tmp
+*.temp
+*.bak
 
 # tooling caches
 .cache/

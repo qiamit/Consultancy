@@ -13,13 +13,18 @@ import {
 } from "@/lib/print/technical-staff-table-columns";
 import type { TechnicalStaffStored } from "@/lib/technical-staff";
 import { rowHasContent } from "@/lib/technical-staff";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { buildRightAlignedSignatoryBlockHtml } from "@/lib/print/signatory-signature";
 
 export type TechnicalStaffLetterData = Omit<
   ManufacturingScopeDeclarationData,
   "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
 > & {
+  applicationNumber: string;
+  signatoryName: string;
+  signatoryDesignation: string;
   rows: TechnicalStaffStored[];
 };
 
@@ -44,6 +49,12 @@ function formatInspectionDateDisplay(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "N/A";
   return formatDisplayDate(raw, "N/A");
+}
+
+function formatApplicationNo(raw: string | undefined): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
 }
 
 function formatIsStandardRef(isNumber: string, isTitle: string): string {
@@ -86,6 +97,8 @@ function cellForColumn(
       return fileCellDisplay(row.educational_certificate);
     case "photo":
       return fileCellDisplay(row.photo, true);
+    case "seal_sign":
+      return fileCellDisplay(row.seal_sign, true);
     default:
       return "—";
   }
@@ -158,22 +171,15 @@ function buildTechnicalStaffTableHtml(
 }
 
 function buildSignatoryBlock(data: TechnicalStaffLetterData): string {
-  const inspectionDate = formatInspectionDateDisplay(data.inspectionDate);
+  const sigName = esc(data.signatoryName) || esc(data.contactPerson) || "—";
+  const sigDesig = esc(data.signatoryDesignation) || "—";
 
-  return `
-  <div style="margin-top:36px;display:table;width:100%;">
-    <div style="display:table-cell;width:50%;vertical-align:top;">
-      <div><strong>Place:</strong> ${data.city.trim() ? esc(data.city.trim()) : "_______________________"}</div>
-      <div style="margin-top:8px;"><strong>Date:</strong> ${esc(inspectionDate)}</div>
-    </div>
-    <div style="display:table-cell;width:50%;vertical-align:top;text-align:right;">
-      <div style="margin-top:24px;font-weight:700;">For ${esc(data.companyName)}</div>
-      <div style="margin-top:48px;border-top:1px solid #94a3b8;display:inline-block;min-width:180px;padding-top:6px;font-size:11px;">
-        Authorised Signatory
-      </div>
-      ${data.contactPerson ? `<div style="margin-top:4px;font-size:10px;color:#64748b;">(${esc(data.contactPerson)})</div>` : ""}
-    </div>
-  </div>`;
+  return buildRightAlignedSignatoryBlockHtml({
+    companyName: esc(data.companyName),
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  });
 }
 
 function buildLetterBody(data: TechnicalStaffLetterData): string {
@@ -184,6 +190,7 @@ function buildLetterBody(data: TechnicalStaffLetterData): string {
     data.bisBranchCountry,
   );
   const inspectionDate = formatInspectionDateDisplay(data.inspectionDate);
+  const applicationNo = formatApplicationNo(data.applicationNumber);
 
   return `
 <div style="text-align:center;margin-bottom:18px;">
@@ -201,7 +208,8 @@ function buildLetterBody(data: TechnicalStaffLetterData): string {
       ${esc(bisBranchLine)}
     </div>
     <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
-      <strong>Date:</strong> ${esc(inspectionDate)}
+      <div><strong>Date:</strong> ${esc(inspectionDate)}</div>
+      <div style="margin-top:4px;"><strong>Application No.:</strong> ${esc(applicationNo)}</div>
     </div>
   </div>
 

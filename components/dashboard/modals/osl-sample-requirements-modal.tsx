@@ -19,9 +19,7 @@ import {
   type OslSampleTableColumnKey,
   type SampleOfferLetterVariant,
 } from "@/lib/print/osl-sample-requirements";
-import type { ManufacturingScopeDeclarationData } from "@/lib/print/manufacturing-scope-declaration";
 import {
-  downloadOslSampleRequirementsExcel,
   downloadOslSampleRequirementsWord,
 } from "@/lib/print/osl-sample-requirements-export";
 import type { PrintSettings } from "@/lib/print/types";
@@ -32,6 +30,10 @@ import {
   type OslSampleRequirementRow,
   type OslSampleRequirementStored,
 } from "@/lib/osl-sample-requirements";
+import {resolvePrimaryTopManagementPerson,
+  type TopManagementStored,
+  withDocumentSignatureImage,
+} from "@/lib/top-management";
 
 const OSL_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with OSL (Outside Laboratory) sample requirements and sample offer letters for BIS certification:
@@ -63,6 +65,7 @@ function clientDisplayLabel(c: ClientPickerRow): string {
 export function OslSampleRequirementsModal({
   variant = "osl",
   letterData,
+  topManagement,
   isCodeNumber,
   isCodeId,
   revisionYear,
@@ -72,10 +75,8 @@ export function OslSampleRequirementsModal({
   initialFocusSampleIndex = null,
 }: {
   variant?: SampleOfferLetterVariant;
-  letterData: Omit<
-    ManufacturingScopeDeclarationData,
-    "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
-  >;
+  letterData: Omit<OslSampleOfferLetterData, "rows" | "signatoryName" | "signatoryDesignation">;
+  topManagement: TopManagementStored[];
   isCodeNumber: string | null;
   isCodeId: string | null;
   revisionYear: number | null;
@@ -144,12 +145,22 @@ export function OslSampleRequirementsModal({
   const isFullNumber = letterData.isNumber?.trim() || "—";
   const isTitle = letterData.isTitle ?? "";
 
-  const previewData = useMemo((): OslSampleOfferLetterData => {
+  const { signatoryName, signatoryDesignation } = useMemo(() => {
+    const primary = resolvePrimaryTopManagementPerson(topManagement);
     return {
-      ...letterData,
-      rows: storedFromEditor(rows),
+      signatoryName: primary.person_name || letterData.contactPerson?.trim() || "",
+      signatoryDesignation: primary.designation,
     };
-  }, [letterData, rows]);
+  }, [topManagement, letterData.contactPerson]);
+
+  const previewData = useMemo((): OslSampleOfferLetterData  => {
+    return withDocumentSignatureImage({
+      ...letterData,
+      signatoryName,
+      signatoryDesignation,
+      rows: storedFromEditor(rows),
+    }, topManagement);
+  }, [letterData, signatoryName, signatoryDesignation, rows, topManagement]);
 
   const refreshPreview = useCallback(() => {
     const doc = iframeRef.current?.contentDocument;
@@ -204,12 +215,6 @@ export function OslSampleRequirementsModal({
     ).catch(() => window.alert("Unable to download Word file."));
   }
 
-  function handleDownloadExcel() {
-    void downloadOslSampleRequirementsExcel(previewData, tableColumns, variant).catch(
-      () => window.alert("Unable to download Excel file."),
-    );
-  }
-
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
@@ -262,13 +267,6 @@ export function OslSampleRequirementsModal({
             className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
           >
             Download Word File
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadExcel}
-            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-          >
-            Download Excel File
           </button>
           <button
             type="button"

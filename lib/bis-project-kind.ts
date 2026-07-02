@@ -82,4 +82,16 @@ export async function licenseProjectKindDbValue(
   return "License";
 }
 
+/** Preferred `project_kind` value for a new / converted application row. */
+export async function applicationProjectKindDbValue(
+  supabase: SupabaseClient,
+  optionKey: string = DROPDOWN_KEY_BIS_PROJECT_KIND,
+): Promise<string> {
+  const values = await applicationProjectKindDbValues(supabase, optionKey);
+  for (const v of values) {
+    if (normalizeProjectKindKey(v) === "application") return v;
+  }
+  return LEGACY_APPLICATION_KIND;
+}
+
 export type BisApplicationSource = "bis_projects" | "bis_new_applications";

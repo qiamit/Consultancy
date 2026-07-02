@@ -17,6 +17,7 @@ import {
 } from "@/lib/print/manufacturing-scope-declaration";
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 24; // half-points → 12pt
@@ -29,6 +30,12 @@ function formatInspectionDate(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "";
   return formatDisplayDate(raw, "");
+}
+
+function formatApplicationNo(raw: string | undefined): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
 }
 
 function bisBranchLine(data: ManufacturingScopeDeclarationData): string {
@@ -176,7 +183,9 @@ async function buildManufacturingScopeDocx(
   const bisBranch = bisBranchLine(data);
   const inspectionDate = formatInspectionDate(data.inspectionDate);
   const dateLabel = inspectionDate || "_______________________";
-  const placeLabel = data.city.trim() || "_______________________";
+  const applicationNo = formatApplicationNo(data.applicationNumber);
+  const sigName = data.signatoryName?.trim() || data.contactPerson.trim() || "—";
+  const sigDesig = data.signatoryDesignation?.trim() || "—";
 
   const scopeBlocks: (Paragraph | Table)[] = [
     plainParagraph("LICENSE SCOPE", true),
@@ -206,6 +215,8 @@ async function buildManufacturingScopeDocx(
       bodyRun(bisBranch, true),
       bodyRun("\t\t\t\tDate: "),
       bodyRun(dateLabel, true),
+      bodyRun("\n\t\t\t\tApplication No.: "),
+      bodyRun(applicationNo, true),
     ]),
     bodyParagraph([
       bodyRun("Sub: "),
@@ -232,7 +243,6 @@ async function buildManufacturingScopeDocx(
     plainParagraph(
       "We further declare that the above information is true and correct to the best of our knowledge and belief. We undertake to inform BIS of any change in the manufacturing scope covered under the licence.",
     ),
-    bodyParagraph([bodyRun(`Place: ${placeLabel}`)]),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       spacing: { before: 480, after: 120 },
@@ -244,16 +254,12 @@ async function buildManufacturingScopeDocx(
       border: {
         top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
       },
-      children: [bodyRun("Authorised Signatory")],
+      children: [bodyRun(`Name: ${sigName}`)],
     }),
-    ...(data.contactPerson.trim()
-      ? [
-          new Paragraph({
-            alignment: AlignmentType.RIGHT,
-            children: [bodyRun(`(${data.contactPerson})`, false)],
-          }),
-        ]
-      : []),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [bodyRun(`Designation: ${sigDesig}`)],
+    }),
   ];
 
   return new Document({
@@ -296,6 +302,7 @@ export async function downloadManufacturingScopeDeclarationExcel(
   rows.push(["IS Title", data.isTitle]);
   rows.push(["BIS Branch", bisBranchLine(data)]);
   rows.push(["Date", formatInspectionDate(data.inspectionDate) || "—"]);
+  rows.push(["Application No.", formatApplicationNo(data.applicationNumber)]);
   rows.push([]);
   rows.push(["License Scope"]);
 

@@ -7,7 +7,6 @@ import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-moda
 import { TopManagementTableEditor } from "@/components/dashboard/top-management-table-editor";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
-import type { ManufacturingScopeDeclarationData } from "@/lib/print/manufacturing-scope-declaration";
 import {
   buildTopManagementHtml,
   defaultTopManagementPrintSettings,
@@ -17,12 +16,12 @@ import {
   type TopManagementTableColumnKey,
 } from "@/lib/print/top-management";
 import {
-  downloadTopManagementExcel,
   downloadTopManagementWord,
 } from "@/lib/print/top-management-export";
 import type { PrintSettings } from "@/lib/print/types";
 import {
   editorRowsFromStored,
+  resolvePrimaryTopManagementPerson,
   storedFromEditor,
   type TopManagementRow,
   type TopManagementStored,
@@ -53,8 +52,8 @@ export function TopManagementModal({
   onClose,
 }: {
   letterData: Omit<
-    ManufacturingScopeDeclarationData,
-    "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
+    TopManagementLetterData,
+    "rows" | "signatoryName" | "signatoryDesignation"
   >;
   isCodeNumber: string | null;
   isCodeId: string | null;
@@ -82,9 +81,13 @@ export function TopManagementModal({
   const isTitle = letterData.isTitle ?? "";
 
   const previewData = useMemo((): TopManagementLetterData => {
+    const stored = storedFromEditor(rows);
+    const primary = resolvePrimaryTopManagementPerson(stored);
     return {
       ...letterData,
-      rows: storedFromEditor(rows),
+      signatoryName: primary.person_name || letterData.contactPerson?.trim() || "",
+      signatoryDesignation: primary.designation,
+      rows: stored,
     };
   }, [letterData, rows]);
 
@@ -130,12 +133,6 @@ export function TopManagementModal({
   function handleDownloadWord() {
     void downloadTopManagementWord(previewData, printSettings, tableColumns).catch(() =>
       window.alert("Unable to download Word file."),
-    );
-  }
-
-  function handleDownloadExcel() {
-    void downloadTopManagementExcel(previewData, tableColumns).catch(() =>
-      window.alert("Unable to download Excel file."),
     );
   }
 
@@ -191,13 +188,6 @@ export function TopManagementModal({
               className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
             >
               Download Word File
-            </button>
-            <button
-              type="button"
-              onClick={handleDownloadExcel}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-            >
-              Download Excel File
             </button>
             <button
               type="button"

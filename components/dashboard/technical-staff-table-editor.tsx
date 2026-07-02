@@ -22,6 +22,7 @@ const themes = {
     thSub:
       "mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-400 dark:text-zinc-500",
     td: "border-b border-zinc-100 px-2 py-2.5 align-middle text-center text-xs leading-snug text-zinc-700 dark:border-zinc-800/80 dark:text-zinc-300",
+    tdLeft: "border-b border-zinc-100 px-2 py-2.5 align-middle text-left text-xs leading-snug text-zinc-700 dark:border-zinc-800/80 dark:text-zinc-300",
     srCell:
       "border-b border-r border-zinc-200 bg-zinc-50 px-1.5 py-2.5 text-center align-middle text-xs font-bold tabular-nums text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300",
     cellStack: "mx-auto flex max-w-full flex-col items-center justify-center gap-0.5",
@@ -45,6 +46,7 @@ const themes = {
     thSub:
       "mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-500",
     td: "border-b border-zinc-800/80 px-2 py-2.5 align-middle text-center text-xs leading-snug text-zinc-300",
+    tdLeft: "border-b border-zinc-800/80 px-2 py-2.5 align-middle text-left text-xs leading-snug text-zinc-300",
     srCell:
       "border-b border-r border-zinc-700 bg-zinc-800/60 px-1.5 py-2.5 text-center align-middle text-xs font-bold tabular-nums text-zinc-300",
     cellStack: "mx-auto flex max-w-full flex-col items-center justify-center gap-0.5",
@@ -115,7 +117,7 @@ export function TechnicalStaffTableEditor({
                 </th>
                 <th className={t.th}>
                   Documents
-                  <span className={t.thSub}>Appt. Letter &amp; Certificate</span>
+                  <span className={t.thSub}>Appt., Cert. &amp; Seal</span>
                 </th>
                 <th className={t.th}>Photo</th>
                 <th className={t.th}>Action</th>
@@ -127,7 +129,7 @@ export function TechnicalStaffTableEditor({
                 return (
                   <tr key={row.id} className="hover:bg-zinc-800/20">
                     <td className={t.srCell}>{index + 1}</td>
-                    <td className={t.td}>
+                    <td className={t.tdLeft}>
                       <CellText>{row.person_name || "—"}</CellText>
                     </td>
                     <td className={t.td}>
@@ -152,6 +154,10 @@ export function TechnicalStaffTableEditor({
                         <div className={t.docRow}>
                           <span className={t.docLabel}>Cert.</span>
                           <FileLink theme={theme} url={row.educational_certificate} />
+                        </div>
+                        <div className={t.docRow}>
+                          <span className={t.docLabel}>Seal</span>
+                          <FileLink theme={theme} url={row.seal_sign} />
                         </div>
                       </div>
                     </td>

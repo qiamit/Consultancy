@@ -6,7 +6,8 @@ export type TechnicalStaffTableColumnKey =
   | "experience_years"
   | "appointment_letter"
   | "educational_certificate"
-  | "photo";
+  | "photo"
+  | "seal_sign";
 
 export const TECHNICAL_STAFF_TABLE_COLUMN_ORDER: TechnicalStaffTableColumnKey[] = [
   "sr_no",
@@ -17,6 +18,7 @@ export const TECHNICAL_STAFF_TABLE_COLUMN_ORDER: TechnicalStaffTableColumnKey[] 
   "appointment_letter",
   "educational_certificate",
   "photo",
+  "seal_sign",
 ];
 
 /** Columns shown in print preview and exported letter table (no document attachments). */
@@ -62,6 +64,12 @@ export const TECHNICAL_STAFF_TABLE_COLUMN_OPTIONS: {
     widthWeight: 12,
   },
   { key: "photo", label: "Photo", headerHtml: "Photo", widthWeight: 8 },
+  {
+    key: "seal_sign",
+    label: "Seal & Sign",
+    headerHtml: "Seal &amp;<br/>Sign",
+    widthWeight: 10,
+  },
 ];
 
 export function technicalStaffColumnWidthPct(

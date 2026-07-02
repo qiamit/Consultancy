@@ -85,8 +85,20 @@ async function buildUndertakingOption2Docx(data: UndertakingOption2LetterData): 
       "1. The licence, if granted against the above application shall be put under suspension by BIS, if the sample drawn during the verification visit fails to conform to the relevant Indian Standard",
     ),
     plainParagraph(
-      `Place: ${data.city || "—"}\nDate: ${formatMetaDate(data.dateOfInspection)}\nName: ${doc.signatory_name || declarant}\nDesignation: ${doc.signatory_designation || "—"}`,
+      "2. In such case of suspension, I shall take necessary corrective actions and inform the same to BIS within one month and offer fresh lot of products manufactured after taking corrective actions, from which sample(s) will be drawn by BIS for third party testing",
     ),
+    plainParagraph(
+      "3. The revocation of suspension will be considered only based on complete test report(s) of the fresh sample(s) offered, from third party testing laboratory",
+    ),
+    plainParagraph(
+      "4. The testing fee for testing of sample drawn for consideration of revocation of suspension shall be borne by me",
+    ),
+    plainParagraph(
+      "5. In case, the fresh sample drawn by BIS for considering revocation of suspension shows non-conformity, or I fail to inform corrective actions within 30 days from the date of suspension, the licence will be processed for cancellation",
+    ),
+    plainParagraph(`For ${data.companyName || "—"}`),
+    plainParagraph(`Name: ${doc.signatory_name || declarant}`),
+    plainParagraph(`Designation: ${doc.signatory_designation || "—"}`),
   ];
 
   return new Document({ sections: [{ properties: {}, children }] });
@@ -121,7 +133,7 @@ export async function downloadUndertakingOption2Excel(
 
   const buffer = await buildWorkbookBuffer([
     {
-      name: "Undertaking Option 2",
+      name: "Undertaking for Simplified Procedure",
       rows,
       cols: [{ wch: 28 }, { wch: 44 }],
       merges: [{ s: { r: 0, c: 0 }, e: { r: 0, c: 1 } }],

@@ -1,4 +1,5 @@
 import { rowHasContent as oslRowHasContent, type OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
+import { toYmdDateString } from "@/lib/format-date";
 
 export type FtrSampleSource = "osl" | "pi";
 
@@ -83,6 +84,10 @@ export type FtrTestParameterSeed = {
 
 function defaultOtherInformation(): string {
   return "N/A";
+}
+
+export function defaultFtrTestingDate(): string {
+  return toYmdDateString(new Date());
 }
 
 export function defaultFtrTestRow(type: FtrTestRowStored["row_type"] = "test"): FtrTestRowStored {
@@ -224,8 +229,10 @@ function buildReportFromSample(
     source,
     source_index: index,
     ...headerFromSampleAndCtx,
-    date_of_testing_start: existing?.date_of_testing_start ?? "",
-    date_of_testing_completion: existing?.date_of_testing_completion ?? "",
+    date_of_testing_start:
+      existing?.date_of_testing_start?.trim() || defaultFtrTestingDate(),
+    date_of_testing_completion:
+      existing?.date_of_testing_completion?.trim() || defaultFtrTestingDate(),
     witnessed_by: ctx.inspectionOfficerName,
     tested_by: ctx.qualityControlInchargeName,
     test_rows:
@@ -357,9 +364,12 @@ export function ftrReportHasContent(report: FactoryTestReportStored): boolean {
 
 export function editorReportsFromStored(stored: FactoryTestReportStored[]): FactoryTestReportRow[] {
   if (stored.length === 0) return [];
+  const today = defaultFtrTestingDate();
   return stored.map((report, index) => ({
     id: `ftr-report-${index}`,
     ...report,
+    date_of_testing_start: report.date_of_testing_start.trim() || today,
+    date_of_testing_completion: report.date_of_testing_completion.trim() || today,
     test_rows: report.test_rows ?? [],
   }));
 }
@@ -404,6 +414,103 @@ export function sortFtrTestRowsByClause(rows: FtrTestRowStored[]): FtrTestRowSto
       if (diff !== 0) return diff;
       return a.test_name.localeCompare(b.test_name);
     });
+}
+
+/** Options for estimating how many test rows fit on each printed page. */
+export type FtrPrintPaginationOptions = {
+  showLetterhead: boolean;
+  showWitnessedBy: boolean;
+  showTestedBy: boolean;
+  marginTopMm: number;
+  marginBottomMm: number;
+};
+
+export const DEFAULT_FTR_PRINT_PAGINATION_OPTIONS: FtrPrintPaginationOptions = {
+  showLetterhead: true,
+  showWitnessedBy: true,
+  showTestedBy: true,
+  marginTopMm: 20,
+  marginBottomMm: 20,
+};
+
+const A4_HEIGHT_MM = 297;
+
+function pageContentHeightMm(marginTopMm: number, marginBottomMm: number): number {
+  return A4_HEIGHT_MM - marginTopMm - marginBottomMm;
+}
+
+function signaturesOverheadMm(options: FtrPrintPaginationOptions): number {
+  return options.showWitnessedBy || options.showTestedBy ? 26 : 0;
+}
+
+function firstPageOverheadMm(options: FtrPrintPaginationOptions): number {
+  let overhead = 7 + 48 + 11 + 4 + signaturesOverheadMm(options);
+  if (options.showLetterhead) overhead += 30;
+  return overhead;
+}
+
+function continuationPageOverheadMm(options: FtrPrintPaginationOptions): number {
+  let overhead = 11 + 4 + signaturesOverheadMm(options);
+  if (options.showLetterhead) overhead += 30;
+  return overhead;
+}
+
+function estimateRowHeightMm(row: FtrTestRowStored): number {
+  const lineMm = 3.6;
+  const paddingMm = 2.2;
+  let lines = 1;
+
+  if (row.unit?.trim()) lines = Math.max(lines, 2);
+  if (row.clause_no?.trim()) lines = Math.max(lines, 2);
+
+  const testName = row.test_name ?? "";
+  lines = Math.max(lines, Math.ceil(testName.length / 28));
+
+  const spec = row.specified_requirements ?? "";
+  lines = Math.max(lines, Math.ceil(spec.length / 45));
+
+  return paddingMm + lines * lineMm;
+}
+
+export function paginateFtrPrintTestRows(
+  rows: FtrTestRowStored[],
+  options: FtrPrintPaginationOptions = DEFAULT_FTR_PRINT_PAGINATION_OPTIONS,
+): FtrTestRowStored[][] {
+  const tests = sortFtrTestRowsByClause(rows);
+  if (tests.length === 0) return [[]];
+
+  const pageHeightMm = pageContentHeightMm(options.marginTopMm, options.marginBottomMm);
+  const pages: FtrTestRowStored[][] = [];
+  let index = 0;
+  let isFirstPage = true;
+
+  while (index < tests.length) {
+    const overheadMm = isFirstPage
+      ? firstPageOverheadMm(options)
+      : continuationPageOverheadMm(options);
+    let remainingMm = pageHeightMm - overheadMm;
+    const pageRows: FtrTestRowStored[] = [];
+
+    while (index < tests.length) {
+      const rowMm = estimateRowHeightMm(tests[index]!);
+      if (pageRows.length > 0 && rowMm > remainingMm) break;
+      pageRows.push(tests[index]!);
+      remainingMm -= rowMm;
+      index++;
+    }
+
+    pages.push(pageRows);
+    isFirstPage = false;
+  }
+
+  return pages;
+}
+
+export function ftrPrintPageCount(
+  testRows: FtrTestRowStored[],
+  options: FtrPrintPaginationOptions = DEFAULT_FTR_PRINT_PAGINATION_OPTIONS,
+): number {
+  return paginateFtrPrintTestRows(testRows, options).length;
 }
 
 export function refreshReportHeadersFromSample(

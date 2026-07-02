@@ -6,6 +6,7 @@ export type TechnicalStaffStored = {
   appointment_letter: string;
   educational_certificate: string;
   photo: string;
+  seal_sign: string;
 };
 
 export type TechnicalStaffRow = TechnicalStaffStored & { id: string };
@@ -19,6 +20,7 @@ export function defaultTechnicalStaffEntry(): TechnicalStaffStored {
     appointment_letter: "",
     educational_certificate: "",
     photo: "",
+    seal_sign: "",
   };
 }
 
@@ -44,7 +46,8 @@ export function rowHasContent(row: TechnicalStaffStored): boolean {
     row.experience_years.trim().length > 0 ||
     row.appointment_letter.trim().length > 0 ||
     row.educational_certificate.trim().length > 0 ||
-    row.photo.trim().length > 0
+    row.photo.trim().length > 0 ||
+    row.seal_sign.trim().length > 0
   );
 }
 
@@ -62,6 +65,7 @@ export function parseTechnicalStaff(raw: unknown): TechnicalStaffStored[] {
         appointment_letter: String(r.appointment_letter ?? "").trim(),
         educational_certificate: String(r.educational_certificate ?? "").trim(),
         photo: String(r.photo ?? "").trim(),
+        seal_sign: String(r.seal_sign ?? "").trim(),
       };
     })
     .filter((r): r is TechnicalStaffStored => r !== null);
@@ -87,6 +91,7 @@ export function storedFromEditor(rows: TechnicalStaffRow[]): TechnicalStaffStore
         appointment_letter,
         educational_certificate,
         photo,
+        seal_sign,
       }) => ({
         person_name,
         designation,
@@ -95,6 +100,7 @@ export function storedFromEditor(rows: TechnicalStaffRow[]): TechnicalStaffStore
         appointment_letter,
         educational_certificate,
         photo,
+        seal_sign,
       }),
     )
     .filter(rowHasContent);

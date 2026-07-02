@@ -16,13 +16,18 @@ import {
   type OslSampleTableColumnKey,
 } from "@/lib/print/osl-sample-table-columns";
 import type { OslSampleRequirementStored } from "@/lib/osl-sample-requirements";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { buildRightAlignedSignatoryBlockHtml } from "@/lib/print/signatory-signature";
 
 export type OslSampleOfferLetterData = Omit<
   ManufacturingScopeDeclarationData,
   "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
 > & {
+  applicationNumber: string;
+  signatoryName: string;
+  signatoryDesignation: string;
   rows: OslSampleRequirementStored[];
 };
 
@@ -47,6 +52,12 @@ function formatInspectionDateDisplay(dateStr: string): string {
   const raw = (dateStr ?? "").trim();
   if (!raw) return "N/A";
   return formatDisplayDate(raw, "N/A");
+}
+
+function formatApplicationNo(raw: string): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
 }
 
 function formatDateDisplay(ymd: string): string {
@@ -145,12 +156,21 @@ function buildSampleTableHtml(
     "padding:5px 7px;border:1px solid #e2e8f0;font-size:11px;vertical-align:top;line-height:1.45;";
   const tdNarrow = `${tdBase}width:1%;white-space:nowrap;text-align:center;`;
   const tdWide = `${tdBase}text-align:left;word-break:break-word;`;
+  const tdWideCenter = `${tdBase}text-align:center;word-break:break-word;`;
   const tdStack = `${tdBase}width:1%;text-align:center;word-break:break-word;line-height:1.4;vertical-align:middle;`;
 
   function headerStyle(col: (typeof columnDefs)[number]): string {
     if (col.stackHeader) return thStack;
     if (col.wide) return col.headerCenter ? thWideCenter : thWide;
     return thNarrow;
+  }
+
+  function cellStyle(col: (typeof columnDefs)[number]): string {
+    if (col.cellCenter && col.wide) return tdWideCenter;
+    if (col.wide) return tdWide;
+    if (col.stackHeader) return tdStack;
+    if (col.cellCenter) return tdNarrow;
+    return tdNarrow;
   }
 
   const headRow = columnDefs
@@ -161,7 +181,7 @@ function buildSampleTableHtml(
     .map((r, i) => {
       const cells = columnDefs
         .map((col) => {
-          const style = col.wide ? tdWide : col.stackHeader ? tdStack : tdNarrow;
+          const style = cellStyle(col);
           return `<td style="${style}">${cellForColumn(col.key, r, i)}</td>`;
         })
         .join("");
@@ -178,22 +198,15 @@ function buildSampleTableHtml(
 }
 
 function buildSignatoryBlock(data: OslSampleOfferLetterData): string {
-  const inspectionDate = formatInspectionDateDisplay(data.inspectionDate);
+  const sigName = esc(data.signatoryName) || esc(data.contactPerson) || "—";
+  const sigDesig = esc(data.signatoryDesignation) || "—";
 
-  return `
-  <div style="margin-top:36px;display:table;width:100%;">
-    <div style="display:table-cell;width:50%;vertical-align:top;">
-      <div><strong>Place:</strong> ${data.city.trim() ? esc(data.city.trim()) : "_______________________"}</div>
-      <div style="margin-top:8px;"><strong>Date:</strong> ${esc(inspectionDate)}</div>
-    </div>
-    <div style="display:table-cell;width:50%;vertical-align:top;text-align:right;">
-      <div style="margin-top:24px;font-weight:700;">For ${esc(data.companyName)}</div>
-      <div style="margin-top:48px;border-top:1px solid #94a3b8;display:inline-block;min-width:180px;padding-top:6px;font-size:11px;">
-        Authorised Signatory
-      </div>
-      ${data.contactPerson ? `<div style="margin-top:4px;font-size:10px;color:#64748b;">(${esc(data.contactPerson)})</div>` : ""}
-    </div>
-  </div>`;
+  return buildRightAlignedSignatoryBlockHtml({
+    companyName: esc(data.companyName),
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  });
 }
 
 function buildOfferLetterBody(
@@ -209,6 +222,7 @@ function buildOfferLetterBody(
     data.bisBranchCountry,
   );
   const inspectionDate = formatInspectionDateDisplay(data.inspectionDate);
+  const applicationNo = formatApplicationNo(data.applicationNumber);
 
   return `
 <div style="text-align:center;margin-bottom:18px;">
@@ -226,7 +240,8 @@ function buildOfferLetterBody(
       ${esc(bisBranchLine)}
     </div>
     <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
-      <strong>Date:</strong> ${esc(inspectionDate)}
+      <div><strong>Date:</strong> ${esc(inspectionDate)}</div>
+      <div style="margin-top:4px;"><strong>Application No.:</strong> ${esc(applicationNo)}</div>
     </div>
   </div>
 

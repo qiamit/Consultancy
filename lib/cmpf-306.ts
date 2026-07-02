@@ -19,6 +19,8 @@ export type Cmpf306EquipmentRow = Cmpf306EquipmentStored & { id: string };
 export type Cmpf306Stored = {
   separate_sheet_enclosed: boolean;
   equipment: Cmpf306EquipmentStored[];
+  calibration_certificates: string[];
+  consent_letters: string[];
 };
 
 export function defaultCmpf306EquipmentEntry(): Cmpf306EquipmentStored {
@@ -39,6 +41,8 @@ export function defaultCmpf306Document(): Cmpf306Stored {
   return {
     separate_sheet_enclosed: false,
     equipment: [],
+    calibration_certificates: [],
+    consent_letters: [],
   };
 }
 
@@ -71,7 +75,19 @@ export function equipmentRowHasContent(row: Cmpf306EquipmentStored): boolean {
 }
 
 export function documentHasContent(doc: Cmpf306Stored): boolean {
-  return doc.separate_sheet_enclosed || doc.equipment.some(equipmentRowHasContent);
+  return (
+    doc.separate_sheet_enclosed ||
+    doc.equipment.some(equipmentRowHasContent) ||
+    doc.calibration_certificates.length > 0 ||
+    doc.consent_letters.length > 0
+  );
+}
+
+function parseStoredDocumentRefList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => String(item ?? "").trim())
+    .filter((item) => item.length > 0);
 }
 
 export function parseCmpf306(raw: unknown): Cmpf306Stored {
@@ -79,6 +95,8 @@ export function parseCmpf306(raw: unknown): Cmpf306Stored {
     return {
       separate_sheet_enclosed: false,
       equipment: parseCmpf306EquipmentList(raw),
+      calibration_certificates: [],
+      consent_letters: [],
     };
   }
   if (!raw || typeof raw !== "object") return defaultCmpf306Document();
@@ -86,6 +104,8 @@ export function parseCmpf306(raw: unknown): Cmpf306Stored {
   return {
     separate_sheet_enclosed: Boolean(r.separate_sheet_enclosed),
     equipment: parseCmpf306EquipmentList(r.equipment),
+    calibration_certificates: parseStoredDocumentRefList(r.calibration_certificates),
+    consent_letters: parseStoredDocumentRefList(r.consent_letters),
   };
 }
 
@@ -138,6 +158,10 @@ export function editorRowsFromStored(stored: Cmpf306Stored): Cmpf306EquipmentRow
 export function storedFromEditor(
   rows: Cmpf306EquipmentRow[],
   separateSheetEnclosed: boolean,
+  attachments?: {
+    calibrationCertificates?: string[];
+    consentLetters?: string[];
+  },
 ): Cmpf306Stored {
   return {
     separate_sheet_enclosed: separateSheetEnclosed,
@@ -166,6 +190,10 @@ export function storedFromEditor(
         }),
       )
       .filter(equipmentRowHasContent),
+    calibration_certificates: (attachments?.calibrationCertificates ?? []).filter(
+      (ref) => ref.trim().length > 0,
+    ),
+    consent_letters: (attachments?.consentLetters ?? []).filter((ref) => ref.trim().length > 0),
   };
 }
 
@@ -184,24 +212,44 @@ export function buildPageSlots(
   let equipIndex = 0;
   let globalSr = 1;
 
-  while (equipIndex < visible.length || pages.length === 0) {
-    const pageIndex = pages.length;
-    const slots: Cmpf306PageSlot[] = [];
+  const firstPageEquipBeforeSeparate = separateSheetEnclosed ? 4 : rowsPerPage;
+  const firstPageEquipAfterSeparate = separateSheetEnclosed ? 4 : 0;
 
-    for (let slotOnPage = 1; slotOnPage <= rowsPerPage; slotOnPage += 1) {
-      if (pageIndex === 0 && separateSheetEnclosed && slotOnPage === 5) {
-        slots.push({ kind: "separate_sheet", srNo: globalSr });
-      } else if (equipIndex < visible.length) {
-        slots.push({ kind: "equipment", row: visible[equipIndex]!, srNo: globalSr });
-        equipIndex += 1;
-      } else {
-        slots.push({ kind: "empty", srNo: globalSr });
-      }
+  const firstPage: Cmpf306PageSlot[] = [];
+
+  for (let i = 0; i < firstPageEquipBeforeSeparate && equipIndex < visible.length; i += 1) {
+    firstPage.push({ kind: "equipment", row: visible[equipIndex]!, srNo: globalSr });
+    equipIndex += 1;
+    globalSr += 1;
+  }
+
+  if (separateSheetEnclosed) {
+    firstPage.push({ kind: "separate_sheet", srNo: globalSr });
+    globalSr += 1;
+  }
+
+  for (let i = 0; i < firstPageEquipAfterSeparate && equipIndex < visible.length; i += 1) {
+    firstPage.push({ kind: "equipment", row: visible[equipIndex]!, srNo: globalSr });
+    equipIndex += 1;
+    globalSr += 1;
+  }
+
+  if (firstPage.length > 0) {
+    pages.push(firstPage);
+  }
+
+  while (equipIndex < visible.length) {
+    const page: Cmpf306PageSlot[] = [];
+    for (let i = 0; i < rowsPerPage && equipIndex < visible.length; i += 1) {
+      page.push({ kind: "equipment", row: visible[equipIndex]!, srNo: globalSr });
+      equipIndex += 1;
       globalSr += 1;
     }
+    pages.push(page);
+  }
 
-    pages.push(slots);
-    if (equipIndex >= visible.length) break;
+  if (pages.length === 0) {
+    return [[]];
   }
 
   return pages;

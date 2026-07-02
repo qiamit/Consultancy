@@ -123,30 +123,28 @@ function buildLetterheadParagraphs(
 }
 
 function buildSignatoryParagraphs(data: AppointmentLetterData): Paragraph[] {
-  const signatoryName = data.signatory_name.trim() || "Authorised Signatory";
-  const signatoryDesignation =
-    data.signatory_designation.trim() || "Authorised Signatory";
+  const sigName =
+    data.signatory_name.trim() || data.contactPerson.trim() || "—";
+  const sigDesig = data.signatory_designation.trim() || "—";
 
   return [
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 480, after: 120 },
+      spacing: { before: 360, after: 0 },
       children: [bodyRun(`For ${data.companyName}`, true)],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 720, after: 80 },
-      indent: { right: 720 },
+      spacing: { before: 320, after: 0 },
       border: {
-        top: { style: BorderStyle.SINGLE, size: 6, color: "334155" },
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
       },
-      children: [bodyRun(signatoryName, true)],
+      children: [bodyRun(`Name: ${sigName}`)],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { after: 120 },
-      indent: { right: 720 },
-      children: [bodyRun(signatoryDesignation, false)],
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`)],
     }),
   ];
 }
@@ -158,7 +156,6 @@ async function buildAppointmentLetterDocx(
   const personName = data.person_name.trim() || "_______________________";
   const designation = data.designation.trim() || "Technical Staff";
   const dateLabel = formatDate(data.appointment_date);
-  const placeLabel = data.city.trim() || "_______________________";
   const qualPhrase = qualificationPhrasePlain(data);
   const salutation = personName && personName !== "_______________________"
     ? `Dear ${personName},`
@@ -188,12 +185,6 @@ async function buildAppointmentLetterDocx(
           plainParagraph(`Ref. No.: ${data.reference_no.trim()}`, false, AlignmentType.CENTER),
         ]
       : []),
-    bodyParagraph([
-      bodyRun("Date: ", true),
-      bodyRun(dateLabel),
-      bodyRun("\t\t\tPlace: ", true),
-      bodyRun(placeLabel),
-    ]),
     bodyParagraph([
       bodyRun("To,\n"),
       bodyRun(personName, true),
@@ -283,8 +274,8 @@ export async function downloadAppointmentLetterExcel(
   rows.push(["Experience (Years)", data.experience_years]);
   rows.push(["Appointment Date", formatDate(data.appointment_date)]);
   rows.push(["Reference No.", data.reference_no || "—"]);
-  rows.push(["Signatory Name", data.signatory_name]);
-  rows.push(["Signatory Designation", data.signatory_designation]);
+  rows.push(["Signatory Name", data.signatory_name || data.contactPerson || "—"]);
+  rows.push(["Signatory Designation", data.signatory_designation || "—"]);
   rows.push([]);
   rows.push(["Duties and Responsibilities"]);
   rows.push([

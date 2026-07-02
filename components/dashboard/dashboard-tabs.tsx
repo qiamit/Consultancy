@@ -7,6 +7,7 @@ import Link from "next/link";
 import { FinanceManagementCard } from "@/components/dashboard/finance-management-card";
 import { PendingRenewalsSection } from "@/components/dashboard/pending-renewals-section";
 import { PendingApplicationsSection } from "@/components/dashboard/pending-applications-section";
+import { SurveillanceSection, type SurveillanceRow } from "@/components/dashboard/surveillance-section";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { formatDisplayDate } from "@/lib/format-date";
 
@@ -74,13 +75,14 @@ type Stats = {
 
 // ── Tab config ────────────────────────────────────────────────────────────────
 const TABS = [
-  { id: "general",      emoji: "🏠", label: "General"      },
-  { id: "finance",      emoji: "💰", label: "Finance"      },
-  { id: "renewals",     emoji: "🔄", label: "Renewal"      },
-  { id: "deferred",     emoji: "⏸️", label: "Deferred"     },
-  { id: "stop_marking", emoji: "🚫", label: "Stop Marking" },
-  { id: "applications", emoji: "📋", label: "Applications" },
-  { id: "expired",      emoji: "⌛", label: "Expired"      },
+  { id: "general",      label: "General"      },
+  { id: "finance",      label: "Finance"      },
+  { id: "renewals",     label: "Renewal"      },
+  { id: "deferred",     label: "Deferred"     },
+  { id: "stop_marking", label: "Stop Marking" },
+  { id: "applications", label: "Applications" },
+  { id: "surveillance", label: "Surveillance" },
+  { id: "expired",      label: "Expired"      },
 ];
 const TAB_IDS = new Set(TABS.map((t) => t.id));
 
@@ -562,6 +564,7 @@ export function DashboardTabs({
   applicationRows,
   deferredRows,
   stopMarkingRows,
+  surveillanceRows,
   expiredRows,
   cancelledRows,
   stats,
@@ -571,6 +574,7 @@ export function DashboardTabs({
   applicationRows: ApplicationRow[];
   deferredRows: RenewalRow[];
   stopMarkingRows: RenewalRow[];
+  surveillanceRows: SurveillanceRow[];
   expiredRows: RenewalRow[];
   cancelledRows: BisRow[];
   stats: Stats;
@@ -591,8 +595,11 @@ export function DashboardTabs({
   return (
     <div className="space-y-0">
       {/* Tab Bar */}
-      <div className="sticky top-0 z-10 -mx-3 border-b border-zinc-200 bg-white/95 px-3 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-950/95 sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
-        <nav className="flex flex-wrap gap-0" aria-label="Dashboard tabs">
+      <div className="sticky top-0 z-10 -mx-3 border-b border-zinc-200/80 bg-white/95 px-3 py-3 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/95 sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
+        <nav
+          className="inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-zinc-200/90 bg-zinc-100/90 p-1 shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/90"
+          aria-label="Dashboard tabs"
+        >
           {TABS.map((tab) => {
             const isActive = activeTab === tab.id;
             return (
@@ -600,13 +607,12 @@ export function DashboardTabs({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
-                className={`flex items-center gap-1 border-b-2 px-3 py-2.5 text-xs font-semibold transition-colors ${
+                className={`rounded-lg px-3.5 py-2 text-xs font-semibold tracking-wide transition-all duration-150 ${
                   isActive
-                    ? "border-sky-600 text-sky-700 dark:border-sky-400 dark:text-sky-400"
-                    : "border-transparent text-zinc-500 hover:border-zinc-300 hover:text-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-300"
+                    ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/90 dark:bg-zinc-800 dark:text-white dark:ring-zinc-600/50"
+                    : "text-zinc-600 hover:bg-white/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-200"
                 }`}
               >
-                <span className="text-sm leading-none" aria-hidden>{tab.emoji}</span>
                 {tab.label}
               </button>
             );
@@ -640,6 +646,10 @@ export function DashboardTabs({
 
         {activeTab === "applications" && (
           <PendingApplicationsSection rows={applicationRows} />
+        )}
+
+        {activeTab === "surveillance" && (
+          <SurveillanceSection rows={surveillanceRows} />
         )}
 
         {activeTab === "deferred" && (

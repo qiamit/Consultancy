@@ -1,5 +1,6 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   Packer,
   Paragraph,
@@ -13,6 +14,7 @@ import { buildWorkbookBuffer } from "@/lib/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import { formatCmpf310RupeeDisplay } from "@/lib/cmpf-310";
 import type { Cmpf310LetterData } from "@/lib/print/cmpf-310";
+import { formatCmpf305ApplicantAddress } from "@/lib/print/cmpf-305";
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
 
@@ -61,8 +63,8 @@ function plainParagraph(text: string): Paragraph {
 
 async function buildCmpf310Docx(data: Cmpf310LetterData): Promise<Document> {
   const doc = data.document;
-  const addressParts = [data.address, data.city, data.bisBranchState].filter((p) => p.trim());
-  const addressLine = addressParts.length > 0 ? `${addressParts.join(", ")}, INDIA` : "—";
+  const sigName = doc.signatory_name || data.contactPerson || "—";
+  const sigDesig = doc.signatory_designation || "—";
 
   const rateTable = new Table({
     width: { size: 100, type: WidthType.PERCENTAGE },
@@ -111,18 +113,43 @@ async function buildCmpf310Docx(data: Cmpf310LetterData): Promise<Document> {
       spacing: { after: 200 },
       children: [bodyRun("Acceptance of Rate of Marking Fee", true)],
     }),
-    plainParagraph(`Applicant Name: ${data.companyName}`),
-    plainParagraph(`Applicant Address: ${addressLine}`),
-    plainParagraph(`Application No.: ${formatApplicationNo(data.applicationNumber)}`),
-    plainParagraph(`IS Code: ${data.isNumber || "—"}`),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      children: [bodyRun("Page 01 of 01", true)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 40 },
+      children: [bodyRun(`Date: ${formatMetaDate(data.dateOfApplication)}`)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 120 },
+      children: [bodyRun(`Application No.: ${formatApplicationNo(data.applicationNumber)}`)],
+    }),
     plainParagraph(
       `Reference Letter No.: ${doc.reference_letter_no || "—"}  Dated: ${formatMetaDate(doc.reference_letter_date)}`,
     ),
     plainParagraph("1. Rate of Marking Fee"),
     rateTable,
-    plainParagraph(
-      `Place: ${data.city || "—"}\nDate: ${formatMetaDate(data.dateOfInspection)}\nName: ${doc.signatory_name || data.contactPerson || "—"}\nDesignation: ${doc.signatory_designation || "—"}`,
-    ),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 360, after: 0 },
+      children: [bodyRun(`For ${data.companyName || "—"}`, true)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 320, after: 0 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
+      },
+      children: [bodyRun(`Name: ${sigName}`)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`)],
+    }),
   ];
 
   return new Document({ sections: [{ properties: {}, children }] });
@@ -139,10 +166,12 @@ export async function downloadCmpf310Word(
 
 export async function downloadCmpf310Excel(data: Cmpf310LetterData): Promise<void> {
   const doc = data.document;
+  const addressLine = formatCmpf305ApplicantAddress(data.address);
   const rows: (string | number)[][] = [
     ["Acceptance of Rate of Marking Fee (CMPF - 310)"],
     [],
     ["Applicant Name", data.companyName],
+    ["Applicant Address", addressLine],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
     ["IS Code", data.isNumber || "—"],
     ["Reference Letter No.", doc.reference_letter_no || "—"],

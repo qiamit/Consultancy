@@ -1,5 +1,6 @@
 import {
   AlignmentType,
+  BorderStyle,
   Document,
   Packer,
   Paragraph,
@@ -13,6 +14,7 @@ import type { SubcontractedTestsLetterData } from "@/lib/print/subcontracted-tes
 import { rowHasContent } from "@/lib/subcontracted-tests";
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 22;
@@ -75,6 +77,12 @@ function formatLetterDate(dateStr: string): string {
   return formatDisplayDate(raw, "_______________________");
 }
 
+function formatApplicationNo(raw: string | undefined): string {
+  const v = (raw ?? "").trim();
+  if (!v || v.toUpperCase() === "N/A" || v === "—") return "CM/A - N/A";
+  return formatApplicationNumberDisplay(v);
+}
+
 function buildTestsTable(data: SubcontractedTestsLetterData): Table {
   const visible = data.rows.filter(rowHasContent);
   const headers = ["Sr", "Test Parameter", "Clause", "Test Method", "Unit", "Subcontract Laboratory"];
@@ -114,7 +122,7 @@ function buildTestsTable(data: SubcontractedTestsLetterData): Table {
                   plainParagraph(
                     cell,
                     false,
-                    ci === 1 || ci === 5 ? AlignmentType.LEFT : AlignmentType.CENTER,
+                    ci === 1 ? AlignmentType.LEFT : AlignmentType.CENTER,
                   ),
                 ],
               }),
@@ -144,12 +152,10 @@ async function buildSubcontractedTestsDocx(
   const isRef = isStandardRef(data);
   const bisBranch = bisBranchLine(data);
   const letterDate = formatLetterDate(data.inspectionDate);
-  const place = data.city.trim() || "_______________________";
+  const applicationNo = formatApplicationNo(data.applicationNumber);
   const sigName =
-    data.document.signatory_name.trim() ||
-    data.contactPerson.trim() ||
-    "_______________________";
-  const sigDesig = data.document.signatory_designation.trim() || "_______________________";
+    data.document.signatory_name.trim() || data.contactPerson.trim() || "—";
+  const sigDesig = data.document.signatory_designation.trim() || "—";
 
   const children: (Paragraph | Table)[] = [
     new Paragraph({
@@ -163,6 +169,7 @@ async function buildSubcontractedTestsDocx(
       AlignmentType.LEFT,
     ),
     plainParagraph(`Date: ${letterDate}`, false, AlignmentType.RIGHT),
+    plainParagraph(`Application No.: ${applicationNo}`, false, AlignmentType.RIGHT),
     plainParagraph(
       `Sub: Declaration regarding test parameters subcontracted to accredited laboratories${isRef ? ` for Indian Standard ${isRef}` : ""}.`,
     ),
@@ -173,12 +180,24 @@ async function buildSubcontractedTestsDocx(
     plainParagraph(
       "We further declare that the above particulars are true and correct to the best of our knowledge and belief. We undertake to maintain proper records of subcontracted testing and to inform BIS of any change in the list of subcontracted test parameters or laboratories.",
     ),
-    plainParagraph(`Place: ${place}\nDate: ${letterDate}`, false, AlignmentType.LEFT),
-    plainParagraph(
-      `Signature\nName: ${sigName}\nDesignation: ${sigDesig}\nSeal of the Firm`,
-      false,
-      AlignmentType.RIGHT,
-    ),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 360, after: 0 },
+      children: [bodyRun(`For ${data.companyName}`, true)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 320, after: 0 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
+      },
+      children: [bodyRun(`Name: ${sigName}`)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`)],
+    }),
   ];
 
   return new Document({ sections: [{ properties: {}, children }] });

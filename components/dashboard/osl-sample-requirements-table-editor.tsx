@@ -97,10 +97,10 @@ function SampleEntryRows({
   return (
     <>
       <tr id={`osl-sample-entry-${index}`} className={row1Class}>
-        <td rowSpan={5} className={t.srCell}>
+        <td rowSpan={2} className={t.srCell}>
           {srNo}
         </td>
-        <FieldCell label="Sample Description" t={t} colSpan={4}>
+        <FieldCell label="Sample Description" t={t} colSpan={6}>
           <input
             type="text"
             value={row.sample_description}
@@ -109,8 +109,6 @@ function SampleEntryRows({
             placeholder="Description…"
           />
         </FieldCell>
-      </tr>
-      <tr className={t.groupMid}>
         <FieldCell label="Declared Value" t={t} colSpan={4}>
           <input
             type="text"
@@ -157,8 +155,6 @@ function SampleEntryRows({
             placeholder="Qty…"
           />
         </FieldCell>
-      </tr>
-      <tr className={t.groupMid}>
         <FieldCell label="Sample Code" t={t}>
           <input
             type="text"
@@ -196,9 +192,7 @@ function SampleEntryRows({
             <option value="Non Priority">Non Priority</option>
           </select>
         </FieldCell>
-      </tr>
-      <tr className={t.groupMid}>
-        <FieldCell label="Name of the Laboratory" t={t} colSpan={3}>
+        <FieldCell label="Name of the Laboratory" t={t}>
           <ClientDropdownField
             hideLabel
             inputRowShellClassName={oslClientShell}
@@ -277,12 +271,12 @@ export function OslSampleRequirementsTableEditor({
   return (
     <div className={t.wrap}>
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full border-collapse text-xs">
+        <table className="w-full min-w-[1400px] border-collapse text-xs">
           <thead className={`${t.thead} sticky top-0 z-[1]`}>
             <tr>
               <th className={`${t.th} w-12 text-center`}>Sr No</th>
-              <th className={t.th} colSpan={4}>
-                Sample details (5 rows per entry)
+              <th className={t.th} colSpan={10}>
+                Sample details (2 rows per entry)
               </th>
             </tr>
           </thead>

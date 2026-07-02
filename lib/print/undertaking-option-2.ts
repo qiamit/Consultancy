@@ -9,6 +9,7 @@ import type { UndertakingOption2Stored } from "@/lib/undertaking-option-2";
 import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { buildClassSignatoryBlockHtml } from "@/lib/print/signatory-signature";
 
 export type UndertakingOption2LetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -40,16 +41,6 @@ function formatApplicationNo(raw: string): string {
   return formatApplicationNumberDisplay(v);
 }
 
-function formatAddressWithIndia(address: string, city: string, state: string): string {
-  const line = address.trim();
-  if (line) {
-    return /\bindia\b/i.test(line) ? esc(line) : `${esc(line)}, INDIA`;
-  }
-  const parts = [city.trim(), state.trim()].filter(Boolean);
-  const fallback = parts.length > 0 ? parts.join(", ") : "______________________________";
-  return `${esc(fallback)}, INDIA`;
-}
-
 function formatFactoryAddressForDeclaration(
   factoryAddress: string,
   fallbackAddress: string,
@@ -70,48 +61,36 @@ function blankOr(value: string, fallback = "________________"): string {
   return v || fallback;
 }
 
-function buildHeaderGridHtml(data: UndertakingOption2LetterData): string {
-  const appNo = formatApplicationNo(data.applicationNumber);
-  const dateApp = formatMetaDate(data.dateOfApplication);
-  const dateInsp = formatMetaDate(data.dateOfInspection);
-  const isCode = esc(data.isNumber) || "—";
-  const applicant = esc(data.companyName) || "—";
+function buildFormHeaderHtml(): string {
+  return `<h1 class="u2-title">Undertaking for Simplified Procedure (Option 2)</h1>`;
+}
 
-  const cell =
-    "border:1px solid #111;padding:4px 6px;font-size:10px;vertical-align:middle;line-height:1.35;";
-  const lbl = `${cell}font-weight:700;width:18%;background:#eef2f7;`;
-  const val = `${cell}font-weight:600;`;
+function buildPageIndicatorHtml(): string {
+  return `<div class="u2-page-indicator">Page 01 of 01</div>`;
+}
+
+function buildLetterIntroHtml(data: UndertakingOption2LetterData): string {
+  const letterDate = formatMetaDate(data.dateOfApplication);
+  const appNo = formatApplicationNo(data.applicationNumber);
 
   return `
-<h1 class="cmpf-title">Undertaking for Simplified Procedure (Option 2)</h1>
-<table class="cmpf-header-grid" style="width:100%;border-collapse:collapse;margin-bottom:4px;">
-  <tr>
-    <td style="${lbl}">Applicant Name</td>
-    <td style="${val}" colspan="3">${applicant}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">Applicant Address</td>
-    <td style="${val}" colspan="3">${formatAddressWithIndia(data.address, data.city, data.bisBranchState)}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">Application No.</td>
-    <td style="${val}">${esc(appNo)}</td>
-    <td style="${lbl}width:22%;">Date of Application</td>
-    <td style="${val}">${esc(dateApp)}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">IS Code</td>
-    <td style="${val}">${isCode}</td>
-    <td style="${lbl}">Date of Inspection</td>
-    <td style="${val}">${esc(dateInsp)}</td>
-  </tr>
-</table>
-<div class="cmpf-page-indicator">Page 01 of 01</div>`;
+<div class="u2-to-row">
+  <div class="u2-to-block">
+    To<br/>
+    The Director &amp; Head<br/>
+    Bureau of Indian Standard<br/>
+    ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
+  </div>
+  <div class="u2-date-block">
+    <div><strong>Date:</strong> ${esc(letterDate)}</div>
+    <div><strong>Application No.:</strong> ${esc(appNo)}</div>
+  </div>
+</div>`;
 }
 
 function buildConditionsHtml(): string {
   return `
-<div class="cmpf-conditions">
+<div class="u2-conditions">
   <p><strong>1.</strong> The licence, if granted against the above application shall be put under suspension by BIS, if the sample drawn during the verification visit fails to conform to the relevant Indian Standard</p>
   <p><strong>2.</strong> In such case of suspension, I shall take necessary corrective actions and inform the same to BIS within one month and offer fresh lot of products manufactured after taking corrective actions, from which sample(s) will be drawn by BIS for third party testing</p>
   <p><strong>3.</strong> The revocation of suspension will be considered only based on complete test report(s) of the fresh sample(s) offered, from third party testing laboratory</p>
@@ -120,56 +99,54 @@ function buildConditionsHtml(): string {
 </div>`;
 }
 
+function buildSignatoryBlockHtml(data: UndertakingOption2LetterData): string {
+  const doc = data.document;
+  const sigName =
+    esc(doc.signatory_name) || esc(doc.declarant_name) || esc(data.contactPerson) || "—";
+  const sigDesig = esc(doc.signatory_designation) || "—";
+
+  return buildClassSignatoryBlockHtml({
+    blockClass: "u2-signatory-block",
+    forClass: "u2-signatory-for",
+    sigWrapClass: "u2-signatory-sig",
+    lineClass: "u2-signatory-line",
+    companyName: esc(data.companyName),
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  });
+}
+
 function buildBodyHtml(data: UndertakingOption2LetterData): string {
   const doc = data.document;
   const declarant = blankOr(doc.declarant_name || data.contactPerson || data.companyName);
   const product = blankOr(doc.product_for_mark);
   const standard = blankOr(doc.is_standard || data.isNumber);
   const factoryAddr = formatFactoryAddressForDeclaration(doc.factory_address, data.address);
-  const place = esc(data.city) || "________________";
-  const dateVal = formatMetaDate(data.dateOfInspection);
-  const sigName = esc(doc.signatory_name) || esc(doc.declarant_name) || esc(data.contactPerson) || "—";
-  const sigDesig = esc(doc.signatory_designation) || "—";
 
   return `
-<div class="cmpf-to-block">
-  To<br/>
-  The Director &amp; Head<br/>
-  Bureau of Indian Standard<br/>
-  ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
-</div>
+<p class="u2-salutation">Dear Sir</p>
 
-<p class="cmpf-salutation">Dear Sir</p>
-
-<p class="cmpf-declaration">
+<p class="u2-declaration">
   I, <strong>${declarant}</strong> have applied for a license under Option 2 to you for use of BIS standard mark on <strong>${product}</strong> according to <strong>${standard}</strong> being manufactured at our factory at <strong>${factoryAddr}</strong>
 </p>
 
-<p class="cmpf-agreement">I clearly understand and agree to the conditions that-</p>
+<p class="u2-agreement">I clearly understand and agree to the conditions that-</p>
 
 ${buildConditionsHtml()}
 
-<table style="width:100%;border-collapse:collapse;margin-top:28px;">
-  <tr>
-    <td style="width:50%;vertical-align:top;font-size:10px;line-height:1.8;">
-      <div>Place :- ${place}</div>
-      <div>Date :- ${esc(dateVal)}</div>
-    </td>
-    <td style="width:50%;vertical-align:top;text-align:right;font-size:10px;line-height:1.8;">
-      <div style="margin-top:32px;">Signature</div>
-      <div>Name:- ${sigName}</div>
-      <div>Designation:- ${sigDesig}</div>
-      <div style="margin-top:16px;font-weight:700;">Seal of the Firm</div>
-    </td>
-  </tr>
-</table>`;
+<div class="u2-footer">
+  ${buildSignatoryBlockHtml(data)}
+</div>`;
 }
 
 function buildFormBody(data: UndertakingOption2LetterData): string {
   return `
-<div class="cmpf-sheet">
-  ${buildHeaderGridHtml(data)}
+<div class="u2-sheet">
+  ${buildFormHeaderHtml()}
+  ${buildLetterIntroHtml(data)}
   ${buildBodyHtml(data)}
+  ${buildPageIndicatorHtml()}
 </div>`;
 }
 
@@ -180,7 +157,7 @@ export function buildUndertakingOption2Company(data: UndertakingOption2LetterDat
 export function defaultUndertakingOption2PrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
-    show_letterhead: false,
+    show_letterhead: true,
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
@@ -192,14 +169,18 @@ export function buildUndertakingOption2Html(
   data: UndertakingOption2LetterData,
   settings: PrintSettings,
 ): string {
+  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
   const styles = `
-    .cmpf-sheet {
+    .u2-sheet {
       font-family: "Times New Roman", Times, serif;
       color: #111;
       font-size: 10px;
       position: relative;
+      min-height: ${sheetMinHeight};
+      box-sizing: border-box;
+      padding-bottom: 4mm;
     }
-    .cmpf-title {
+    .u2-title {
       text-align: center;
       font-size: 14px;
       font-weight: 700;
@@ -207,37 +188,86 @@ export function buildUndertakingOption2Html(
       margin: 0 0 12px;
       line-height: 1.35;
     }
-    .cmpf-page-indicator {
-      text-align: right;
+    .u2-page-indicator {
+      position: absolute;
+      right: 0;
+      bottom: 0;
       font-size: 10px;
       font-weight: 600;
-      margin: 2px 0 8px;
+      text-align: right;
     }
-    .cmpf-to-block {
+    .u2-to-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin: 0 0 12px;
+    }
+    .u2-to-block {
+      flex: 1;
+      min-width: 0;
       font-size: 11px;
       line-height: 1.55;
-      margin: 8px 0 10px;
     }
-    .cmpf-salutation {
+    .u2-date-block {
+      flex-shrink: 0;
+      text-align: right;
+      white-space: nowrap;
+      font-size: 11px;
+      line-height: 1.55;
+    }
+    .u2-date-block div + div {
+      margin-top: 4px;
+    }
+    .u2-salutation {
       margin: 0 0 10px;
       font-size: 10px;
     }
-    .cmpf-declaration {
+    .u2-declaration {
       margin: 0 0 10px;
       font-size: 10px;
       line-height: 1.55;
       text-align: justify;
     }
-    .cmpf-agreement {
+    .u2-agreement {
       margin: 0 0 8px;
       font-size: 10px;
       font-weight: 700;
     }
-    .cmpf-conditions p {
+    .u2-conditions p {
       margin: 6px 0;
-      font-size: 9px;
-      line-height: 1.45;
+      font-size: 10.5px;
+      line-height: 1.5;
       text-align: justify;
+    }
+    .u2-footer {
+      margin-top: 28px;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .u2-signatory-block {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      font-size: 10px;
+      line-height: 1.6;
+      text-align: right;
+    }
+    .u2-signatory-for {
+      font-weight: 700;
+      text-align: right;
+    }
+    .u2-signatory-sig {
+      margin-top: 32px;
+      min-width: 200px;
+      text-align: right;
+    }
+    .u2-signatory-line {
+      border-top: 1px solid #94a3b8;
+      padding-top: 2px;
+      font-size: 10px;
+      line-height: 1.35;
+      text-align: right;
     }
   `;
 
@@ -245,7 +275,7 @@ export function buildUndertakingOption2Html(
     title: "Undertaking for Simplified Procedure (Option 2)",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings,
+    settings: { ...settings, show_page_numbers: false },
     company: buildUndertakingOption2Company(data),
   });
 }

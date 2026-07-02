@@ -14,6 +14,11 @@ import {
 
 import type { PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate, parseToDate } from "@/lib/format-date";
+import { buildRightAlignedSignatoryBlockHtml } from "@/lib/print/signatory-signature";
+import {
+  resolvePrimaryTopManagementPerson,
+  type TopManagementStored,
+} from "@/lib/top-management";
 
 
 
@@ -106,51 +111,30 @@ function qualificationPhrase(data: AppointmentLetterData): string {
 
 
 export function defaultAppointmentLetterDraft(
-
   letterData: Omit<
-
     ManufacturingScopeDeclarationData,
-
     "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
-
   >,
-
   person: {
-
     person_name: string;
-
     designation: string;
-
     educational_qualification: string;
-
     experience_years: string;
-
   },
-
+  topManagement: TopManagementStored[] = [],
 ): AppointmentLetterData {
-
+  const primary = resolvePrimaryTopManagementPerson(topManagement);
   return {
-
     ...letterData,
-
     person_name: person.person_name,
-
     designation: person.designation,
-
     educational_qualification: person.educational_qualification,
-
     experience_years: person.experience_years,
-
     appointment_date: new Date().toISOString().split("T")[0] ?? "",
-
     reference_no: "",
-
-    signatory_name: letterData.contactPerson,
-
-    signatory_designation: "Authorised Signatory",
-
+    signatory_name: primary.person_name || letterData.contactPerson || "",
+    signatory_designation: primary.designation || "",
   };
-
 }
 
 
@@ -162,26 +146,16 @@ function salutation(data: AppointmentLetterData): string {
 }
 
 function buildSignatoryBlock(data: AppointmentLetterData): string {
-  const signatoryName = esc(
-    data.signatory_name.trim() || "Authorised Signatory",
-  );
-  const signatoryDesignation = esc(
-    data.signatory_designation.trim() || "Authorised Signatory",
-  );
+  const sigName =
+    esc(data.signatory_name.trim()) || esc(data.contactPerson) || "—";
+  const sigDesig = esc(data.signatory_designation.trim()) || "—";
 
-  return `
-  <div style="margin-top:36px;width:100%;overflow:hidden;">
-    <div style="float:right;width:260px;">
-      <div style="font-weight:700;text-align:right;margin-bottom:44px;">
-        For ${esc(data.companyName)}
-      </div>
-      <div style="border-top:1px solid #334155;padding-top:10px;text-align:center;">
-        <div style="font-size:12px;font-weight:600;line-height:1.4;">${signatoryName}</div>
-        <div style="font-size:11px;line-height:1.4;margin-top:3px;color:#475569;">${signatoryDesignation}</div>
-      </div>
-    </div>
-    <div style="clear:both;"></div>
-  </div>`;
+  return buildRightAlignedSignatoryBlockHtml({
+    companyName: esc(data.companyName),
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  });
 }
 
 function buildAppointmentLetterBody(data: AppointmentLetterData): string {
@@ -201,15 +175,6 @@ function buildAppointmentLetterBody(data: AppointmentLetterData): string {
 </div>
 
 <div style="font-size:12px;line-height:1.75;text-align:justify;">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 20px;">
-    <div style="flex:1;min-width:0;">
-      <strong>Date:</strong> ${formatDate(data.appointment_date)}
-    </div>
-    <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
-      <strong>Place:</strong> ${data.city.trim() ? esc(data.city.trim()) : "_______________________"}
-    </div>
-  </div>
-
   <p style="margin:0 0 18px;line-height:1.65;">
     To,<br/>
     <strong>${personName}</strong><br/>

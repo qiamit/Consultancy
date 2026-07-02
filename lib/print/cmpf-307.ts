@@ -14,6 +14,7 @@ import {
 import { formatApplicationNumberDisplay } from "@/lib/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@/lib/print/types";
 import { formatDisplayDate } from "@/lib/format-date";
+import { buildClassSignatoryBlockHtml } from "@/lib/print/signatory-signature";
 
 export type Cmpf307LetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -47,12 +48,6 @@ function formatApplicationNo(raw: string): string {
   return formatApplicationNumberDisplay(v);
 }
 
-function formatAddressWithIndia(address: string, city: string, state: string): string {
-  const parts = [address.trim(), city.trim(), state.trim()].filter(Boolean);
-  const line = parts.length > 0 ? parts.join(", ") : "______________________________";
-  return `${esc(line)}, INDIA`;
-}
-
 function formatBisBranchLine(branchName: string, state: string): string {
   const branch = branchName.trim() || "________________";
   const st = state.trim() || "________________";
@@ -63,44 +58,33 @@ function padPageNum(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-function buildHeaderGridHtml(data: Cmpf307LetterData, pageNum: number, totalPages: number): string {
-  const appNo = formatApplicationNo(data.applicationNumber);
-  const dateApp = formatMetaDate(data.dateOfApplication);
-  const dateInsp = formatMetaDate(data.dateOfInspection);
-  const isCode = esc(data.isNumber) || "—";
-  const applicant = esc(data.companyName) || "—";
-
-  const cell =
-    "border:1px solid #111;padding:4px 6px;font-size:10px;vertical-align:middle;line-height:1.35;";
-  const lbl = `${cell}font-weight:700;width:18%;background:#eef2f7;`;
-  const val = `${cell}font-weight:600;`;
-
+function buildTitleHtml(): string {
   return `
 <div class="cmpf-form-id">CMPF - 307</div>
-<h1 class="cmpf-title">Declaration of Brand Names Proposed to be Covered Under Certification</h1>
-<table class="cmpf-header-grid" style="width:100%;border-collapse:collapse;margin-bottom:4px;">
-  <tr>
-    <td style="${lbl}">Applicant Name</td>
-    <td style="${val}" colspan="3">${applicant}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">Applicant Address</td>
-    <td style="${val}" colspan="3">${formatAddressWithIndia(data.address, data.city, data.bisBranchState)}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">Application No.</td>
-    <td style="${val}">${esc(appNo)}</td>
-    <td style="${lbl}width:22%;">Date of Application</td>
-    <td style="${val}">${esc(dateApp)}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">IS Code</td>
-    <td style="${val}">${isCode}</td>
-    <td style="${lbl}">Date of Inspection</td>
-    <td style="${val}">${esc(dateInsp)}</td>
-  </tr>
-</table>
-<div class="cmpf-page-indicator">Page ${padPageNum(pageNum)} of ${padPageNum(totalPages)}</div>`;
+<h1 class="cmpf-title">Declaration of Brand Names Proposed to be Covered Under Certification</h1>`;
+}
+
+function buildPageIndicatorHtml(pageNum: number, totalPages: number): string {
+  return `<div class="cmpf-page-indicator">Page ${padPageNum(pageNum)} of ${padPageNum(totalPages)}</div>`;
+}
+
+function buildLetterIntroHtml(data: Cmpf307LetterData): string {
+  const letterDate = formatMetaDate(data.dateOfApplication);
+  const appNo = formatApplicationNo(data.applicationNumber);
+
+  return `
+<div class="cmpf-to-row">
+  <div class="cmpf-to-block">
+    To<br/>
+    The Director &amp; Head<br/>
+    Bureau of Indian Standard<br/>
+    ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
+  </div>
+  <div class="cmpf-date-block">
+    <div><strong>Date:</strong> ${esc(letterDate)}</div>
+    <div><strong>Application No.:</strong> ${esc(appNo)}</div>
+  </div>
+</div>`;
 }
 
 function buildBrandTableHtml(pageRows: Cmpf307BrandStored[], startIndex: number): string {
@@ -109,12 +93,17 @@ function buildBrandTableHtml(pageRows: Cmpf307BrandStored[], startIndex: number)
   const td =
     "border:1px solid #111;padding:4px 3px;font-size:9px;text-align:center;vertical-align:middle;line-height:1.3;min-height:20px;";
 
+  const thSr =
+    `${th}width:3%;padding:4px 2px;`;
+  const tdSr =
+    `${td}width:3%;padding:4px 2px;`;
+
   const body = pageRows
     .map((row, i) => {
       const sr = startIndex + i + 1;
       return `<tr>
-        <td style="${td}width:5%;">${sr}</td>
-        <td style="${td}width:40%;text-align:left;">${esc(row.brand_name) || "&nbsp;"}</td>
+        <td style="${tdSr}">${sr}</td>
+        <td style="${td}width:42%;text-align:left;">${esc(row.brand_name) || "&nbsp;"}</td>
         <td style="${td}width:14%;">${esc(row.owned_by) || "&nbsp;"}</td>
         <td style="${td}width:16%;">${esc(row.registered_status) || "&nbsp;"}</td>
         <td style="${td}width:25%;">${esc(row.registration_date) || "&nbsp;"}</td>
@@ -127,11 +116,11 @@ function buildBrandTableHtml(pageRows: Cmpf307BrandStored[], startIndex: number)
 <table class="cmpf-brand-table" style="width:100%;border-collapse:collapse;table-layout:fixed;">
   <thead>
     <tr>
-      <th style="${th}">Sr. No.</th>
-      <th style="${th}">Brand Names / Trade – Mark(s) Which would be Marked on the Product Bearing the BIS Standard Mark<br>(Give Actual Design Depiction of the Brand Name / Trade – Mark(s)</th>
-      <th style="${th}">Owned By Self OR Others</th>
-      <th style="${th}">Registered / Unregistered</th>
-      <th style="${th}">Date of Registration / Introduction</th>
+      <th style="${thSr}">Sr.</th>
+      <th style="${th}width:42%;">Brand Names / Trade – Mark(s) Which would be Marked on the Product Bearing the BIS Standard Mark<br>(Give Actual Design Depiction of the Brand Name / Trade – Mark(s)</th>
+      <th style="${th}width:14%;">Owned By Self OR Others</th>
+      <th style="${th}width:16%;">Registered / Unregistered</th>
+      <th style="${th}width:25%;">Date of Registration / Introduction</th>
     </tr>
   </thead>
   <tbody>${body}</tbody>
@@ -140,10 +129,6 @@ function buildBrandTableHtml(pageRows: Cmpf307BrandStored[], startIndex: number)
 
 function buildNotesAndDeclarationsHtml(data: Cmpf307LetterData): string {
   const reasons = esc(data.document.brands_without_mark_reasons) || "&nbsp;";
-  const place = esc(data.city) || "________________";
-  const dateVal = formatMetaDate(data.dateOfInspection);
-  const sigName = esc(data.firmRepName) || esc(data.contactPerson) || "—";
-  const sigDesig = esc(data.firmRepDesignation) || "—";
 
   return `
 <div class="cmpf-notes-block">
@@ -159,22 +144,23 @@ function buildNotesAndDeclarationsHtml(data: Cmpf307LetterData): string {
   <p><strong>7.</strong> I/We also understand that in the event of any change, I/We will submit a revised declaration in the prescribed proforma before introducing the change in brand use including deletion or addition.</p>
   <p><strong>8.</strong> I/We also understand to maintain production and dispatch records of the product covered under the licence under each brand separately.</p>
   <p><strong>9.</strong> I/We also understand that, as far as possible, the entire production under the above brands and which conforms to the specification shall be marked with the Standard Mark.</p>
-</div>
+</div>`;
+}
 
-<table style="width:100%;border-collapse:collapse;margin-top:24px;">
-  <tr>
-    <td style="width:50%;vertical-align:top;font-size:10px;line-height:1.8;">
-      <div>Place :- ${place}</div>
-      <div>Date :- ${esc(dateVal)}</div>
-    </td>
-    <td style="width:50%;vertical-align:top;text-align:right;font-size:10px;line-height:1.8;">
-      <div style="margin-top:32px;">Signature</div>
-      <div>Name:- ${sigName}</div>
-      <div>Designation:- ${sigDesig}</div>
-      <div style="margin-top:16px;font-weight:700;">Seal of the Firm</div>
-    </td>
-  </tr>
-</table>`;
+function buildSignatoryBlockHtml(data: Cmpf307LetterData): string {
+  const sigName = esc(data.firmRepName) || esc(data.contactPerson) || "—";
+  const sigDesig = esc(data.firmRepDesignation) || "—";
+
+  return buildClassSignatoryBlockHtml({
+    blockClass: "cmpf-signatory-block",
+    forClass: "cmpf-signatory-for",
+    sigWrapClass: "cmpf-signatory-sig",
+    lineClass: "cmpf-signatory-line",
+    companyName: esc(data.companyName),
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  });
 }
 
 function buildSinglePageHtml(
@@ -185,38 +171,35 @@ function buildSinglePageHtml(
   startIndex: number,
   isLastPage: boolean,
 ): string {
-  const toBlock = `
-<div class="cmpf-to-block">
-  To<br/>
-  The Director &amp; Head<br/>
-  Bureau of Indian Standard<br/>
-  ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
-</div>`;
-
   return `
 <div class="cmpf-sheet${pageNum > 1 ? " page-break" : ""}">
-  ${buildHeaderGridHtml(data, pageNum, totalPages)}
-  ${pageNum === 1 ? toBlock : ""}
+  ${buildTitleHtml()}
+  ${pageNum === 1 ? buildLetterIntroHtml(data) : ""}
   ${buildBrandTableHtml(pageRows, startIndex)}
   ${isLastPage ? buildNotesAndDeclarationsHtml(data) : ""}
+  ${isLastPage ? buildSignatoryBlockHtml(data) : ""}
+  ${buildPageIndicatorHtml(pageNum, totalPages)}
 </div>`;
 }
 
 function buildFormBody(data: Cmpf307LetterData): string {
   const pages = paginateBrandRows(data.document.brands, CMPF307_ROWS_PER_PAGE);
   const totalPages = pages.length;
+  let rowOffset = 0;
 
   return pages
-    .map((pageRows, i) =>
-      buildSinglePageHtml(
+    .map((pageRows, i) => {
+      const html = buildSinglePageHtml(
         data,
         pageRows,
         i + 1,
         totalPages,
-        i * CMPF307_ROWS_PER_PAGE,
+        rowOffset,
         i === totalPages - 1,
-      ),
-    )
+      );
+      rowOffset += pageRows.length;
+      return html;
+    })
     .join("");
 }
 
@@ -227,8 +210,8 @@ export function buildCmpf307Company(data: Cmpf307LetterData): PrintCompanyInfo {
 export function defaultCmpf307PrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
-    orientation: "landscape",
-    show_letterhead: false,
+    orientation: "portrait",
+    show_letterhead: true,
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
@@ -237,12 +220,16 @@ export function defaultCmpf307PrintSettings(): PrintSettings {
 }
 
 export function buildCmpf307Html(data: Cmpf307LetterData, settings: PrintSettings): string {
+  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
       color: #111;
       font-size: 10px;
       position: relative;
+      min-height: ${sheetMinHeight};
+      box-sizing: border-box;
+      padding-bottom: 4mm;
     }
     .cmpf-form-id {
       text-align: right;
@@ -260,15 +247,32 @@ export function buildCmpf307Html(data: Cmpf307LetterData, settings: PrintSetting
       line-height: 1.35;
     }
     .cmpf-page-indicator {
-      text-align: right;
+      position: absolute;
+      right: 0;
+      bottom: 0;
       font-size: 10px;
       font-weight: 600;
-      margin: 2px 0 8px;
+      text-align: right;
+    }
+    .cmpf-to-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 16px;
+      margin: 0 0 12px;
     }
     .cmpf-to-block {
+      flex: 1;
+      min-width: 0;
       font-size: 11px;
       line-height: 1.55;
-      margin: 8px 0 4px;
+    }
+    .cmpf-date-block {
+      flex-shrink: 0;
+      text-align: right;
+      white-space: nowrap;
+      font-size: 11px;
+      line-height: 1.55;
     }
     .cmpf-section-heading {
       margin: 12px 0 6px;
@@ -291,6 +295,31 @@ export function buildCmpf307Html(data: Cmpf307LetterData, settings: PrintSetting
       font-size: 9px;
       line-height: 1.45;
       text-align: justify;
+    }
+    .cmpf-signatory-block {
+      margin-top: 28px;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      font-size: 10px;
+      line-height: 1.6;
+      text-align: right;
+    }
+    .cmpf-signatory-for {
+      font-weight: 700;
+      text-align: right;
+    }
+    .cmpf-signatory-sig {
+      margin-top: 32px;
+      min-width: 200px;
+      text-align: right;
+    }
+    .cmpf-signatory-line {
+      border-top: 1px solid #94a3b8;
+      padding-top: 2px;
+      font-size: 10px;
+      line-height: 1.35;
+      text-align: right;
     }
     .page-break { page-break-before: always; }
   `;

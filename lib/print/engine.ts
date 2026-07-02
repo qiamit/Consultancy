@@ -31,7 +31,7 @@ function pageSizeCss(s: PrintSettings): string {
   return s.orientation === "landscape" ? dim.split(" ").reverse().join(" ") : dim;
 }
 
-function buildLetterhead(c: PrintCompanyInfo, s: PrintSettings): string {
+export function buildLetterheadHtml(c: PrintCompanyInfo, s: PrintSettings): string {
   if (!s.show_letterhead) return "";
 
   if (c.letterhead_upper_url) {
@@ -167,7 +167,7 @@ export function buildPrintDocument({
   const pageSize = pageSizeCss(s);
   const margins = `${s.margin_top}mm ${s.margin_right}mm ${s.margin_bottom}mm ${s.margin_left}mm`;
 
-  const letterheadHtml = buildLetterhead(c, s);
+  const letterheadHtml = buildLetterheadHtml(c, s);
   const footerHtml = buildFooter(c, s);
 
   const styles = `

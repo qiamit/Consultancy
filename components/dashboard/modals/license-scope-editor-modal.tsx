@@ -25,11 +25,15 @@ import {
   type ManufacturingScopeDeclarationData,
 } from "@/lib/print/manufacturing-scope-declaration";
 import {
-  downloadManufacturingScopeDeclarationExcel,
   downloadManufacturingScopeDeclarationWord,
 } from "@/lib/print/manufacturing-scope-declaration-export";
 import type { PrintSettings } from "@/lib/print/types";
 import { applyLicenseScopeUpdate } from "@/lib/license-scope-assistant";
+import {
+  resolvePrimaryTopManagementPerson,
+  withDocumentSignatureImage,
+  type TopManagementStored,
+} from "@/lib/top-management";
 
 export type LicenseScopeSavePayload = {
   licenseScope: string;
@@ -49,6 +53,7 @@ function initialTableRows(
 
 export function LicenseScopeEditorModal({
   declarationData,
+  topManagement,
   licenseScope,
   licenseScopeFormat,
   licenseScopeRows,
@@ -62,6 +67,7 @@ export function LicenseScopeEditorModal({
     ManufacturingScopeDeclarationData,
     "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
   >;
+  topManagement: TopManagementStored[];
   licenseScope: string;
   licenseScopeFormat: LicenseScopeFormat;
   licenseScopeRows: { component: string; value: string }[];
@@ -107,15 +113,37 @@ export function LicenseScopeEditorModal({
     [licenseScopeFormat, draftScope, tableRows],
   );
 
+  const { signatoryName, signatoryDesignation } = useMemo(() => {
+    const primary = resolvePrimaryTopManagementPerson(topManagement);
+    return {
+      signatoryName: primary.person_name || declarationData.contactPerson?.trim() || "",
+      signatoryDesignation: primary.designation,
+    };
+  }, [topManagement, declarationData.contactPerson]);
+
   const previewData = useMemo(
-    (): ManufacturingScopeDeclarationData => ({
-      ...declarationData,
-      licenseScope: effectiveScopeText,
+    (): ManufacturingScopeDeclarationData =>
+      withDocumentSignatureImage(
+        {
+          ...declarationData,
+          signatoryName,
+          signatoryDesignation,
+          licenseScope: effectiveScopeText,
+          licenseScopeFormat,
+          licenseScopeRows:
+            licenseScopeFormat === "table" ? editorRowsToStored(tableRows) : undefined,
+        },
+        topManagement,
+      ),
+    [
+      declarationData,
+      signatoryName,
+      signatoryDesignation,
+      effectiveScopeText,
       licenseScopeFormat,
-      licenseScopeRows:
-        licenseScopeFormat === "table" ? editorRowsToStored(tableRows) : undefined,
-    }),
-    [declarationData, effectiveScopeText, licenseScopeFormat, tableRows],
+      tableRows,
+      topManagement,
+    ],
   );
 
   const refreshPreview = useCallback(() => {
@@ -164,12 +192,6 @@ export function LicenseScopeEditorModal({
   function handleDownloadWord() {
     void downloadManufacturingScopeDeclarationWord(previewData, printSettings).catch(
       () => window.alert("Unable to download Word file."),
-    );
-  }
-
-  function handleDownloadExcel() {
-    void downloadManufacturingScopeDeclarationExcel(previewData).catch(() =>
-      window.alert("Unable to download Excel file."),
     );
   }
 
@@ -234,13 +256,6 @@ export function LicenseScopeEditorModal({
             className="rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
           >
             Download Word File
-          </button>
-          <button
-            type="button"
-            onClick={handleDownloadExcel}
-            className="rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-          >
-            Download Excel File
           </button>
           <button
             type="button"

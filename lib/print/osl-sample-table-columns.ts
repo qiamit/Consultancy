@@ -43,6 +43,7 @@ export const OSL_SAMPLE_TABLE_COLUMN_OPTIONS: {
   wide?: boolean;
   stackHeader?: boolean;
   headerCenter?: boolean;
+  cellCenter?: boolean;
 }[] = [
   { key: "sr_no", label: "Sr. No.", headerHtml: "Sr<br/>No", stackHeader: true, headerCenter: true },
   {
@@ -58,9 +59,10 @@ export const OSL_SAMPLE_TABLE_COLUMN_OPTIONS: {
     headerHtml: "Declared Value",
     wide: true,
     headerCenter: true,
+    cellCenter: true,
   },
-  { key: "batch_no", label: "Batch No.", headerHtml: "Batch No", headerCenter: true },
-  { key: "dom", label: "Date of Manufacturing", headerHtml: "DOM", headerCenter: true },
+  { key: "batch_no", label: "Batch No.", headerHtml: "Batch No", headerCenter: true, cellCenter: true },
+  { key: "dom", label: "Date of Manufacturing", headerHtml: "DOM", headerCenter: true, cellCenter: true },
   {
     key: "sample_quantity",
     label: "Sample Quantity",
@@ -76,6 +78,7 @@ export const OSL_SAMPLE_TABLE_COLUMN_OPTIONS: {
     headerHtml: "Batch<br/>QTY",
     stackHeader: true,
     headerCenter: true,
+    cellCenter: true,
   },
   { key: "sample_type", label: "Sample Type", headerHtml: "Sample Type", headerCenter: true },
   { key: "priority", label: "Priority", headerHtml: "Priority", headerCenter: true },
