@@ -90,7 +90,7 @@ const INDUSTRIES = ["Manufacturing", "Electronics & IT", "Testing Labs", "Jewell
 
 export default function HomePage() {
   return (
-    <div className="min-h-screen flex flex-col bg-zinc-50 dark:bg-zinc-950 xl:h-screen xl:overflow-hidden">
+    <div className="min-h-screen flex flex-col overflow-x-clip bg-zinc-50 dark:bg-zinc-950 xl:h-screen xl:overflow-hidden">
       <SiteNavbar />
 
       {/* Main fills remaining height on desktop; scroll naturally on mobile/tablet */}
@@ -101,9 +101,9 @@ export default function HomePage() {
           <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-2 xl:grid-cols-[minmax(240px,28%)_minmax(0,1fr)_minmax(240px,28%)] gap-0 xl:overflow-hidden">
 
             {/* ── COL 1: Brand & Stats ── */}
-            <div className="relative flex flex-col justify-between px-4 py-5 sm:px-5 sm:py-6 border-b lg:border-b-0 lg:border-r border-zinc-200 dark:border-zinc-800 bg-gradient-to-b from-zinc-100 dark:from-zinc-900 via-white dark:via-zinc-900 to-zinc-50 dark:to-zinc-950">
-              <div className="absolute w-72 h-72 bg-blue-600/10 rounded-full -left-20 -top-10 blur-3xl pointer-events-none" />
-              <div className="absolute w-48 h-48 bg-emerald-500/8 rounded-full -right-10 bottom-24 blur-3xl pointer-events-none" />
+            <div className="relative flex flex-col justify-between overflow-hidden px-4 py-5 sm:px-5 sm:py-6 border-b lg:border-b-0 lg:border-r border-zinc-200 dark:border-zinc-800 bg-gradient-to-b from-zinc-100 dark:from-zinc-900 via-white dark:via-zinc-900 to-zinc-50 dark:to-zinc-950">
+              <div className="absolute w-72 h-72 bg-blue-600/10 rounded-full -left-20 -top-10 blur-3xl pointer-events-none" aria-hidden />
+              <div className="absolute w-48 h-48 bg-emerald-500/8 rounded-full -right-10 bottom-24 blur-3xl pointer-events-none" aria-hidden />
 
               <div className="relative flex flex-col items-center justify-center text-center w-full max-w-lg mx-auto gap-3 py-2 xl:max-w-[320px]">
                 {/* Company name */}

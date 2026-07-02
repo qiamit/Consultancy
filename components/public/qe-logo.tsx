@@ -83,8 +83,8 @@ export function QELogo({ sm = false, className = "" }: QELogoProps) {
     <div className={`inline-flex items-center gap-2.5 select-none ${className}`}>
       <QEMark size={markSize} />
 
-      <div className="flex flex-col leading-none">
-        <span className="text-[15px] font-black tracking-tight text-zinc-900 dark:text-white leading-none">
+      <div className="flex min-w-0 flex-col leading-none">
+        <span className="truncate text-[15px] font-black tracking-tight text-zinc-900 dark:text-white leading-none">
           Quality Engineering
         </span>
       </div>
