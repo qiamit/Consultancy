@@ -84,6 +84,20 @@ export function SiteNavbar() {
     return () => window.removeEventListener("scroll", fn);
   }, []);
 
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [mobileOpen]);
+
+  useEffect(() => {
+    setMobileOpen(false);
+    setExpanded(null);
+  }, [pathname]);
+
   const handleLoginNav = () => {
     setMobileOpen(false);
     router.push("/login");
@@ -93,9 +107,9 @@ export function SiteNavbar() {
     <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b border-zinc-200/80 dark:border-zinc-800 ${scrolled ? "bg-white shadow-sm dark:bg-zinc-900" : "bg-white/90 backdrop-blur-md dark:bg-zinc-900/90"}`}>
       <div className="h-[3px] bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-600" />
 
-      <nav className="w-full px-4 sm:px-6 lg:px-8 flex items-center h-[62px] gap-4">
+      <nav className="w-full max-w-[100vw] px-4 sm:px-6 lg:px-8 flex items-center h-[62px] gap-3 sm:gap-4 overflow-hidden">
         {/* Logo */}
-        <Link href="/" className="flex-shrink-0" aria-label="Quality Engineering — Home">
+        <Link href="/" className="min-w-0 flex-1 lg:flex-none" aria-label="Quality Engineering — Home">
           <QELogo sm />
         </Link>
 
@@ -151,7 +165,7 @@ export function SiteNavbar() {
         </div>
 
         {/* Right: CTA buttons + Mobile toggle */}
-        <div className="flex items-center gap-2 flex-shrink-0 ml-auto lg:ml-0">
+        <div className="flex items-center gap-2 flex-shrink-0 ml-auto lg:ml-0 relative z-20">
           {/* WhatsApp button */}
           <a
             href="https://wa.me/919009413040?text=Hello%2C%20I%20need%20BIS%20Certification%20consultation"
@@ -186,9 +200,12 @@ export function SiteNavbar() {
           </button>
 
           <button
-            className="lg:hidden p-2 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
-            onClick={() => setMobileOpen(!mobileOpen)}
+            type="button"
+            className="lg:hidden flex h-11 w-11 items-center justify-center rounded-lg text-gray-700 hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation"
+            onClick={() => setMobileOpen((open) => !open)}
             aria-label="Toggle menu"
+            aria-expanded={mobileOpen}
+            aria-controls="mobile-nav-menu"
           >
             {mobileOpen ? (
               <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
@@ -201,14 +218,25 @@ export function SiteNavbar() {
 
       {/* Mobile Menu */}
       {mobileOpen && (
-        <div className="lg:hidden bg-white border-t border-gray-100 shadow-lg">
-          <div className="px-4 py-3 space-y-0.5 max-h-[80vh] overflow-y-auto">
+        <>
+          <button
+            type="button"
+            className="fixed inset-0 top-[65px] z-[55] bg-black/30 lg:hidden"
+            onClick={() => setMobileOpen(false)}
+            aria-label="Close menu"
+          />
+          <div
+            id="mobile-nav-menu"
+            className="lg:hidden relative z-[60] border-t border-gray-100 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+          >
+          <div className="px-4 py-3 space-y-0.5 max-h-[min(80vh,calc(100dvh-65px))] overflow-y-auto overscroll-contain">
             <Link href="/" className="block px-3 py-2.5 text-sm font-semibold text-gray-700 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>Home</Link>
             <Link href="/about" className="block px-3 py-2.5 text-sm font-semibold text-gray-700 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>About</Link>
 
             {/* Services accordion */}
             <div>
               <button
+                type="button"
                 className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-gray-700 rounded-lg hover:bg-blue-50"
                 onClick={() => setExpanded(expanded === "services" ? null : "services")}
               >
@@ -227,6 +255,7 @@ export function SiteNavbar() {
             {/* Mandatory Products accordion */}
             <div>
               <button
+                type="button"
                 className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-gray-700 rounded-lg hover:bg-blue-50"
                 onClick={() => setExpanded(expanded === "mandatory" ? null : "mandatory")}
               >
@@ -252,12 +281,13 @@ export function SiteNavbar() {
                 <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d={WA_PATH} /></svg>
                 WhatsApp
               </a>
-              <button onClick={handleLoginNav} className="flex-1 py-2.5 bg-sky-600 text-white font-bold rounded-xl hover:bg-sky-500 transition-colors text-sm">
+              <button type="button" onClick={handleLoginNav} className="flex-1 py-2.5 bg-sky-600 text-white font-bold rounded-xl hover:bg-sky-500 transition-colors text-sm">
                 Client Portal
               </button>
             </div>
           </div>
-        </div>
+          </div>
+        </>
       )}
     </header>
   );
