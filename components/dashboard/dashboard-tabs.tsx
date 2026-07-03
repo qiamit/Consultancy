@@ -586,6 +586,15 @@ export function DashboardTabs({
   const tabParam = searchParams.get("tab");
   const activeTab = tabParam && TAB_IDS.has(tabParam) ? tabParam : "general";
 
+  const tabCounts: Record<string, number> = {
+    renewals: renewalRows.length,
+    deferred: deferredRows.length,
+    stop_marking: stopMarkingRows.length,
+    applications: applicationRows.length,
+    surveillance: surveillanceRows.length,
+    expired: expiredRows.length,
+  };
+
   function setActiveTab(id: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", id);
@@ -596,28 +605,56 @@ export function DashboardTabs({
     <div className="space-y-0">
       {/* Tab Bar */}
       <div className="sticky top-0 z-10 -mx-3 border-b border-zinc-200/80 bg-white/95 px-3 py-3 backdrop-blur-md dark:border-zinc-800 dark:bg-zinc-950/95 sm:-mx-5 sm:px-5 lg:-mx-8 lg:px-8">
-        <nav
-          className="inline-flex max-w-full flex-wrap gap-1 rounded-xl border border-zinc-200/90 bg-zinc-100/90 p-1 shadow-sm dark:border-zinc-700/80 dark:bg-zinc-900/90"
-          aria-label="Dashboard tabs"
-        >
-          {TABS.map((tab) => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={`rounded-lg px-3.5 py-2 text-xs font-semibold tracking-wide transition-all duration-150 ${
-                  isActive
-                    ? "bg-white text-zinc-900 shadow-sm ring-1 ring-zinc-200/90 dark:bg-zinc-800 dark:text-white dark:ring-zinc-600/50"
-                    : "text-zinc-600 hover:bg-white/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-200"
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
-        </nav>
+        <div className="relative">
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-1 left-0 z-10 w-8 rounded-l-2xl bg-gradient-to-r from-white via-white/80 to-transparent dark:from-zinc-950 dark:via-zinc-950/80 md:hidden"
+          />
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-1 right-0 z-10 w-8 rounded-r-2xl bg-gradient-to-l from-white via-white/80 to-transparent dark:from-zinc-950 dark:via-zinc-950/80 md:hidden"
+          />
+
+          <nav
+            className="flex w-full gap-1.5 overflow-x-auto rounded-2xl border border-zinc-200/80 bg-gradient-to-b from-zinc-50 to-zinc-100/90 p-1.5 shadow-sm [-ms-overflow-style:none] [scrollbar-width:none] snap-x snap-mandatory dark:border-zinc-700/80 dark:from-zinc-900 dark:to-zinc-900/70 [&::-webkit-scrollbar]:hidden"
+            aria-label="Dashboard tabs"
+          >
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const count = tabCounts[tab.id];
+
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`inline-flex shrink-0 snap-start items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold whitespace-nowrap transition-all duration-200 ${
+                    isActive
+                      ? "bg-white text-sky-700 shadow-md ring-1 ring-sky-200/80 dark:bg-zinc-800 dark:text-sky-300 dark:ring-sky-700/40"
+                      : "text-zinc-600 hover:bg-white/70 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800/70 dark:hover:text-zinc-100"
+                  }`}
+                >
+                  <span>{tab.label}</span>
+                  {count !== undefined && (
+                    <span
+                      className={`min-w-[1.25rem] rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold tabular-nums leading-none ${
+                        isActive
+                          ? "bg-sky-100 text-sky-700 dark:bg-sky-950/70 dark:text-sky-200"
+                          : count > 0
+                            ? "bg-zinc-200/90 text-zinc-700 dark:bg-zinc-700 dark:text-zinc-200"
+                            : "bg-zinc-200/50 text-zinc-400 dark:bg-zinc-800 dark:text-zinc-500"
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
       </div>
 
       {/* Tab Content */}
