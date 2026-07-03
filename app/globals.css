@@ -25,6 +25,10 @@ html {
   max-width: 100%;
 }
 
+html:has(#site-mobile-nav[open]) {
+  overflow: hidden;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

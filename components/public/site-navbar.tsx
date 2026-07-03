@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import { QELogo } from "@/components/public/qe-logo";
@@ -53,15 +53,29 @@ const dropdownHeaderText =
 const dropdownLink =
   "flex items-center gap-3 px-4 py-2.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-sky-50 hover:text-sky-600 dark:hover:bg-sky-950/40 dark:hover:text-sky-400 transition-colors";
 
-const dropdownSection =
-  "px-4 py-1.5 mt-1 border-t border-zinc-100 dark:border-zinc-800";
+const mobileLink =
+  "block px-3 py-2.5 text-sm font-semibold text-gray-700 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50";
+
+const mobileSubLink =
+  "block px-3 py-2 text-sm text-gray-600 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50";
+
+const MenuIcon = () => (
+  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+  </svg>
+);
 
 export function SiteNavbar() {
   const router = useRouter();
   const pathname = usePathname();
   const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const mobileNavRef = useRef<HTMLDetailsElement>(null);
 
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
@@ -78,6 +92,10 @@ export function SiteNavbar() {
         : "text-zinc-600 dark:text-zinc-400 hover:text-sky-600 dark:hover:text-sky-400 hover:bg-white dark:hover:bg-zinc-900",
     ].join(" ");
 
+  const closeMobileNav = () => {
+    if (mobileNavRef.current) mobileNavRef.current.open = false;
+  };
+
   useEffect(() => {
     const fn = () => setScrolled(window.scrollY > 10);
     window.addEventListener("scroll", fn, { passive: true });
@@ -85,23 +103,11 @@ export function SiteNavbar() {
   }, []);
 
   useEffect(() => {
-    if (!mobileOpen) return;
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.body.style.overflow = previousOverflow;
-    };
-  }, [mobileOpen]);
-
-  useEffect(() => {
-    setMobileOpen(false);
-    setExpanded(null);
+    closeMobileNav();
   }, [pathname]);
 
-  const toggleMobileMenu = () => setMobileOpen((open) => !open);
-
   const handleLoginNav = () => {
-    setMobileOpen(false);
+    closeMobileNav();
     router.push("/login");
   };
 
@@ -109,7 +115,93 @@ export function SiteNavbar() {
     <header className={`fixed top-0 left-0 right-0 z-50 w-full max-w-[100vw] overflow-x-clip transition-all duration-300 border-b border-zinc-200/80 dark:border-zinc-800 ${scrolled ? "bg-white shadow-sm dark:bg-zinc-900" : "bg-white/90 backdrop-blur-md dark:bg-zinc-900/90"}`}>
       <div className="h-[3px] bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-600" />
 
-      <nav className="w-full px-4 sm:px-6 lg:px-8 flex items-center h-[62px] gap-3 sm:gap-4 overflow-hidden pr-12 lg:pr-8">
+      <nav className="w-full px-3 sm:px-6 lg:px-8 flex items-center h-[62px] gap-2 sm:gap-4 overflow-hidden">
+        {/* Mobile menu — native <details> works without JavaScript (cloud preview safe) */}
+        <details
+          ref={mobileNavRef}
+          id="site-mobile-nav"
+          className="site-mobile-nav lg:hidden group/mobile flex-shrink-0 relative z-[70]"
+        >
+          <summary
+            className="flex h-11 w-11 items-center justify-center rounded-lg bg-white/95 text-gray-700 shadow-sm ring-1 ring-zinc-200/80 hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation cursor-pointer select-none dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-zinc-700 list-none [&::-webkit-details-marker]:hidden"
+            aria-label="Toggle menu"
+          >
+            <span className="group-open/mobile:hidden"><MenuIcon /></span>
+            <span className="hidden group-open/mobile:flex"><CloseIcon /></span>
+          </summary>
+
+          <div
+            id="mobile-nav-menu"
+            className="fixed left-0 right-0 top-[65px] z-[60] max-h-[min(80vh,calc(100dvh-65px))] overflow-y-auto overscroll-contain border-t border-gray-100 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
+          >
+            <div className="px-4 py-3 space-y-0.5">
+              <Link href="/" className={mobileLink}>Home</Link>
+              <Link href="/about" className={mobileLink}>About</Link>
+
+              <details className="site-mobile-nav-section group/services">
+                <summary className="flex w-full cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-gray-700 rounded-lg hover:bg-blue-50 [&::-webkit-details-marker]:hidden">
+                  Services
+                  <svg className="w-4 h-4 transition-transform group-open/services:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </summary>
+                <div className="pl-3 mt-1 space-y-0.5">
+                  {SERVICES.map((s) => (
+                    <Link key={s.href} href={s.href} className={mobileSubLink}>{s.label}</Link>
+                  ))}
+                </div>
+              </details>
+
+              <details className="site-mobile-nav-section group/mandatory">
+                <summary className="flex w-full cursor-pointer list-none items-center justify-between px-3 py-2.5 text-sm font-semibold text-gray-700 rounded-lg hover:bg-blue-50 [&::-webkit-details-marker]:hidden">
+                  Mandatory Products
+                  <svg className="w-4 h-4 transition-transform group-open/mandatory:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden>
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </summary>
+                <div className="pl-3 mt-1 space-y-0.5">
+                  <Link href={MANDATORY_INTERNAL.href} className="block px-3 py-2 text-sm font-semibold text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50">
+                    {MANDATORY_INTERNAL.label}
+                  </Link>
+                  {MANDATORY.map((m) => (
+                    <a
+                      key={m.url}
+                      href={m.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block px-3 py-2 text-sm text-gray-600 hover:text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50"
+                    >
+                      {m.label}
+                    </a>
+                  ))}
+                </div>
+              </details>
+
+              <Link href="/updates" className={mobileLink}>Updates</Link>
+              <Link href="/testimonials" className={mobileLink}>Testimonials</Link>
+              <Link href="/contact" className={mobileLink}>Contact</Link>
+
+              <div className="pt-3 pb-1 border-t border-gray-100 mt-2 flex gap-2">
+                <a
+                  href="https://wa.me/919009413040"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-[#25D366] text-white font-bold rounded-xl text-sm"
+                >
+                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" aria-hidden><path d={WA_PATH} /></svg>
+                  WhatsApp
+                </a>
+                <Link
+                  href="/login"
+                  className="flex-1 flex items-center justify-center py-2.5 bg-sky-600 text-white font-bold rounded-xl hover:bg-sky-500 transition-colors text-sm"
+                >
+                  Client Portal
+                </Link>
+              </div>
+            </div>
+          </div>
+        </details>
+
         {/* Logo */}
         <Link href="/" className="min-w-0 flex-1 lg:flex-none" aria-label="Quality Engineering — Home">
           <QELogo sm />
@@ -168,7 +260,6 @@ export function SiteNavbar() {
 
         {/* Right: CTA buttons (desktop only) */}
         <div className="hidden lg:flex items-center gap-2 flex-shrink-0 ml-auto">
-          {/* WhatsApp button */}
           <a
             href="https://wa.me/919009413040?text=Hello%2C%20I%20need%20BIS%20Certification%20consultation"
             target="_blank"
@@ -179,7 +270,6 @@ export function SiteNavbar() {
             WhatsApp
           </a>
 
-          {/* Call button */}
           <a
             href="tel:+919009413040"
             className="hidden lg:flex items-center gap-1.5 px-3 py-2 border border-gray-200 hover:border-sky-600 hover:text-sky-600 dark:text-sky-400 text-gray-700 font-bold rounded-lg transition-colors text-xs"
@@ -190,8 +280,8 @@ export function SiteNavbar() {
             Call
           </a>
 
-          {/* Portal button */}
           <button
+            type="button"
             onClick={handleLoginNav}
             className="hidden lg:flex items-center gap-1.5 px-3 py-2 text-xs font-bold bg-sky-600 text-white rounded-lg hover:bg-sky-500 transition-colors shadow-sm"
           >
@@ -202,96 +292,6 @@ export function SiteNavbar() {
           </button>
         </div>
       </nav>
-
-      {/* Mobile toggle — pinned to viewport so flex/overflow cannot push it off-screen */}
-      <button
-        type="button"
-        className="lg:hidden fixed top-[14px] right-3 z-[70] flex h-11 w-11 items-center justify-center rounded-lg bg-white/95 text-gray-700 shadow-sm ring-1 ring-zinc-200/80 hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-zinc-700"
-        onClick={toggleMobileMenu}
-        aria-label="Toggle menu"
-        aria-expanded={mobileOpen}
-        aria-controls="mobile-nav-menu"
-      >
-        {mobileOpen ? (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-        ) : (
-          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/></svg>
-        )}
-      </button>
-
-      {/* Mobile Menu */}
-      {mobileOpen && (
-        <>
-          <button
-            type="button"
-            className="fixed inset-0 top-[65px] z-[55] bg-black/30 lg:hidden"
-            onClick={() => setMobileOpen(false)}
-            aria-label="Close menu"
-          />
-          <div
-            id="mobile-nav-menu"
-            className="lg:hidden relative z-[60] border-t border-gray-100 bg-white shadow-lg dark:border-zinc-800 dark:bg-zinc-900"
-          >
-          <div className="px-4 py-3 space-y-0.5 max-h-[min(80vh,calc(100dvh-65px))] overflow-y-auto overscroll-contain">
-            <Link href="/" className="block px-3 py-2.5 text-sm font-semibold text-gray-700 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>Home</Link>
-            <Link href="/about" className="block px-3 py-2.5 text-sm font-semibold text-gray-700 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>About</Link>
-
-            {/* Services accordion */}
-            <div>
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-gray-700 rounded-lg hover:bg-blue-50"
-                onClick={() => setExpanded(expanded === "services" ? null : "services")}
-              >
-                Services
-                <svg className={`w-4 h-4 transition-transform ${expanded === "services" ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
-              </button>
-              {expanded === "services" && (
-                <div className="pl-3 mt-1 space-y-0.5">
-                  {SERVICES.map(s => (
-                    <Link key={s.href} href={s.href} className="block px-3 py-2 text-sm text-gray-600 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>{s.label}</Link>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Mandatory Products accordion */}
-            <div>
-              <button
-                type="button"
-                className="w-full flex items-center justify-between px-3 py-2.5 text-sm font-semibold text-gray-700 rounded-lg hover:bg-blue-50"
-                onClick={() => setExpanded(expanded === "mandatory" ? null : "mandatory")}
-              >
-                Mandatory Products
-                <svg className={`w-4 h-4 transition-transform ${expanded === "mandatory" ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7"/></svg>
-              </button>
-              {expanded === "mandatory" && (
-                <div className="pl-3 mt-1 space-y-0.5">
-                  <Link href={MANDATORY_INTERNAL.href} className="block px-3 py-2 text-sm font-semibold text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>{MANDATORY_INTERNAL.label}</Link>
-                  {MANDATORY.map(m => (
-                    <a key={m.url} href={m.url} target="_blank" rel="noopener noreferrer" className="block px-3 py-2 text-sm text-gray-600 hover:text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50" onClick={() => setMobileOpen(false)}>{m.label}</a>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <Link href="/updates" className="block px-3 py-2.5 text-sm font-semibold text-gray-700 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>Updates</Link>
-            <Link href="/testimonials" className="block px-3 py-2.5 text-sm font-semibold text-gray-700 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>Testimonials</Link>
-            <Link href="/contact" className="block px-3 py-2.5 text-sm font-semibold text-gray-700 hover:text-sky-600 dark:text-sky-400 rounded-lg hover:bg-blue-50" onClick={() => setMobileOpen(false)}>Contact</Link>
-
-            <div className="pt-3 pb-1 border-t border-gray-100 mt-2 flex gap-2">
-              <a href="https://wa.me/919009413040" target="_blank" rel="noopener noreferrer" className="flex-1 flex items-center justify-center gap-2 py-2.5 bg-[#25D366] text-white font-bold rounded-xl text-sm">
-                <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d={WA_PATH} /></svg>
-                WhatsApp
-              </a>
-              <button type="button" onClick={handleLoginNav} className="flex-1 py-2.5 bg-sky-600 text-white font-bold rounded-xl hover:bg-sky-500 transition-colors text-sm">
-                Client Portal
-              </button>
-            </div>
-          </div>
-          </div>
-        </>
-      )}
     </header>
   );
 }
