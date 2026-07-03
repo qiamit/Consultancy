@@ -74,7 +74,7 @@ const PORTALS = [
 
 export default function AboutPage() {
   return (
-    <div className="min-h-screen xl:h-screen flex flex-col xl:overflow-hidden bg-zinc-50 dark:bg-zinc-950">
+    <div className="min-h-screen xl:h-screen flex flex-col overflow-x-clip xl:overflow-hidden bg-zinc-50 dark:bg-zinc-950">
       <SiteNavbar />
 
       <main className="flex-1 pt-[65px] flex flex-col xl:overflow-hidden">
@@ -82,12 +82,12 @@ export default function AboutPage() {
 
           {/* ── COL 1: Dark Navy Identity Panel ── */}
           <div
-            className="relative flex flex-col border-b xl:border-b-0 xl:border-r border-white/10"
+            className="relative flex flex-col overflow-hidden border-b xl:border-b-0 xl:border-r border-white/10"
             style={{ background: "linear-gradient(160deg, #0A1628 0%, #0D1F3C 50%, #0F2347 100%)" }}
           >
             {/* Glow blobs */}
-            <div className="absolute w-64 h-64 bg-sky-500/10 rounded-full -left-20 -top-16 blur-3xl pointer-events-none" />
-            <div className="absolute w-48 h-48 bg-indigo-500/10 rounded-full -right-10 bottom-20 blur-3xl pointer-events-none" />
+            <div className="absolute w-64 h-64 bg-sky-500/10 rounded-full -left-20 -top-16 blur-3xl pointer-events-none" aria-hidden />
+            <div className="absolute w-48 h-48 bg-indigo-500/10 rounded-full -right-10 bottom-20 blur-3xl pointer-events-none" aria-hidden />
 
             <div className="relative flex flex-col gap-4 px-5 py-6">
               {/* Badge */}

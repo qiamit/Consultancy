@@ -98,16 +98,18 @@ export function SiteNavbar() {
     setExpanded(null);
   }, [pathname]);
 
+  const toggleMobileMenu = () => setMobileOpen((open) => !open);
+
   const handleLoginNav = () => {
     setMobileOpen(false);
     router.push("/login");
   };
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 border-b border-zinc-200/80 dark:border-zinc-800 ${scrolled ? "bg-white shadow-sm dark:bg-zinc-900" : "bg-white/90 backdrop-blur-md dark:bg-zinc-900/90"}`}>
+    <header className={`fixed top-0 left-0 right-0 z-50 w-full max-w-[100vw] overflow-x-clip transition-all duration-300 border-b border-zinc-200/80 dark:border-zinc-800 ${scrolled ? "bg-white shadow-sm dark:bg-zinc-900" : "bg-white/90 backdrop-blur-md dark:bg-zinc-900/90"}`}>
       <div className="h-[3px] bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-600" />
 
-      <nav className="w-full max-w-[100vw] px-4 sm:px-6 lg:px-8 flex items-center h-[62px] gap-3 sm:gap-4 overflow-hidden">
+      <nav className="w-full px-4 sm:px-6 lg:px-8 flex items-center h-[62px] gap-3 sm:gap-4 overflow-hidden pr-12 lg:pr-8">
         {/* Logo */}
         <Link href="/" className="min-w-0 flex-1 lg:flex-none" aria-label="Quality Engineering — Home">
           <QELogo sm />
@@ -164,8 +166,8 @@ export function SiteNavbar() {
           </div>
         </div>
 
-        {/* Right: CTA buttons + Mobile toggle */}
-        <div className="flex items-center gap-2 flex-shrink-0 ml-auto lg:ml-0 relative z-20">
+        {/* Right: CTA buttons (desktop only) */}
+        <div className="hidden lg:flex items-center gap-2 flex-shrink-0 ml-auto">
           {/* WhatsApp button */}
           <a
             href="https://wa.me/919009413040?text=Hello%2C%20I%20need%20BIS%20Certification%20consultation"
@@ -198,23 +200,24 @@ export function SiteNavbar() {
             </svg>
             Portal
           </button>
-
-          <button
-            type="button"
-            className="lg:hidden flex h-11 w-11 items-center justify-center rounded-lg text-gray-700 hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation"
-            onClick={() => setMobileOpen((open) => !open)}
-            aria-label="Toggle menu"
-            aria-expanded={mobileOpen}
-            aria-controls="mobile-nav-menu"
-          >
-            {mobileOpen ? (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-            ) : (
-              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/></svg>
-            )}
-          </button>
         </div>
       </nav>
+
+      {/* Mobile toggle — pinned to viewport so flex/overflow cannot push it off-screen */}
+      <button
+        type="button"
+        className="lg:hidden fixed top-[14px] right-3 z-[70] flex h-11 w-11 items-center justify-center rounded-lg bg-white/95 text-gray-700 shadow-sm ring-1 ring-zinc-200/80 hover:bg-gray-100 active:bg-gray-200 transition-colors touch-manipulation dark:bg-zinc-900/95 dark:text-zinc-100 dark:ring-zinc-700"
+        onClick={toggleMobileMenu}
+        aria-label="Toggle menu"
+        aria-expanded={mobileOpen}
+        aria-controls="mobile-nav-menu"
+      >
+        {mobileOpen ? (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+        ) : (
+          <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16"/></svg>
+        )}
+      </button>
 
       {/* Mobile Menu */}
       {mobileOpen && (

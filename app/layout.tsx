@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { createClient } from "@/lib/supabase/server";
@@ -23,6 +23,12 @@ export const metadata: Metadata = {
   title: "Technical Consultancy — Operations",
   description:
     "BIS licensing, ISO accreditation, testing, calibration, clients, and finance.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default async function RootLayout({
