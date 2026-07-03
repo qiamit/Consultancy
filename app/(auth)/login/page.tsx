@@ -1,18 +1,17 @@
-import { Suspense } from "react";
 import { LoginForm } from "./login-form";
 
-function LoginFallback() {
-  return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 text-sm text-zinc-500 dark:bg-zinc-950">
-      Loading…
-    </div>
-  );
-}
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const params = await searchParams;
+  const error =
+    typeof params.error === "string" ? params.error : null;
+  const next =
+    typeof params.next === "string" && params.next.startsWith("/")
+      ? params.next
+      : "/dashboard";
 
-export default function LoginPage() {
-  return (
-    <Suspense fallback={<LoginFallback />}>
-      <LoginForm />
-    </Suspense>
-  );
+  return <LoginForm error={error} next={next} />;
 }
