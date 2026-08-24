@@ -1,31 +1,39 @@
 # Technical Consultancy — Web App
 
-Next.js 16 (App Router) + Supabase (Auth, Postgres, Storage) for running BIS licensing, ISO / accreditation, testing, calibration, client, and finance workflows.
+Next.js 16 (App Router) + Railway Postgres + S3-compatible storage for BIS licensing, ISO / accreditation, testing, calibration, client, and finance workflows.
 
 ## Prerequisites
 
 - Node.js 20+
-- A [Supabase](https://supabase.com/) project
+- Railway project with Postgres (`Postgres-MC1Y` / `DATABASE_URL`) and an S3-compatible bucket
 
 ## Local setup
 
-1. Clone this repository (or open this folder after cloning from GitHub).
+1. Clone this repository.
 
-2. Copy environment variables:
+2. Copy env files (Next loads from `Frontend/`):
 
    ```bash
    cp .env.example .env.local
+   cp .env.example Frontend/.env.local
    ```
 
-3. In the Supabase Dashboard: **Project Settings → API**, copy **Project URL** and the **anon public** key into `.env.local`:
+3. Set Railway-native variables in `.env.local`:
 
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   | Variable | Purpose |
+   |----------|---------|
+   | `DATABASE_URL` | Postgres connection string (Railway Postgres plugin) |
+   | `SESSION_SECRET` | Cookie signing (≥ 32 characters) |
+   | `S3_*` / `DOCUMENTS_S3_*` | Object storage (documents + IS Code buckets) |
+   | `SUPER_ADMIN_EMAIL` | Account with full admin access |
+   | `RESEND_API_KEY` | Outbound email for `@qengineering.in` (Resend) |
+   | `RESEND_FROM_EMAIL` | Default from address (e.g. `info@qengineering.in`) |
 
-4. Apply the database schema. Either:
+4. Apply migrations:
 
-   - **SQL Editor**: paste and run the contents of [`supabase/migrations/20250503120000_initial_schema.sql`](supabase/migrations/20250503120000_initial_schema.sql), or  
-   - **Supabase CLI**: link the project and run `supabase db push` (if you use CLI-managed migrations).
+   ```bash
+   npm run migrate
+   ```
 
 5. Install and run:
 
@@ -34,31 +42,31 @@ Next.js 16 (App Router) + Supabase (Auth, Postgres, Storage) for running BIS lic
    npm run dev
    ```
 
-6. Open [http://localhost:3000](http://localhost:3000). Use **Staff signup** to create the first user (ensure Email confirmations are disabled or confirm via mail for dev — **Authentication → Providers → Email** in Supabase).
+6. Open [http://localhost:3000](http://localhost:3000). Create the first staff user via User Management after signing in as the super admin (or seed that email in Auth).
 
-## GitHub and Supabase
+## Deploy on Railway
 
-- **GitHub**: push this repo to your remote (e.g. `https://github.com/qiamit/Consultancy.git`).
-- **Supabase**: database migrations live under [`supabase/migrations/`](supabase/migrations/). For production, apply the same SQL (or CLI migrations) to your hosted project.
-- **Connecting CI/CD**: optional GitHub Action or deploy hook can run `supabase db push` with a service role; keep secrets in GitHub encrypted secrets only.
+See [`DEPLOY.md`](DEPLOY.md). No Supabase. No Vercel.
 
-## Deploy on Vercel
+1. Set the same env vars on the **Consultancy** service.
+2. Run `npm run migrate` against production `DATABASE_URL` (release command or one-off).
+3. Deploy from repo root (`railway up` / GitHub). Build: `npm run build` → `next build Frontend`.
 
-1. Import the GitHub repository in [Vercel](https://vercel.com/).
-2. Framework preset: **Next.js**.
-3. Add the same environment variables as in `.env.local` (Production & Preview):
-
-   - `NEXT_PUBLIC_SUPABASE_URL`
-   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-
-4. Deploy. Production URL will use your Supabase backend automatically.
+Production app URL: https://consultancy-production-9720.up.railway.app
 
 ## Project layout
 
-- [`app/`](app/) — Routes: marketing home, `/login` / `/signup`, `/dashboard/*` modules.
-- [`lib/supabase/`](lib/supabase/) — Browser and server Supabase clients + middleware session refresh.
-- [`lib/actions/`](lib/actions/) — Server Actions for CRUD and uploads.
-- [`supabase/migrations/`](supabase/migrations/) — Postgres schema, RLS, Storage bucket `documents`.
+```text
+Frontend/     Next.js UI — app routes, components, public assets
+Backend/      Server domain — actions, modules, shared utils, DB migrations
+```
+
+- [`Frontend/app/`](Frontend/app/) — Routes: marketing, auth, `/dashboard/*`, API routes
+- [`Frontend/components/`](Frontend/components/) — React UI
+- [`Backend/actions/`](Backend/actions/) — Server Actions
+- [`Backend/db/`](Backend/db/) — Postgres pool, session auth, migrations
+- [`Backend/modules/`](Backend/modules/) — Domain helpers (BIS, finance, email, print, …)
+- [`Backend/shared/`](Backend/shared/) — Shared types, validation, constants
 
 ## License
 

@@ -1,39 +1,48 @@
-# Deploy checklist (Vercel + Supabase)
+# Deploy checklist (Railway)
 
-## Supabase (once per environment)
+## Railway project
 
-1. Create a project at [supabase.com/dashboard](https://supabase.com/dashboard).
-2. Run migration SQL from `supabase/migrations/20250503120000_initial_schema.sql` in **SQL Editor**, or use Supabase CLI linked to this repo.
-3. **Authentication → URL configuration**: add your production URL and `http://localhost:3000` to **Site URL** and **Redirect URLs** (include `https://your-domain.com/auth/callback`).
-4. Copy **Project URL** and **anon** key to Vercel environment variables.
+- Project: **Consultancy Management** (`82c48fa4-4d69-4d89-bd7b-b3b5ec047cdc`)
+- App service: **Consultancy** → https://consultancy-production-9720.up.railway.app
+- Postgres: **Postgres-MC1Y** → injects `DATABASE_URL`
+- Custom domain: `qengineering.in` / `www.qengineering.in`
 
-## Vercel
+## App environment (Consultancy service)
 
-1. **New Project → Import** your GitHub repo (`qiamit/Consultancy` or your fork).
-2. Environment variables:
+| Name | Notes |
+|------|--------|
+| `DATABASE_URL` | From Postgres-MC1Y plugin |
+| `SESSION_SECRET` | ≥ 32 characters (iron-session) |
+| `S3_ENDPOINT` / `S3_REGION` | Railway Bucket / MinIO / AWS |
+| `S3_DOCUMENTS_*` or `DOCUMENTS_S3_*` | Documents bucket + keys |
+| `S3_IS_CODE_*` (or `IS_CODE_DOCUMENTS_S3_*`) | IS Code documents bucket + keys |
+| `SUPER_ADMIN_EMAIL` | e.g. `info@qengineering.in` |
+| `RESEND_API_KEY` | Resend API key (outbound @qengineering.in) |
+| `RESEND_FROM_EMAIL` | Default from, e.g. `info@qengineering.in` |
+| `RESEND_FROM_NAME` | Display name, e.g. `Q Engineering` |
+| `RESEND_FROM_DOMAIN` | Verified domain, e.g. `qengineering.in` |
 
-   | Name | Value |
-   |------|--------|
-   | `NEXT_PUBLIC_SUPABASE_URL` | From Supabase → Settings → API |
-   | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | From Supabase → Settings → API (anon public) |
-   | `SUPABASE_SERVICE_ROLE_KEY` | Server-only — User Management |
-   | `SUPER_ADMIN_EMAIL` | e.g. `qicoding1@gmail.com` |
+Optional AI / Maps keys: see [`.env.example`](.env.example).
 
-   **Important:** The browser login uses **`NEXT_PUBLIC_*`** variables only. Updating `SUPABASE_URL` / `SUPABASE_ANON_KEY` (Vercel Supabase integration names) is **not enough** — you must set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`, then **redeploy**. After changing env vars, verify the live bundle no longer references an old project ref (e.g. open DevTools → Network on `/login`).
+**Email:** Inbox = Zoho IMAP (per-account). Outbound for `@qengineering.in` = Resend API when `RESEND_API_KEY` is set.
 
-3. Deploy. Every push to the connected branch triggers a new deployment.
-
-## GitHub ↔ Supabase
-
-- **Code**: migrations and app live in GitHub.
-- **Database**: Supabase does not auto-sync from GitHub unless you add a CI step (CLI `db push`, GitHub integration, or manual SQL). Apply migrations to production after reviewing them.
-
-## GitHub remote
+## Migrations
 
 ```bash
-git remote add origin https://github.com/qiamit/Consultancy.git
-git branch -M main
-git push -u origin main
+npm run migrate
 ```
 
-Use your preferred branch name if `main` is not the default on the remote.
+Applies SQL under `Backend/db/migrations/` to `DATABASE_URL`. Run once per environment after deploy or as a release command.
+
+## DNS for `qengineering.in`
+
+1. **Root `@`**: CNAME → Railway Domains target (e.g. `6k0gemlm.up.railway.app`)
+2. **TXT `_railway-verify`**: value from Railway Domains UI
+3. **`www`**: CNAME → Railway www target
+
+SSL activates after DNS propagates.
+
+## Super admin
+
+- Email: value of `SUPER_ADMIN_EMAIL` (default `info@qengineering.in`)
+- That account always receives full admin access in the dashboard

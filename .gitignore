@@ -1,7 +1,8 @@
 # See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
-/node_modules
+node_modules/
+**/node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -19,6 +20,7 @@
 
 # next.js
 /.next/
+/Frontend/.next/
 /out/
 .swc/
 .turbo/
@@ -51,12 +53,11 @@ yarn-error.log*
 .env.*
 !.env.example
 
-# supabase (CLI link metadata; may contain connection hints)
-supabase/.temp/
-supabase/.branches/
-supabase/.env
+# Railway local link / legacy Supabase keys (never commit)
+.railway/
+.railway-supabase-keys.json
 
-# vercel
+# vercel (local CLI link metadata)
 .vercel
 .vercelignore.local
 
@@ -77,9 +78,12 @@ Thumbs.db
 ehthumbs.db
 Desktop.ini
 
-# local documents
+# local documents & import spreadsheets (dev-only)
 Instructions.docx
 *.docx.local
+/Data/
+*.xlsx
+*.xls
 
 # local generated exports / uploads (dev scratch)
 exports/
@@ -87,10 +91,11 @@ downloads/
 scratch/
 uploads/
 
-# temp / backup
+# temp / backup / accidental shell artifacts
 *.tmp
 *.temp
 *.bak
+r.column_name).join('
 
 # tooling caches
 .cache/

@@ -1,0 +1,201 @@
+"use client";
+
+import { useGoPageDraft } from "@/components/modules/finance/use-finance-master-state";
+import { CLIENT_FIELD_LABEL_CLASS } from "@/components/modules/client-master/constants";
+import { PAGE_SIZE_OPTIONS } from "./search-utils";
+
+const pageBtn =
+  "rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700";
+
+export function TestParameterMasterHeaderBar({
+  onAddNew,
+  searchQuery,
+  onSearchChange,
+  pageSize,
+  onPageSizeChange,
+  grandTotal,
+  filteredTotal,
+  page,
+  totalPages,
+  onPageChange,
+}: {
+  onAddNew: () => void;
+  searchQuery: string;
+  onSearchChange: (q: string) => void;
+  pageSize: number;
+  onPageSizeChange: (n: number) => void;
+  grandTotal: number;
+  filteredTotal: number;
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
+}) {
+  const searchActive = searchQuery.trim().length > 0;
+  const { goDisplay: goDraft, setGoDraft, clearGoDraft } = useGoPageDraft(page);
+
+  function handleGoTo() {
+    const n = Number.parseInt(goDraft.trim(), 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setGoDraft(null);
+      return;
+    }
+    const p = Math.min(n, totalPages);
+    clearGoDraft();
+    onPageChange(p);
+  }
+
+  const showPagination = filteredTotal > 0;
+  const navDisabled = grandTotal === 0;
+
+  return (
+    <header className="border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/80">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+        <div className="shrink-0">
+          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            Test Parameter
+          </h1>
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+          <div className="flex min-w-0 shrink-0 items-center gap-2">
+            <div className="w-full max-w-[min(100%,14rem)] sm:max-w-[16rem] md:max-w-[18rem] lg:max-w-[20rem]">
+              <label htmlFor="test-parameter-master-search" className="sr-only">
+                Search all fields: IS code, test name, clause, method, unit, and
+                specified value
+              </label>
+              <input
+                id="test-parameter-master-search"
+                type="search"
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                placeholder="Search All Fields"
+                autoComplete="off"
+                className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none placeholder:text-zinc-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+              />
+            </div>
+            <select
+              id="test-parameter-master-page-size"
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+              aria-label="Entries per page"
+              title="Entries per page"
+              className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:ml-auto sm:gap-3 sm:justify-end">
+            {searchActive && filteredTotal !== grandTotal ? (
+              <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  {filteredTotal} match
+                  {filteredTotal === 1 ? "" : "es"}
+                </span>
+              </p>
+            ) : null}
+
+            {showPagination ? (
+              <div className="flex w-full flex-wrap items-center gap-2 border-t border-zinc-200 pt-2 sm:w-auto sm:border-l sm:border-t-0 sm:pl-3 sm:pt-0 dark:border-zinc-600">
+                <p className="text-xs text-zinc-600 dark:text-zinc-400">
+                  Page{" "}
+                  <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                    {page}
+                  </span>{" "}
+                  of{" "}
+                  <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                    {totalPages}
+                  </span>
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    disabled={navDisabled || page <= 1}
+                    onClick={() => {
+                      clearGoDraft();
+                      onPageChange(page - 1);
+                    }}
+                    className={pageBtn}
+                  >
+                    Previous
+                  </button>
+                  <button
+                    type="button"
+                    disabled={navDisabled || page >= totalPages}
+                    onClick={() => {
+                      clearGoDraft();
+                      onPageChange(page + 1);
+                    }}
+                    className={pageBtn}
+                  >
+                    Next
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <label
+                    htmlFor="test-parameter-master-go-page"
+                    className={CLIENT_FIELD_LABEL_CLASS}
+                  >
+                    Go to
+                  </label>
+                  <input
+                    id="test-parameter-master-go-page"
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    value={goDraft}
+                    onChange={(e) => setGoDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        handleGoTo();
+                      }
+                    }}
+                    className="w-14 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-center text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100"
+                    aria-label="Page number to go to"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGoTo}
+                    disabled={navDisabled}
+                    className={`${pageBtn} px-3`}
+                  >
+                    Go
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:self-center">
+          <button
+            type="button"
+            className="inline-flex items-center justify-center rounded-lg border border-violet-400 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-700 shadow-sm hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/40"
+            title="Open QE Assistant — AI-powered Quality Engineering helper"
+            onClick={() =>
+              window.dispatchEvent(
+                new CustomEvent("qe-assistant:open", {
+                  detail: { module: "test-parameters" },
+                }),
+              )
+            }
+          >
+            QE Assistant
+          </button>
+          <button
+            type="button"
+            onClick={onAddNew}
+            className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
+          >
+            Add New Test Parameter
+          </button>
+        </div>
+      </div>
+    </header>
+  );
+}

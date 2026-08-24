@@ -1,0 +1,446 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { useEditorRowsFromStored } from "@/components/modules/finance/use-finance-master-state";
+import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
+import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
+import { OslSampleRequirementsTableEditor } from "@/components/dashboard/osl-sample-requirements-table-editor";
+import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
+import { ClientMasterEmbedModal } from "@/components/modules/finance/client-master-embed-modal";
+import { createClient } from "@backend/db/supabase/client";
+import {
+  buildOslSampleRequirementsHtml,
+  defaultOslSamplePrintSettings,
+  DEFAULT_OSL_SAMPLE_TABLE_COLUMNS,
+  iframeSizeForOslPrintSettings,
+  sampleOfferLetterLabels,
+  type OslSampleOfferLetterData,
+  type OslSampleTableColumnKey,
+  type SampleOfferLetterVariant,
+} from "@backend/modules/print/osl-sample-requirements";
+import {
+  downloadOslSampleRequirementsWord,
+} from "@backend/modules/print/osl-sample-requirements-export";
+import type { PrintSettings } from "@backend/modules/print/types";
+import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
+import {
+  editorRowsFromStored,
+  storedFromEditor,
+  type OslSampleRequirementRow,
+  type OslSampleRequirementStored,
+} from "@backend/modules/bis/osl-sample-requirements";
+import {resolvePrimaryTopManagementPerson,
+  type TopManagementStored,
+  withDocumentSignatureImage,
+} from "@backend/modules/bis/top-management";
+
+const OSL_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
+You help with OSL (Outside Laboratory) sample requirements and sample offer letters for BIS certification:
+- Sample description, declared values, batch details for OSL testing
+- Drafting sample offer letter content for BIS branch submission
+- Priority vs non-priority sample submission
+- Laboratory selection for BIS OSL testing
+
+Be concise, practical, and use Indian BIS/ISI certification context.`;
+
+const OSL_QE_STARTERS = [
+  "What should a BIS OSL sample offer letter include?",
+  "How to fill sample requirements for IS 1786 steel products?",
+  "What is priority vs non-priority sample in BIS OSL?",
+];
+
+type ClientPickerRow = {
+  id: string;
+  name: string;
+  company_name: string | null;
+};
+
+function clientDisplayLabel(c: ClientPickerRow): string {
+  const company = (c.company_name ?? "").trim();
+  if (company) return company;
+  return (c.name ?? "").trim() || "—";
+}
+
+export function OslSampleRequirementsModal({
+  variant = "osl",
+  letterData,
+  topManagement,
+  isCodeNumber,
+  isCodeId,
+  revisionYear,
+  rows: initialStored,
+  onSave,
+  onClose,
+  initialFocusSampleIndex = null,
+}: {
+  variant?: SampleOfferLetterVariant;
+  letterData: Omit<OslSampleOfferLetterData, "rows" | "signatoryName" | "signatoryDesignation">;
+  topManagement: TopManagementStored[];
+  isCodeNumber: string | null;
+  isCodeId: string | null;
+  revisionYear: number | null;
+  rows: OslSampleRequirementStored[];
+  onSave: (rows: OslSampleRequirementStored[]) => void;
+  onClose: () => void;
+  initialFocusSampleIndex?: number | null;
+}) {
+  const labels = sampleOfferLetterLabels(variant);
+  const [rows, setRows] = useEditorRowsFromStored(initialStored, editorRowsFromStored);
+  const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
+    defaultOslSamplePrintSettings(),
+  );
+  const [tableColumns, setTableColumns] = useState<OslSampleTableColumnKey[]>(
+    () => [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
+  );
+  const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showIsCodeView, setShowIsCodeView] = useState(false);
+  const [addClientForRowId, setAddClientForRowId] = useState<string | null>(null);
+  const [clientRows, setClientRows] = useState<ClientPickerRow[]>([]);
+  const [savedFlash, setSavedFlash] = useState(false);
+  const [saving, startSave] = useTransition();
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("clients")
+        .select("id, name, company_name")
+        .order("company_name", { ascending: true });
+      if (!cancelled) setClientRows((data ?? []) as ClientPickerRow[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const reloadClients = useCallback(async () => {
+    const supabase = createClient();
+    const { data } = await supabase
+      .from("clients")
+      .select("id, name, company_name")
+      .order("company_name", { ascending: true });
+    setClientRows((data ?? []) as ClientPickerRow[]);
+  }, []);
+
+  const clientOptions: AppDropdownOptionRow[] = useMemo(
+    () =>
+      clientRows.map((c) => {
+        const label = clientDisplayLabel(c);
+        return {
+          id: c.id,
+          value: label,
+          label,
+          filterText: [c.name, c.company_name].filter(Boolean).join(" ") || null,
+          canDelete: false,
+        };
+      }),
+    [clientRows],
+  );
+
+  const isFullNumber = letterData.isNumber?.trim() || "—";
+  const isTitle = letterData.isTitle ?? "";
+
+  const { signatoryName, signatoryDesignation } = useMemo(() => {
+    const primary = resolvePrimaryTopManagementPerson(topManagement);
+    return {
+      signatoryName: primary.person_name || letterData.contactPerson?.trim() || "",
+      signatoryDesignation: primary.designation,
+    };
+  }, [topManagement, letterData.contactPerson]);
+
+  const previewData = useMemo((): OslSampleOfferLetterData  => {
+    return withDocumentSignatureImage({
+      ...letterData,
+      signatoryName,
+      signatoryDesignation,
+      rows: storedFromEditor(rows),
+    }, topManagement);
+  }, [letterData, signatoryName, signatoryDesignation, rows, topManagement]);
+
+  const refreshPreview = useCallback(() => {
+    const doc = iframeRef.current?.contentDocument;
+    if (!doc) return;
+    const html = buildOslSampleRequirementsHtml(
+      previewData,
+      printSettings,
+      tableColumns,
+      variant,
+    );
+    doc.open();
+    doc.write(html);
+    doc.close();
+  }, [previewData, printSettings, tableColumns, variant]);
+
+  useEffect(() => {
+    refreshPreview();
+  }, [refreshPreview]);
+
+  useEffect(() => {
+    if (showPrintPreview) {
+      refreshPreview();
+    }
+  }, [showPrintPreview, refreshPreview]);
+
+  const iframeSize = iframeSizeForOslPrintSettings(printSettings);
+
+  function patchPrintSettings(patch: Partial<PrintSettings>) {
+    setPrintSettings((prev) => ({ ...prev, ...patch }));
+  }
+
+  function handleSave() {
+    startSave(() => {
+      const stored = storedFromEditor(rows);
+      onSave(stored);
+      setSavedFlash(true);
+      window.setTimeout(() => setSavedFlash(false), 2000);
+    });
+  }
+
+  function handlePrint() {
+    iframeRef.current?.contentWindow?.focus();
+    iframeRef.current?.contentWindow?.print();
+  }
+
+  function handleDownloadWord() {
+    void downloadOslSampleRequirementsWord(
+      previewData,
+      printSettings,
+      tableColumns,
+      variant,
+    ).catch(() => window.alert("Unable to download Word file."));
+  }
+
+  function toggleSettingsPanel(panel: "page" | "print") {
+    setSettingsPanel((prev) => (prev === panel ? null : panel));
+  }
+
+  return (
+    <>
+      <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
+        <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-800 bg-zinc-900 px-4 py-3">
+          <div className="min-w-0 shrink-0 flex-1 basis-48">
+            <h2 className="truncate text-sm font-semibold text-white">{labels.modalTitle}</h2>
+            <p className="truncate text-xs text-zinc-400">
+              {letterData.companyName}
+              {isFullNumber !== "—" ? ` · ${isFullNumber}` : ""}
+            </p>
+          </div>
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+          {savedFlash && (
+            <span className="text-xs font-semibold text-emerald-400">Saved ✓</span>
+          )}
+          {saving && <span className="text-xs text-zinc-400">Saving…</span>}
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={saving}
+            className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowPrintPreview((prev) => !prev)}
+            className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+              showPrintPreview
+                ? "border-sky-500 bg-sky-600 text-white"
+                : "border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+            }`}
+          >
+            Print Preview
+          </button>
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            Print
+          </button>
+          <button
+            type="button"
+            onClick={handleDownloadWord}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            Download Word File
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleSettingsPanel("print")}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+              settingsPanel === "print"
+                ? "border-violet-500 bg-violet-600 text-white"
+                : "border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+            }`}
+          >
+            Print Settings
+          </button>
+          <button
+            type="button"
+            onClick={() => toggleSettingsPanel("page")}
+            className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+              settingsPanel === "page"
+                ? "border-indigo-500 bg-indigo-600 text-white"
+                : "border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+            }`}
+          >
+            Page Settings
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowQeAssistant(true)}
+            className="rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-950/70"
+          >
+            QE Assistant
+          </button>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+            aria-label="Close"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+          </div>
+        </div>
+
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
+          {!showPrintPreview && (
+            <div
+              className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
+                settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+              }`}
+            >
+              <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-zinc-200">Sample Requirements</p>
+                    <p className="mt-0.5 text-xs font-semibold text-teal-300">{isFullNumber}</p>
+                    {isTitle ? (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{isTitle}</p>
+                    ) : null}
+                  </div>
+                  {isCodeId ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowIsCodeView(true)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      View IS Files
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+                <OslSampleRequirementsTableEditor
+                  theme="dark"
+                  rows={rows}
+                  onChange={setRows}
+                  clientOptions={clientOptions}
+                  onRequestAddClient={setAddClientForRowId}
+                  focusSampleIndex={initialFocusSampleIndex}
+                />
+              </div>
+            </div>
+          )}
+
+          {showPrintPreview && (
+            <div
+              className={`flex min-w-0 flex-1 flex-col bg-zinc-600 ${
+                settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+              }`}
+            >
+              <div className="border-b border-zinc-700/80 px-4 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
+                  Print Preview
+                </p>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+                <iframe
+                  ref={iframeRef}
+                  title={labels.iframeTitle}
+                  className="mx-auto max-w-full border-0 bg-white shadow-2xl"
+                  style={{
+                    width: `min(100%, ${iframeSize.widthMm}mm)`,
+                    minHeight: `${iframeSize.heightMm}mm`,
+                  }}
+                />
+              </div>
+            </div>
+          )}
+
+          {settingsPanel && (
+            <div className={splitModalSettingsPaneClass()}>
+              <DocumentPrintSettingsPanel
+                mode={settingsPanel}
+                settings={printSettings}
+                onChange={patchPrintSettings}
+                oslTableColumns={settingsPanel === "print" ? tableColumns : undefined}
+                onOslTableColumnsChange={
+                  settingsPanel === "print" ? setTableColumns : undefined
+                }
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {showIsCodeView && isCodeId && (
+        <IsCodeViewModal
+          isCodeId={isCodeId}
+          isNumber={isCodeNumber}
+          revisionYear={revisionYear}
+          overlayZIndexClass="z-[450]"
+          onClose={() => setShowIsCodeView(false)}
+        />
+      )}
+
+      {showQeAssistant && (
+        <AiChatModal
+          title="QE Assistant"
+          subtitle={labels.qeSubtitle}
+          systemPrompt={OSL_QE_PROMPT}
+          starterQuestions={OSL_QE_STARTERS}
+          accentColor="emerald"
+          overlayZIndexClass="z-[500]"
+          onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {addClientForRowId && (
+        <ClientMasterEmbedModal
+          onClose={() => setAddClientForRowId(null)}
+          onSuccess={async (clientId) => {
+            const rowId = addClientForRowId;
+            setAddClientForRowId(null);
+            await reloadClients();
+            const supabase = createClient();
+            const { data } = await supabase
+              .from("clients")
+              .select("name, company_name")
+              .eq("id", clientId)
+              .maybeSingle();
+            if (data && rowId) {
+              const label = clientDisplayLabel(data as ClientPickerRow);
+              setRows((prev) =>
+                prev.map((r) =>
+                  r.id === rowId ? { ...r, laboratory_name: label } : r,
+                ),
+              );
+            }
+          }}
+        />
+      )}
+    </>
+  );
+}
