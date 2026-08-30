@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 

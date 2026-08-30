@@ -28,7 +28,7 @@ import {
 function copyManakPortalPasswordOnly(
   portalPassword: string | null | undefined,
 ): void {
-  const pass = (portalPassword ?? "").trim();
+  const pass = String(portalPassword ?? "").trim();
   if (!pass) return;
   void navigator.clipboard.writeText(pass).catch(() => {});
 }
@@ -46,8 +46,10 @@ function formatInr(n: number | null | undefined): string {
   });
 }
 
-function dash(v: string | null | undefined): string {
-  return v == null || v === "" ? "—" : v;
+function dash(v: string | number | null | undefined): string {
+  if (v == null) return "—";
+  const s = String(v).trim();
+  return s === "" ? "—" : s;
 }
 
 function clientLabel(r: BisProjectMasterRow): string {

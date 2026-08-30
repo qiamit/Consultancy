@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { DASHBOARD_MODULES, type DashboardModuleKey } from "@backend/modules/auth/modules";
 import { useSidebarLayout } from "./sidebar-layout-context";
 
@@ -96,6 +96,13 @@ const navItems: NavItem[] = [
   },
 ];
 
+function navItemIsActive(pathname: string, href: string): boolean {
+  return (
+    pathname === href ||
+    (href !== "/dashboard" && pathname.startsWith(href))
+  );
+}
+
 export function SidebarNav({
   isAdmin,
   allowedModules,
@@ -105,6 +112,12 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
   const { setOpen } = useSidebarLayout();
+  // usePathname() can differ between SSR (Suspense/stream) and the first client
+  // paint — gate active styles until after hydration so markup matches.
+  const [pathReady, setPathReady] = useState(false);
+  useEffect(() => {
+    setPathReady(true);
+  }, []);
 
   const visibleItems = isAdmin
     ? navItems
@@ -117,9 +130,7 @@ export function SidebarNav({
   return (
     <nav className="flex-1 space-y-1.5 overflow-y-auto px-4 py-6 text-sm">
       {visibleItems.map((item) => {
-        const isActive =
-          pathname === item.href ||
-          (item.href !== "/dashboard" && pathname.startsWith(item.href));
+        const isActive = pathReady && navItemIsActive(pathname, item.href);
 
         return (
           <Link
@@ -132,9 +143,12 @@ export function SidebarNav({
                 : "text-zinc-600 hover:bg-zinc-50 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-900/60 dark:hover:text-zinc-50"
             }`}
           >
-            {isActive && (
-              <span className="absolute bottom-1/4 left-0 top-1/4 w-1 rounded-r-full bg-sky-500 dark:bg-sky-400" />
-            )}
+            <span
+              aria-hidden
+              className={`absolute bottom-1/4 left-0 top-1/4 w-1 rounded-r-full bg-sky-500 dark:bg-sky-400 ${
+                isActive ? "opacity-100" : "opacity-0"
+              }`}
+            />
 
             <span
               className={`transition-colors duration-200 ${

@@ -4,7 +4,7 @@ import { loadBisProjectsFormDropdownOptions } from "@backend/shared/data/bis-pro
 import { loadClientMasterDropdownOptions } from "@backend/shared/data/client-master-dropdowns";
 import { loadIsCodeFormDropdownOptions } from "@backend/shared/data/is-code-form-dropdowns";
 import type { BisProjectMasterRow } from "@backend/shared/types/bis-project-master";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 function MasterFallback() {
   return (
@@ -21,6 +21,20 @@ function firstSearchParam(
   const v = sp[key];
   if (v === undefined) return undefined;
   return Array.isArray(v) ? v[0] : v;
+}
+
+/** Normalize pg Date / ISO string to YYYY-MM-DD for client components. */
+function toYmdOrNull(value: unknown): string | null {
+  if (value == null || value === "") return null;
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(value.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  const s = String(value).trim();
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  return m ? m[1] : s || null;
 }
 
 export default async function BisProjectsPage({
@@ -78,19 +92,34 @@ export default async function BisProjectsPage({
     ]),
   );
 
-  const rows: BisProjectMasterRow[] = bisRows.map((r) => ({
-    ...r,
-    is_codes: r.is_code_id
-      ? (isCodeById.get(r.is_code_id) ?? null)
-      : null,
-  }));
-
   const clientRows =
     (clientsRaw ?? []) as unknown as {
       id: string;
       name: string;
       company_name: string | null;
     }[];
+
+  const clientById = new Map(
+    clientRows.map((c) => [
+      c.id,
+      { name: c.name, company_name: c.company_name },
+    ]),
+  );
+
+  const rows: BisProjectMasterRow[] = bisRows.map((r) => ({
+    ...r,
+    license_validity_date: toYmdOrNull(r.license_validity_date),
+    start_date: toYmdOrNull(r.start_date),
+    target_date: toYmdOrNull(r.target_date),
+    cm_l_digits:
+      r.cm_l_digits == null ? null : String(r.cm_l_digits).trim() || null,
+    clients: r.client_id
+      ? (r.clients ?? clientById.get(r.client_id) ?? null)
+      : null,
+    is_codes: r.is_code_id
+      ? (isCodeById.get(r.is_code_id) ?? null)
+      : null,
+  }));
 
   const [clientMasterDropdowns, isCodeFormDropdowns, bisProjectsFormDropdowns] =
     await Promise.all([

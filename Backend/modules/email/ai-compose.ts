@@ -1,4 +1,4 @@
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import type { EmailAccountRow } from "@backend/shared/types/email";
 
 export type AiDraftRequest = {

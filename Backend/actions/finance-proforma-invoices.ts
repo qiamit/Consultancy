@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { joinProformaInvoiceNumberParts } from "@backend/modules/finance/finance-proforma-invoice-number";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 const LIST_PATH = "/dashboard/finance/sales/proforma-invoice";
 type ProformaStatus = "pending" | "accepted" | "cancelled";

@@ -18,7 +18,7 @@ import {
   SCALES,
   STATUSES,
 } from "@/components/modules/client-master/constants";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import {
   isValidEmailOrEmpty,
   normalizeEmailInput,

@@ -5,7 +5,7 @@ import { rowToForm } from "@/components/modules/client-master/constants";
 import { ClientMasterForm } from "@/components/modules/client-master/form";
 import { fetchClientDetail, type ClientDetail } from "@backend/actions/renewals";
 import { fetchClientFormOptions } from "@backend/actions/form-options";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import type { ClientMasterDropdownOptions } from "@backend/shared/data/client-master-dropdowns";
 import type { ClientMasterRow } from "@backend/shared/types/client-master";
 

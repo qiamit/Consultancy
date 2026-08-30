@@ -3,7 +3,7 @@
 import React from "react";
 import { useMemo, useState, useEffect, useTransition, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
 import { uploadTechnicalStaffDocument } from "@backend/modules/storage/technical-staff-documents";
 import { updateBisProjectTargetDate, updateBisProjectNotes, convertLicenseToApplication } from "@backend/actions/bis-projects";
@@ -2328,7 +2328,8 @@ export function PendingApplicationsSection({
         !q ||
         r.client_name.toLowerCase().includes(q) ||
         r.title.toLowerCase().includes(q) ||
-        (r.is_number?.toLowerCase().includes(q) ?? false);
+        (r.is_number?.toLowerCase().includes(q) ?? false) ||
+        (r.cm_l_digits?.toLowerCase().includes(q) ?? false);
       return matchSearch;
     });
   }, [visibleRows, search]);
@@ -2436,7 +2437,7 @@ export function PendingApplicationsSection({
       </div>
 
       {/* Table */}
-      <div className="max-h-80 overflow-y-auto overflow-x-auto">
+      <div className="overflow-x-auto">
         {visibleRows.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-zinc-500">
             {variant === "expired_licenses"
@@ -2449,12 +2450,15 @@ export function PendingApplicationsSection({
           </p>
         ) : (
           <table
-            className={`dashboard-section-table w-full text-sm ${isExpired ? "min-w-[720px]" : "min-w-[980px]"}`}
+            className={`dashboard-section-table w-full text-sm ${isExpired ? "min-w-[860px]" : "min-w-[980px]"}`}
           >
             <thead className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/60">
               <tr>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Client Name</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">IS Number</th>
+                {isExpired && (
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">CM/L Number</th>
+                )}
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Start Date</th>
                 {!isExpired && (
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Target Date</th>
@@ -2493,6 +2497,13 @@ export function PendingApplicationsSection({
                       <span className="text-zinc-400">—</span>
                     )}
                   </td>
+                  {isExpired && (
+                    <td className="px-4 py-3 text-center font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                      {r.cm_l_digits
+                        ? formatCmDisplay(r.project_kind, r.cm_l_digits)
+                        : "—"}
+                    </td>
+                  )}
                   <td className="px-4 py-3 text-xs text-zinc-700 dark:text-zinc-300">
                     {formatDate(r.created_at)}
                   </td>

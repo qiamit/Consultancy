@@ -4,7 +4,7 @@ import {
   DROPDOWN_KEY_BIS_PROJECT_KIND,
 } from "@backend/shared/dropdown-keys";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import {
   BILLING_FREQUENCIES,
 } from "@/components/modules/bis-projects/constants";

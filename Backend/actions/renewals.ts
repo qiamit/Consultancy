@@ -1,7 +1,13 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
+import {
+  computeLicenseDisplayStatus,
+  formatCmDisplay,
+} from "@backend/modules/bis/bis-project-license-status";
+import { sendSystemEmail } from "@backend/modules/email/resend";
+import { formatDisplayDate } from "@backend/shared/format-date";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,11 +155,18 @@ export async function updateLicenseValidity(
   projectId: string,
   newDate: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = (projectId ?? "").trim();
+  const date = (newDate ?? "").trim().slice(0, 10);
+  if (!id) return { ok: false, error: "Missing project id." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return { ok: false, error: "Enter a valid date (YYYY-MM-DD)." };
+  }
+
   const supabase = await createClient();
   const { error } = await supabase
     .from("bis_projects")
-    .update({ license_validity_date: newDate, updated_at: new Date().toISOString() })
-    .eq("id", projectId);
+    .update({ license_validity_date: date, updated_at: new Date().toISOString() })
+    .eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/bis-projects");
@@ -215,4 +228,183 @@ export async function upsertRenewalApplication(
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/bis-projects");
   return { ok: true, id: data.id as string };
+}
+
+function daysUntilValidity(dateStr: string | null): number | null {
+  if (!dateStr) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return null;
+  return Math.ceil((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function buildRenewalReminderEmail(input: {
+  clientName: string;
+  cmL: string;
+  isLabel: string;
+  validityLabel: string;
+  statusLabel: string;
+  days: number | null;
+  projectStatus: string;
+}): { subject: string; text: string; html: string } {
+  const { clientName, cmL, isLabel, validityLabel, statusLabel, days, projectStatus } =
+    input;
+
+  let urgency: string;
+  let actionLine: string;
+  if (projectStatus === "stop_marking" || statusLabel === "Stop Marking") {
+    urgency = "your BIS licence is currently under Stop Marking";
+    actionLine =
+      "Please restore compliance and contact us so we can assist with resumption of marking and any renewal steps.";
+  } else if (statusLabel === "Expired" || (days != null && days < -90)) {
+    urgency = "your BIS licence has expired beyond the renewal grace period";
+    actionLine =
+      "A fresh application / revival process may be required. Please contact us promptly to discuss next steps.";
+  } else if (days != null && days < 0) {
+    urgency = `your BIS licence validity expired ${Math.abs(days)} day(s) ago (Deferred / grace window)`;
+    actionLine =
+      "Please complete renewal filing with BIS as soon as possible to avoid further compliance risk.";
+  } else if (days === 0) {
+    urgency = "your BIS licence expires today";
+    actionLine =
+      "Please initiate / complete the renewal application on Manak Online without delay.";
+  } else if (days != null && days <= 30) {
+    urgency = `your BIS licence expires in ${days} day(s)`;
+    actionLine =
+      "Please start the renewal process now so documents and portal filing can be completed in time.";
+  } else if (days != null) {
+    urgency = `your BIS licence expires in ${days} day(s)`;
+    actionLine =
+      "This is a courtesy reminder to plan renewal documents and Manak Online filing.";
+  } else {
+    urgency = "a BIS licence on your account needs attention";
+    actionLine = "Please contact us for the current status and renewal guidance.";
+  }
+
+  const subject = `BIS Licence Reminder — ${cmL || "Licence"} (${statusLabel})`;
+  const text = [
+    `Dear ${clientName},`,
+    "",
+    `This is a reminder that ${urgency}.`,
+    "",
+    `Licence / CM/L : ${cmL || "—"}`,
+    `IS Number      : ${isLabel || "—"}`,
+    `Validity Date  : ${validityLabel || "—"}`,
+    `Status         : ${statusLabel}`,
+    "",
+    actionLine,
+    "",
+    "If you have already renewed, please share the updated validity date with us.",
+    "",
+    "Regards,",
+    "Quality Engineering Consultancy",
+    "info@qengineering.in",
+  ].join("\n");
+
+  const html = `
+    <p>Dear ${escapeHtml(clientName)},</p>
+    <p>This is a reminder that <strong>${escapeHtml(urgency)}</strong>.</p>
+    <table style="border-collapse:collapse;margin:16px 0;font-size:14px">
+      <tr><td style="padding:4px 12px 4px 0;color:#666">Licence / CM/L</td><td style="padding:4px 0"><strong>${escapeHtml(cmL || "—")}</strong></td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#666">IS Number</td><td style="padding:4px 0">${escapeHtml(isLabel || "—")}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#666">Validity Date</td><td style="padding:4px 0">${escapeHtml(validityLabel || "—")}</td></tr>
+      <tr><td style="padding:4px 12px 4px 0;color:#666">Status</td><td style="padding:4px 0">${escapeHtml(statusLabel)}</td></tr>
+    </table>
+    <p>${escapeHtml(actionLine)}</p>
+    <p>If you have already renewed, please share the updated validity date with us.</p>
+    <p>Regards,<br/>Quality Engineering Consultancy<br/><a href="mailto:info@qengineering.in">info@qengineering.in</a></p>
+  `.trim();
+
+  return { subject, text, html };
+}
+
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+/**
+ * Email the client a licence-status reminder (Operative / Deferred / Expired / Stop Marking).
+ */
+export async function sendRenewalReminder(
+  projectId: string,
+): Promise<{ ok: true; to: string } | { ok: false; error: string }> {
+  const id = (projectId ?? "").trim();
+  if (!id) return { ok: false, error: "Missing project id." };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("bis_projects")
+    .select(
+      "id, status, project_kind, cm_l_digits, license_validity_date, client_id, clients(name, company_name, email), is_codes(is_number, revision_year)",
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data) return { ok: false, error: "Project not found." };
+
+  const clientsRaw = data.clients as
+    | { name?: string | null; company_name?: string | null; email?: string | null }
+    | { name?: string | null; company_name?: string | null; email?: string | null }[]
+    | null;
+  const client = Array.isArray(clientsRaw) ? clientsRaw[0] : clientsRaw;
+  const to = (client?.email ?? "").trim();
+  if (!to) {
+    return {
+      ok: false,
+      error: "No email address on this client. Add an email in Client Master first.",
+    };
+  }
+
+  const isCodesRaw = data.is_codes as
+    | { is_number?: string | null; revision_year?: number | null }
+    | { is_number?: string | null; revision_year?: number | null }[]
+    | null;
+  const isCode = Array.isArray(isCodesRaw) ? isCodesRaw[0] : isCodesRaw;
+  const isLabel = isCode?.is_number
+    ? isCode.revision_year
+      ? `${isCode.is_number}: ${isCode.revision_year}`
+      : String(isCode.is_number)
+    : "—";
+
+  const projectKind = (data.project_kind as string | null) ?? "licence";
+  const validity = (data.license_validity_date as string | null) ?? null;
+  const projectStatus = (data.status as string | null) ?? "";
+
+  const cmL = formatCmDisplay(projectKind, data.cm_l_digits as string | null);
+  const statusLabel = computeLicenseDisplayStatus(projectKind, validity, projectStatus);
+  const days = daysUntilValidity(validity);
+  const clientName =
+    (client?.company_name ?? client?.name ?? "Sir/Madam").trim() || "Sir/Madam";
+
+  const mail = buildRenewalReminderEmail({
+    clientName,
+    cmL,
+    isLabel,
+    validityLabel: formatDisplayDate(validity),
+    statusLabel,
+    days,
+    projectStatus,
+  });
+
+  try {
+    await sendSystemEmail({
+      to,
+      subject: mail.subject,
+      text: mail.text,
+      html: mail.html,
+    });
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Failed to send email.",
+    };
+  }
+
+  return { ok: true, to };
 }

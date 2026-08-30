@@ -11,7 +11,7 @@ import {
   DROPDOWN_KEY_PRODUCT_UNIT,
 } from "@backend/shared/dropdown-keys";
 import { fetchAppDropdownOptions } from "@backend/shared/data/app-dropdown-options";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import type { ProductMasterRow } from "@backend/shared/types/product-master";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 

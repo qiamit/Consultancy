@@ -20,7 +20,7 @@ export function parseToDate(input: string | Date | null | undefined): Date | nul
     return Number.isNaN(input.getTime()) ? null : input;
   }
 
-  const s = input.trim();
+  const s = String(input).trim();
   if (!s) return null;
 
   const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);

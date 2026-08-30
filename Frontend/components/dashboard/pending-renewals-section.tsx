@@ -1,12 +1,21 @@
 "use client";
 
 import { useMemo, useState, useEffect, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { ClientSnapshotModal } from "@/components/dashboard/modals/client-snapshot-modal";
+import { UpdateValidityModal } from "@/components/dashboard/modals/update-validity-modal";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
+import {
+  manakLicenceStatusLinkAriaLabel,
+  manakLicenceStatusLinkNativeTitle,
+  normalizeManakLicenceDigits,
+  openManakLicenceStatusReport,
+} from "@backend/modules/bis/manak-online-portal";
 import { formatDisplayDate, parseDisplayDateInput, toYmdDateString } from "@backend/shared/format-date";
 import {
   fetchRenewalApplication,
+  sendRenewalReminder,
   upsertRenewalApplication,
   type RenewalApplication,
 } from "@backend/actions/renewals";
@@ -15,7 +24,7 @@ import {
   openRenewalPrintWindow,
   type RenewalExportData,
 } from "@backend/modules/bis/renewal-form-export";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 
 const RENEWAL_SYSTEM_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS License Renewal Management.
@@ -49,6 +58,7 @@ type RenewalRow = {
   target_date: string | null;
   client_id: string | null;
   client_name: string;
+  client_email?: string | null;
   is_number: string | null;
   is_revision_year: number | null;
   is_code_title: string | null;
@@ -424,7 +434,14 @@ function formatDate(dateStr: string | null): string {
   return formatDisplayDate(dateStr);
 }
 
-function ExpiryBadge({ dateStr }: { dateStr: string | null }) {
+function ExpiryBadge({
+  dateStr,
+  cmLDigits,
+}: {
+  dateStr: string | null;
+  cmLDigits?: string | null;
+}) {
+  const digits = normalizeManakLicenceDigits(cmLDigits);
   const days = daysUntil(dateStr);
   if (days === null) return <span className="text-zinc-400">—</span>;
 
@@ -448,7 +465,21 @@ function ExpiryBadge({ dateStr }: { dateStr: string | null }) {
     label = `${days} Days Left`;
   }
 
-  return <span className={cls}>{label}</span>;
+  if (!digits) {
+    return <span className={cls}>{label}</span>;
+  }
+
+  return (
+    <button
+      type="button"
+      className={`${cls} cursor-pointer transition hover:ring-2 hover:ring-offset-1 hover:ring-zinc-300 dark:hover:ring-zinc-600 dark:hover:ring-offset-zinc-900`}
+      title={manakLicenceStatusLinkNativeTitle(digits)}
+      aria-label={manakLicenceStatusLinkAriaLabel(digits)}
+      onClick={() => openManakLicenceStatusReport(digits)}
+    >
+      {label}
+    </button>
+  );
 }
 
 // ── IS Code View Modal ────────────────────────────────────────────────────────
@@ -1345,13 +1376,19 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 
 // ── Main Section ──────────────────────────────────────────────────────────────
 export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals", emptyMsg = "No renewals due within 90 days.", extraHeaderButton }: { rows: RenewalRow[]; sectionLabel?: string; emptyMsg?: string; extraHeaderButton?: React.ReactNode }) {
+  const router = useRouter();
+  const [, startTransition] = useTransition();
   const [search, setSearch] = useState("");
   const [chatOpen, setChatOpen] = useState(false);
   const [viewRow, setViewRow] = useState<RenewalRow | null>(null);
   const [renewalRow, setRenewalRow] = useState<RenewalRow | null>(null);
+  const [validityRow, setValidityRow] = useState<RenewalRow | null>(null);
+  const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
+  const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
+  const [reminderMsg, setReminderMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const [isCodeView, setIsCodeView] = useState<{ id: string; is_number: string | null; revision_year: number | null } | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("days_remaining");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
 
@@ -1361,13 +1398,36 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
     setPage(1);
   };
 
+  function handleSendReminder(row: RenewalRow) {
+    if (!row.client_email) {
+      setReminderMsg({
+        id: row.id,
+        ok: false,
+        text: "No client email — add it in Client Master.",
+      });
+      return;
+    }
+    setSendingReminderId(row.id);
+    setReminderMsg(null);
+    startTransition(async () => {
+      const res = await sendRenewalReminder(row.id);
+      setSendingReminderId(null);
+      if (!res.ok) {
+        setReminderMsg({ id: row.id, ok: false, text: res.error });
+        return;
+      }
+      setReminderMsg({ id: row.id, ok: true, text: `Sent to ${res.to}` });
+    });
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const list = rows.filter((r) =>
-      !q ||
+      !removedIds.has(r.id) &&
+      (!q ||
       r.client_name.toLowerCase().includes(q) ||
       formatCmLDisplay(r.project_kind, r.cm_l_digits).toLowerCase().includes(q) ||
-      formatIsDisplay(r.is_number, r.is_revision_year).toLowerCase().includes(q)
+      formatIsDisplay(r.is_number, r.is_revision_year).toLowerCase().includes(q))
     );
     list.sort((a, b) => {
       let va: string | number = "";
@@ -1392,7 +1452,7 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
       return 0;
     });
     return list;
-  }, [rows, search, sortKey, sortDir]);
+  }, [rows, search, sortKey, sortDir, removedIds]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -1481,7 +1541,7 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
           ) : filtered.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-zinc-500">No renewals match your search.</p>
           ) : (
-            <table className="w-full min-w-[760px] text-sm">
+            <table className="w-full min-w-[880px] text-sm">
               <thead className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/60">
                 <tr>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">
@@ -1508,6 +1568,9 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
                     <button onClick={() => handleSort("days_remaining")} className="inline-flex items-center hover:text-zinc-700 dark:hover:text-zinc-200">
                       Days Remaining<SortIcon active={sortKey === "days_remaining"} dir={sortDir} />
                     </button>
+                  </th>
+                  <th className="px-4 py-2 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    Send Reminder
                   </th>
                   <th className="px-4 py-2 text-right text-xs font-semibold text-zinc-500 dark:text-zinc-400">Action</th>
                 </tr>
@@ -1541,10 +1604,53 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
                       {formatCmLDisplay(r.project_kind, r.cm_l_digits)}
                     </td>
                     <td className="px-4 py-2 text-center text-xs text-zinc-700 dark:text-zinc-300">
-                      {formatDate(r.license_validity_date)}
+                      <button
+                        type="button"
+                        onClick={() => setValidityRow(r)}
+                        title="Update license validity after renewal"
+                        className="font-medium text-sky-700 underline-offset-2 hover:underline dark:text-sky-400"
+                      >
+                        {formatDate(r.license_validity_date)}
+                      </button>
                     </td>
                     <td className="px-4 py-2 text-center">
-                      <ExpiryBadge dateStr={r.license_validity_date} />
+                      <ExpiryBadge
+                        dateStr={r.license_validity_date}
+                        cmLDigits={r.cm_l_digits}
+                      />
+                    </td>
+                    <td className="px-4 py-2 text-center">
+                      <div className="inline-flex flex-col items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleSendReminder(r)}
+                          disabled={sendingReminderId === r.id}
+                          title={
+                            r.client_email
+                              ? `Send renewal reminder to ${r.client_email}`
+                              : "No email on client — add in Client Master"
+                          }
+                          className="group inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sky-700 shadow-sm transition-all hover:border-sky-400 hover:bg-sky-100 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-400 dark:hover:bg-sky-950/50"
+                        >
+                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                          </svg>
+                          <span className="text-xs font-bold uppercase tracking-wide whitespace-nowrap">
+                            {sendingReminderId === r.id ? "Sending…" : "Email"}
+                          </span>
+                        </button>
+                        {reminderMsg?.id === r.id ? (
+                          <span
+                            className={`max-w-[9rem] text-[10px] leading-tight ${
+                              reminderMsg.ok
+                                ? "text-emerald-600 dark:text-emerald-400"
+                                : "text-red-600 dark:text-red-400"
+                            }`}
+                          >
+                            {reminderMsg.text}
+                          </span>
+                        ) : null}
+                      </div>
                     </td>
                     <td className="px-4 py-2 text-right">
                       <button
@@ -1570,6 +1676,30 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
       {/* Modals */}
       {viewRow && <ClientSnapshotModal row={viewRow} onClose={() => setViewRow(null)} />}
       {renewalRow && <RenewalFormModal row={renewalRow} onClose={() => setRenewalRow(null)} />}
+      {validityRow && (
+        <UpdateValidityModal
+          projectId={validityRow.id}
+          currentValidity={validityRow.license_validity_date}
+          cmLNumber={formatCmLDisplay(validityRow.project_kind, validityRow.cm_l_digits)}
+          isNumber={formatIsDisplay(validityRow.is_number, validityRow.is_revision_year)}
+          onClose={() => setValidityRow(null)}
+          onUpdated={(newDate) => {
+            const plus90 = new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
+              .toISOString()
+              .slice(0, 10);
+            if (newDate > plus90) {
+              const id = validityRow.id;
+              setRemovedIds((prev) => {
+                const next = new Set(prev);
+                next.add(id);
+                return next;
+              });
+            }
+            setValidityRow(null);
+            router.refresh();
+          }}
+        />
+      )}
       {isCodeView && (
         <IsCodeViewModal
           isCodeId={isCodeView.id}

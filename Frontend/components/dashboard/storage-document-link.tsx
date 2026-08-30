@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import { resolveDocumentRef } from "@backend/modules/storage/technical-staff-documents";
 
 export function StorageDocumentLink({

@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { formatIsCodeRevisionLabel } from "@/components/modules/test-parameter-master/constants";
 import { extractDocumentText } from "@backend/modules/is-code/extract-document-text";
 import {

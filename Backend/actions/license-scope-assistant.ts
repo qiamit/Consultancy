@@ -4,7 +4,7 @@ import { sendAiMessage, type ChatMessage } from "@backend/actions/ai-chat";
 import type { LicenseScopeFormat } from "@backend/modules/bis/license-scope-format";
 import { extractDocumentText } from "@backend/modules/is-code/extract-document-text";
 import { IS_CODE_DOCUMENTS_BUCKET } from "@backend/modules/storage/is-code-documents";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 const LICENSE_SCOPE_SYSTEM = `You are QE Assistant for License Scope and BIS Declaration Regarding Manufacturing Scope documents.
 

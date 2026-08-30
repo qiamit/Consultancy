@@ -42,17 +42,17 @@ Next.js 16 (App Router) + Railway Postgres + S3-compatible storage for BIS licen
    npm run dev
    ```
 
-6. Open [http://localhost:3000](http://localhost:3000). Create the first staff user via User Management after signing in as the super admin (or seed that email in Auth).
+6. Open [http://localhost:3000](http://localhost:3000). Create the first staff user via User Management after signing in as the super admin (or seed that email in `app_users`).
 
 ## Deploy on Railway
 
-See [`DEPLOY.md`](DEPLOY.md). No Supabase. No Vercel.
+See [`DEPLOY.md`](DEPLOY.md).
 
 1. Set the same env vars on the **Consultancy** service.
 2. Run `npm run migrate` against production `DATABASE_URL` (release command or one-off).
 3. Deploy from repo root (`railway up` / GitHub). Build: `npm run build` → `next build Frontend`.
 
-Production app URL: https://consultancy-production-9720.up.railway.app
+Production app URL: https://qengineering.in (also https://consultancy-production-9720.up.railway.app)
 
 ## Project layout
 

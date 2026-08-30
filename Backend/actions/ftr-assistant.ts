@@ -8,7 +8,7 @@ import {
 } from "@backend/modules/bis/factory-test-report";
 import { extractDocumentText } from "@backend/modules/is-code/extract-document-text";
 import { IS_CODE_DOCUMENTS_BUCKET } from "@backend/modules/storage/is-code-documents";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 const FTR_REVIEW_SYSTEM = `You are QE Assistant for Factory Test Report (FTR) compliance review in BIS certification applications.
 

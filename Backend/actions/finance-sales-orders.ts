@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { joinSalesOrderNumberParts } from "@backend/modules/finance/finance-sales-order-number";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 const LIST_PATH = "/dashboard/finance/sales/sales-order";
 type OrderStatus = "pending" | "accepted" | "cancelled";

@@ -3,7 +3,7 @@ import { listCompanyNotesTemplates } from "@backend/shared/data/company-notes-te
 import { listCompanyScopeOfWork } from "@backend/shared/data/company-scope-of-work";
 import { listCompanyTerms } from "@backend/shared/data/company-terms";
 import { DOCUMENTS_BUCKET } from "@backend/modules/storage/documents";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import type { ProductMasterOptionRow } from "@backend/shared/types/finance-quotation";
 import type { FinanceSalesOrderRow } from "@backend/shared/types/finance-sales-order";
 import type { FinanceCreditNoteRow } from "@backend/shared/types/finance-credit-note";

@@ -4,9 +4,9 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
-import { createAdminClient, isAdminClientConfigured } from "@backend/db/supabase/admin";
+import { createAdminClient, isAdminClientConfigured } from "@backend/db/client/admin";
 
 import { requireAdminProfile } from "@backend/modules/auth/profile";
 

@@ -1,5 +1,5 @@
 import "server-only";
-import { createDbClient, type DbClient } from "@backend/db/supabase/create-db-client";
+import { createDbClient, type DbClient } from "@backend/db/client/create-db-client";
 import { isDatabaseConfigured } from "@backend/shared/env";
 
 export type { DbClient };

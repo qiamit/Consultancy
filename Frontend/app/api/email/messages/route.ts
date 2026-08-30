@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { resolveImapFolder } from "@backend/modules/email/providers";
 import { moveMessageToFolder, moveMessageToTrash, setMessageFlags } from "@backend/modules/email/imap-client";
 import type { EmailAccountRow, EmailFolderKey } from "@backend/shared/types/email";

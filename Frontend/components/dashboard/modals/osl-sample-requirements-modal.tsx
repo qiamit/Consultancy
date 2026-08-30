@@ -8,7 +8,7 @@ import { OslSampleRequirementsTableEditor } from "@/components/dashboard/osl-sam
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import { ClientMasterEmbedModal } from "@/components/modules/finance/client-master-embed-modal";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import {
   buildOslSampleRequirementsHtml,
   defaultOslSamplePrintSettings,

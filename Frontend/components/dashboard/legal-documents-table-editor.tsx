@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
 import {
   createLegalDocumentRow,

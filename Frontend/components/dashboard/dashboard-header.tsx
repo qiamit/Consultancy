@@ -1,4 +1,4 @@
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { ensureProfileAccess, isSuperAdminEmail } from "@backend/modules/auth/ensure-access";
 import { DashboardTopBar } from "./dashboard-top-bar";
 

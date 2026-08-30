@@ -67,7 +67,7 @@ export function ClientMaster({
   initialClients: ClientMasterRow[];
   fetchError?: string | null;
   queryError?: string;
-  /** Postgres / PostgREST error code when `queryError` is `db`. */
+  /** Postgres error code when `queryError` is `db`. */
   dbErrorCode?: string;
   /** Short database error message when save fails. */
   dbErrorHint?: string;

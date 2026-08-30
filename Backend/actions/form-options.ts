@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { loadClientMasterDropdownOptions } from "@backend/shared/data/client-master-dropdowns";
 import type { ClientMasterDropdownOptions } from "@backend/shared/data/client-master-dropdowns";
 import { fetchAppDropdownOptions } from "@backend/shared/data/app-dropdown-options";

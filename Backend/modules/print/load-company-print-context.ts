@@ -1,6 +1,6 @@
 "use client";
 
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import { DOCUMENTS_BUCKET } from "@backend/modules/storage/documents";
 import { printSettingsFromRow, type PrintCompanyInfo, type PrintSettings } from "@backend/modules/print/types";
 import { defaultOslSamplePrintSettings } from "@backend/modules/print/osl-sample-requirements";

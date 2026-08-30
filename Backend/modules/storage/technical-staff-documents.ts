@@ -1,5 +1,5 @@
 import { DOCUMENTS_BUCKET } from "@backend/modules/storage/documents";
-import type { SupabaseClient } from "@backend/db/supabase/types";
+import type { AppDbClient } from "@backend/db/client/types";
 
 /** Stored in DB / form state — not a public URL. */
 export const TECH_STAFF_STORAGE_PREFIX = "doc://" as const;
@@ -34,7 +34,7 @@ export function isDirectDocumentUrl(value: string): boolean {
 }
 
 export async function uploadTechnicalStaffDocument(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   path: string,
   file: File | Blob,
   contentType?: string,
@@ -52,7 +52,7 @@ export async function uploadTechnicalStaffDocument(
 }
 
 export async function resolveDocumentRef(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   value: string,
   expiresInSeconds = 3600,
 ): Promise<string | null> {

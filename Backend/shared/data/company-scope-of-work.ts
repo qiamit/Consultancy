@@ -1,5 +1,5 @@
 import { normalizeTemplateCode } from "@backend/shared/validation/template-code";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import type { CompanyTextTemplateRow } from "@backend/shared/types/company-text-template";
 
 export async function listCompanyScopeOfWork(): Promise<CompanyTextTemplateRow[]> {

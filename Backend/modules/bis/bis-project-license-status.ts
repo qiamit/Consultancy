@@ -13,6 +13,18 @@ export type LicenseDisplayStatus =
   | "Stop Marking"
   | "N/A";
 
+/** Coerce DB/JSON date values (string | Date | number) to a YMD / text string. */
+function asTrimmedText(value: unknown): string {
+  if (value == null) return "";
+  if (value instanceof Date && !Number.isNaN(value.getTime())) {
+    const y = value.getUTCFullYear();
+    const m = String(value.getUTCMonth() + 1).padStart(2, "0");
+    const d = String(value.getUTCDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+  return String(value).trim();
+}
+
 function parseYmd(s: string): Date {
   const [y, m, d] = s.split("-").map(Number);
   return new Date(y!, (m ?? 1) - 1, d ?? 1);
@@ -42,13 +54,13 @@ function addDays(d: Date, days: number): Date {
  */
 export function computeLicenseDisplayStatus(
   projectKind: string,
-  validityDateYmd: string | null | undefined,
+  validityDateYmd: string | Date | null | undefined,
   dbStatus?: string | null,
   now: Date = new Date(),
 ): LicenseDisplayStatus {
   if (isApplicationProjectKind(projectKind)) return "N/A";
   if (dbStatus === "stop_marking") return "Stop Marking";
-  const vRaw = (validityDateYmd ?? "").trim();
+  const vRaw = asTrimmedText(validityDateYmd);
   if (!vRaw) return "N/A";
   const validityEnd = startOfDay(parseYmd(vRaw));
   const today = startOfDay(now);
@@ -65,12 +77,12 @@ export function computeLicenseDisplayStatus(
  * Stop Marking is excluded — it needs compliance restoration first.
  */
 export function isRenewalWindowActive(
-  validityDateYmd: string | null | undefined,
+  validityDateYmd: string | Date | null | undefined,
   dbStatus?: string | null,
   now: Date = new Date(),
 ): boolean {
   if (dbStatus === "stop_marking") return false;
-  const vRaw = (validityDateYmd ?? "").trim();
+  const vRaw = asTrimmedText(validityDateYmd);
   if (!vRaw) return false;
   const validityEnd = startOfDay(parseYmd(vRaw));
   const today = startOfDay(now);
@@ -90,9 +102,9 @@ export { cmPrefixForProjectKind };
 
 export function formatCmDisplay(
   projectKind: string,
-  digits: string | null | undefined,
+  digits: string | number | null | undefined,
 ): string {
-  const d = (digits ?? "").trim();
+  const d = asTrimmedText(digits);
   if (!/^\d{10}$/.test(d)) return "—";
   return `${cmPrefixForProjectKind(projectKind)}-${d}`;
 }
@@ -105,9 +117,9 @@ export type LicenceValidityWindow90 = {
 };
 
 export function licenceValidityDisplayWithWindow90(
-  validityDateYmd: string | null | undefined,
+  validityDateYmd: string | Date | null | undefined,
 ): LicenceValidityWindow90 | null {
-  const vRaw = (validityDateYmd ?? "").trim();
+  const vRaw = asTrimmedText(validityDateYmd);
   if (!vRaw) return null;
   const end = startOfDay(parseYmd(vRaw));
   const fmt = (d: Date) => formatDisplayDate(d);

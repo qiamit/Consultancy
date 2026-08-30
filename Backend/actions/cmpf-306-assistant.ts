@@ -5,7 +5,7 @@ import { equipmentRowHasContent, type Cmpf306EquipmentStored } from "@backend/mo
 import { extractDocumentText } from "@backend/modules/is-code/extract-document-text";
 import type { LicenseScopeFormat } from "@backend/modules/bis/license-scope-format";
 import { IS_CODE_DOCUMENTS_BUCKET } from "@backend/modules/storage/is-code-documents";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 const CMPF306_SYSTEM = `You are QE Assistant for BIS CMPF 306 — Declaration Regarding Testing Equipments (Form II).
 

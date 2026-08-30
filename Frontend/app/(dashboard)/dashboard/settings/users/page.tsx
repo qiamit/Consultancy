@@ -2,8 +2,8 @@ import { redirect } from "next/navigation";
 import { UserManagementPanel } from "@/components/dashboard/user-management-panel";
 import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
 import { fetchPortalRoles, fetchStaffUsers } from "@backend/actions/user-management";
-import { isAdminClientConfigured } from "@backend/db/supabase/admin";
-import { createClient } from "@backend/db/supabase/server";
+import { isAdminClientConfigured } from "@backend/db/client/admin";
+import { createClient } from "@backend/db/client/server";
 
 export default async function UserManagementPage() {
   const supabase = await createClient();

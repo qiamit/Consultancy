@@ -4,7 +4,7 @@ import { loadBisNewApplicationsFormDropdownOptions } from "@backend/shared/data/
 import { loadClientMasterDropdownOptions } from "@backend/shared/data/client-master-dropdowns";
 import { loadIsCodeFormDropdownOptions } from "@backend/shared/data/is-code-form-dropdowns";
 import type { BisNewApplicationMasterRow } from "@backend/shared/types/bis-new-application-master";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 function MasterFallback() {
   return (

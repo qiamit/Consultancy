@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { ensureProfileAccess, isSuperAdminEmail } from "@backend/modules/auth/ensure-access";
 import { SidebarAside } from "./sidebar-aside";
 import { SidebarNav } from "./sidebar-nav";

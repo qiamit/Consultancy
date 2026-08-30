@@ -1,8 +1,8 @@
 import type { AppUser } from "@backend/db/auth/types";
 
-/** Structural stand-in for the former supabase-js client type. */
+/** Structural stand-in for the app DB client (query + auth + storage). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type SupabaseClient = {
+export type AppDbClient = {
   // QueryBuilder is thenable; keep loose for call-site compatibility.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   from: (table: string) => any;

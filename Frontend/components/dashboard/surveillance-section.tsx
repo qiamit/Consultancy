@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import {

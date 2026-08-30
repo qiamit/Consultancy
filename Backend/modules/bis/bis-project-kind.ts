@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@backend/db/supabase/types";
+import type { AppDbClient } from "@backend/db/client/types";
 import { DROPDOWN_KEY_BIS_PROJECT_KIND } from "@backend/shared/dropdown-keys";
 
 /** Legacy slug stored before custom project-type labels were introduced. */
@@ -22,9 +22,9 @@ export function isLicenseProjectKind(value: string | null | undefined): boolean 
   return key === "license" || key === "new_license";
 }
 
-/** Distinct `project_kind` values that mean “application” (for Supabase filters). */
+/** Distinct `project_kind` values that mean “application” (for query filters). */
 export async function applicationProjectKindDbValues(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   optionKey: string = DROPDOWN_KEY_BIS_PROJECT_KIND,
 ): Promise<string[]> {
   const values = new Set<string>([LEGACY_APPLICATION_KIND, "Application"]);
@@ -43,8 +43,8 @@ export async function applicationProjectKindDbValues(
   return Array.from(values);
 }
 
-/** Format for PostgREST `.in()` / `.not(..., "in", ...)` filters. */
-export function supabaseInFilter(values: string[]): string {
+/** Format for `.in()` / `.not(..., "in", ...)` filters. */
+export function inFilter(values: string[]): string {
   return `(${values.map((v) => `"${v.replace(/"/g, '\\"')}"`).join(",")})`;
 }
 
@@ -64,7 +64,7 @@ export function cmPrefixForProjectKind(projectKind: string): "CM/L" | "CM/A" {
 
 /** Preferred `project_kind` value for a converted / renewed license row. */
 export async function licenseProjectKindDbValue(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   optionKey: string = DROPDOWN_KEY_BIS_PROJECT_KIND,
 ): Promise<string> {
   const { data } = await supabase
@@ -84,7 +84,7 @@ export async function licenseProjectKindDbValue(
 
 /** Preferred `project_kind` value for a new / converted application row. */
 export async function applicationProjectKindDbValue(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   optionKey: string = DROPDOWN_KEY_BIS_PROJECT_KIND,
 ): Promise<string> {
   const values = await applicationProjectKindDbValues(supabase, optionKey);

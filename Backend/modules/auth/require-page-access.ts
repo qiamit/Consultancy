@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
 import { moduleKeyForPath } from "@backend/modules/auth/modules";
 

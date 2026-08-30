@@ -1,4 +1,4 @@
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { CmsServicesView } from "@/components/cms/cms-services-view";
 import type { CmsServiceRow } from "@backend/shared/types/cms";
 

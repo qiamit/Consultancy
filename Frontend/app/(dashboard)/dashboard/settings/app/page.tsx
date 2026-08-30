@@ -1,6 +1,6 @@
 import { AppSettingsTabs } from "@/components/dashboard/app-settings-tabs";
 import { fetchAiModels } from "@backend/actions/ai-models";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 function firstSearchParam(
   sp: Record<string, string | string[] | undefined>,

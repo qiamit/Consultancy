@@ -53,11 +53,10 @@ yarn-error.log*
 .env.*
 !.env.example
 
-# Railway local link / legacy Supabase keys (never commit)
+# Railway local link metadata (never commit)
 .railway/
-.railway-supabase-keys.json
 
-# vercel (local CLI link metadata)
+# Local CLI link metadata
 .vercel
 .vercelignore.local
 
@@ -108,3 +107,7 @@ agent-tools/
 # OS / editor extras
 *.lnk
 .vs/
+
+# Tesseract OCR language data (downloaded at runtime)
+pdf-service/*.traineddata
+

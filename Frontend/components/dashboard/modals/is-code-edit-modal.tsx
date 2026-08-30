@@ -14,7 +14,7 @@ import {
   DROPDOWN_KEY_IS_CODE_ASPECT,
   DROPDOWN_KEY_IS_CODE_UNIT,
 } from "@backend/shared/dropdown-keys";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 import type { IsCodeFileRow, IsCodeMasterRow } from "@backend/shared/types/is-code-master";
 

@@ -5,7 +5,7 @@ import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-moda
 import { useFinanceListPagination } from "@/components/modules/finance/use-finance-master-state";
 import { PAGE_SIZE_OPTIONS } from "@/components/modules/test-parameter-master/search-utils";
 import { clauseSortKey, type FtrTestParameterSeed } from "@backend/modules/bis/factory-test-report";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import { openNewTestParameterForIsCode } from "@backend/modules/test-parameters/test-parameter-form-draft";
 
 const pageBtn =

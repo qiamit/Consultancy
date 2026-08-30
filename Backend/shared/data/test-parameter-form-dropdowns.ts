@@ -5,7 +5,7 @@ import {
 import { fetchAppDropdownOptions } from "@backend/shared/data/app-dropdown-options";
 import { DROPDOWN_KEY_TEST_PARAMETER_TEST_METHOD } from "@backend/shared/dropdown-keys";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import { AppointmentLetterCreatorModal } from "@/components/dashboard/modals/appointment-letter-creator-modal";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
 import { AppDropdownCombobox } from "@/components/modules/client-master/app-dropdown-combobox";

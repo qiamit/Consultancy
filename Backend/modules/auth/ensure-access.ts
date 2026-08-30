@@ -1,4 +1,4 @@
-import type { SupabaseClient, User } from "@backend/db/supabase/types";
+import type { AppDbClient, User } from "@backend/db/client/types";
 import { ALL_MODULE_KEYS, resolveModuleAccess, type DashboardModuleKey } from "@backend/modules/auth/modules";
 import type { UserProfile } from "@backend/modules/auth/profile";
 
@@ -15,7 +15,7 @@ export function isSuperAdminEmail(email: string | null | undefined): boolean {
 }
 
 export async function ensureProfileAccess(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   user: User | null,
 ): Promise<AccessContext | null> {
   if (!user) return null;
@@ -67,7 +67,7 @@ export async function ensureProfileAccess(
 }
 
 async function loadProfile(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   user: User,
 ): Promise<UserProfile | null> {
   const fullSelect = await supabase

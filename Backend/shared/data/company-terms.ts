@@ -1,4 +1,4 @@
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import type { CompanyTermsRow } from "@backend/shared/types/company-terms";
 import { normalizeTemplateCode } from "@backend/shared/validation/template-code";
 

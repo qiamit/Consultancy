@@ -1,8 +1,8 @@
-import type { SupabaseClient } from "@backend/db/supabase/types";
+import type { AppDbClient } from "@backend/db/client/types";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 
 export async function fetchAppDropdownOptions(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   optionKey: string,
 ): Promise<AppDropdownOptionRow[]> {
   const { data, error } = await supabase

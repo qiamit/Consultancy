@@ -7,7 +7,7 @@ import {
   DROPDOWN_KEY_BIS_NEW_APPLICATION_KIND,
 } from "@backend/shared/dropdown-keys";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 type Supabase = Awaited<ReturnType<typeof createClient>>;
 

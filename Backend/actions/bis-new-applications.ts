@@ -12,7 +12,7 @@ import {
   isApplicationProjectKind,
   licenseProjectKindDbValue,
 } from "@backend/modules/bis/bis-project-kind";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();

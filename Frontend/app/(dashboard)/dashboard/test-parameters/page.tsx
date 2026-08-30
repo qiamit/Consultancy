@@ -3,7 +3,7 @@ import { TestParameterMaster } from "@/components/modules/test-parameter-master"
 import { formatIsCodeRevisionLabel } from "@/components/modules/test-parameter-master/constants";
 import type { IsCodeComboboxOption } from "@/components/modules/bis-projects/is-code-combobox";
 import { loadIsCodeFormDropdownOptions } from "@backend/shared/data/is-code-form-dropdowns";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import type { IsCodeMasterRow } from "@backend/shared/types/is-code-master";
 import type { TestParameterMasterRow } from "@backend/shared/types/test-parameter-master";
 

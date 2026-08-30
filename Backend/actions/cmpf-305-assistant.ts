@@ -5,7 +5,7 @@ import { rowHasContent, type Cmpf305MachineryStored } from "@backend/modules/bis
 import { extractDocumentText } from "@backend/modules/is-code/extract-document-text";
 import type { LicenseScopeFormat } from "@backend/modules/bis/license-scope-format";
 import { IS_CODE_DOCUMENTS_BUCKET } from "@backend/modules/storage/is-code-documents";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 const CMPF305_SYSTEM = `You are QE Assistant for BIS CMPF 305 — Declaration Regarding Manufacturing Machinery (Form I).
 

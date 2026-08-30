@@ -1,4 +1,4 @@
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import type { FinancePaymentInRow } from "@backend/shared/types/finance-payment-in";
 import { printSettingsFromRow, type PrintCompanyInfo } from "@backend/modules/print/types";
 import { FinancePaymentInsMaster } from "./master";

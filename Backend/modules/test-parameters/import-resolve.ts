@@ -9,7 +9,7 @@ import {
   normalizeIsNumberForMatch,
   parseTestMethodIsReference,
 } from "@backend/modules/test-parameters/import-normalize";
-import type { SupabaseClient } from "@backend/db/supabase/types";
+import type { AppDbClient } from "@backend/db/client/types";
 
 type IsCodeRow = {
   id: string;
@@ -35,7 +35,7 @@ function findIsCodeMatch(
 }
 
 async function createPlaceholderTestMethodIsCode(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   userId: string,
   isNumber: string,
   revisionYear: number,
@@ -86,7 +86,7 @@ async function createPlaceholderTestMethodIsCode(
 
 /** Resolve test_method to an IS Code Master label; auto-add missing test-method IS codes. */
 export async function resolveTestMethodLabel(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   userId: string,
   testMethodRaw: string,
   parentIsCode: IsCodeRow,
@@ -139,7 +139,7 @@ export async function resolveTestMethodLabel(
 
 /** Ensure unit exists in IS Code unit dropdown; auto-add if missing. */
 export async function ensureUnitInCatalog(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
   unitRaw: string,
 ): Promise<{ unit: string; created: boolean }> {
   const unit = unitRaw.trim();

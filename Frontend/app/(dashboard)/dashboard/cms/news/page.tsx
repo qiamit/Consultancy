@@ -1,4 +1,4 @@
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { CmsNewsView } from "@/components/cms/cms-news-view";
 import type { CmsNewsRow } from "@backend/shared/types/cms";
 

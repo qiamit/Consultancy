@@ -3,7 +3,7 @@
 import { sendAiMessage, type ChatMessage } from "@backend/actions/ai-chat";
 import { extractDocumentText } from "@backend/modules/is-code/extract-document-text";
 import { IS_CODE_DOCUMENTS_BUCKET } from "@backend/modules/storage/is-code-documents";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { rowHasContent, type SubcontractedTestStored, type SubcontractedTestsDocumentStored } from "@backend/modules/bis/subcontracted-tests";
 
 const SUBCONTRACTED_TESTS_SYSTEM = `You are QE Assistant for BIS Test Parameters Subcontracted declarations.

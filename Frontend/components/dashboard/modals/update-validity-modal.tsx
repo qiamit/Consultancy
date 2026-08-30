@@ -2,24 +2,32 @@
 
 import { useState, useTransition } from "react";
 import { updateLicenseValidity } from "@backend/actions/renewals";
-import { formatDisplayDate } from "@backend/shared/format-date";
+import { formatDisplayDate, parseToDate, toYmdDateString } from "@backend/shared/format-date";
+
+/** Default new validity = current validity + 365 calendar days (renewal year). */
+function defaultNewValidityYmd(currentValidity: string | null): string {
+  const base = parseToDate(currentValidity) ?? new Date();
+  const next = new Date(base.getFullYear(), base.getMonth(), base.getDate());
+  next.setDate(next.getDate() + 365);
+  return toYmdDateString(next);
+}
 
 export function UpdateValidityModal({
   projectId,
   currentValidity,
-  clientName,
-  cmL,
+  cmLNumber,
+  isNumber,
   onClose,
   onUpdated,
 }: {
   projectId: string;
   currentValidity: string | null;
-  clientName: string;
-  cmL: string | null;
+  cmLNumber: string;
+  isNumber: string;
   onClose: () => void;
-  onUpdated: () => void;
+  onUpdated: (newDate: string) => void;
 }) {
-  const [date, setDate] = useState(currentValidity ?? "");
+  const [date, setDate] = useState(() => defaultNewValidityYmd(currentValidity));
   const [saving, startSave] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -29,15 +37,10 @@ export function UpdateValidityModal({
     startSave(async () => {
       const res = await updateLicenseValidity(projectId, date);
       if (!res.ok) { setError(res.error); return; }
-      onUpdated();
+      onUpdated(date);
       onClose();
     });
   }
-
-  const [in90Days] = useState(
-    () => new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().split("T")[0]!,
-  );
-  const willRemove = date > in90Days;
 
   return (
     <div
@@ -59,7 +62,6 @@ export function UpdateValidityModal({
               </div>
               <div>
                 <h2 className="text-sm font-bold text-zinc-900 dark:text-zinc-100">Update License Validity</h2>
-                <p className="text-xs text-zinc-500 dark:text-zinc-400">{clientName}{cmL ? ` · CM/L ${cmL}` : ""}</p>
               </div>
             </div>
             <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300">
@@ -72,15 +74,31 @@ export function UpdateValidityModal({
 
         {/* Body */}
         <div className="px-6 py-5 space-y-4">
-          <div>
-            <label className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-              Current Validity
-            </label>
-            <p className="mt-1 text-sm text-zinc-700 dark:text-zinc-300">
-              {currentValidity
-                ? formatDisplayDate(currentValidity)
-                : "Not set"}
-            </p>
+          <div className="grid grid-cols-3 gap-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-3 dark:border-zinc-700 dark:bg-zinc-800/50">
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                CM/L Number
+              </p>
+              <p className="mt-0.5 truncate font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-100">
+                {cmLNumber || "—"}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                Validity
+              </p>
+              <p className="mt-0.5 text-xs font-semibold text-zinc-800 dark:text-zinc-100">
+                {currentValidity ? formatDisplayDate(currentValidity) : "—"}
+              </p>
+            </div>
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
+                IS Number
+              </p>
+              <p className="mt-0.5 truncate font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-100">
+                {isNumber || "—"}
+              </p>
+            </div>
           </div>
 
           <div>
@@ -95,18 +113,6 @@ export function UpdateValidityModal({
               className="mt-1 w-full rounded-lg border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-800 outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-100 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
             />
           </div>
-
-          {date && willRemove && (
-            <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-2.5 text-xs text-emerald-700 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300">
-              ✓ This license will be removed from Pending Renewals (validity &gt; 90 days from today).
-            </div>
-          )}
-
-          {date && !willRemove && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-xs text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-300">
-              ⚠ This license will still appear in Pending Renewals (validity ≤ 90 days).
-            </div>
-          )}
 
           {error && (
             <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">

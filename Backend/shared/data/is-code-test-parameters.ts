@@ -1,4 +1,4 @@
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import type { FtrTestParameterSeed } from "@backend/modules/bis/factory-test-report";
 
 export async function fetchIsCodeTestParameters(

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { sendEmail } from "@backend/modules/email/smtp-client";
 import type { EmailAccountRow } from "@backend/shared/types/email";
 

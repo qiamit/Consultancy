@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import {
   technicalStaffDocumentPath,
   uploadTechnicalStaffDocument,

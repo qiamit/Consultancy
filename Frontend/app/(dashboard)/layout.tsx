@@ -8,7 +8,7 @@ import {
 } from "@/components/dashboard/sidebar-layout-context";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { QEAssistantProvider } from "@/components/dashboard/qe-assistant-provider";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 export default async function DashboardLayout({
   children,

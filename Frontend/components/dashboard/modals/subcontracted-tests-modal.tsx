@@ -18,7 +18,7 @@ import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split
 
 import { ClientMasterEmbedModal } from "@/components/modules/finance/client-master-embed-modal";
 
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 
 import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
 

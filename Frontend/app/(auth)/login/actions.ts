@@ -1,7 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { formatAuthError, isDatabaseConfigured } from "@backend/shared/env";
 
 function loginRedirect(

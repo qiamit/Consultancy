@@ -26,7 +26,7 @@ import {
 function copyManakPortalPasswordOnly(
   portalPassword: string | null | undefined,
 ): void {
-  const pass = (portalPassword ?? "").trim();
+  const pass = String(portalPassword ?? "").trim();
   if (!pass) return;
   void navigator.clipboard.writeText(pass).catch(() => {});
 }

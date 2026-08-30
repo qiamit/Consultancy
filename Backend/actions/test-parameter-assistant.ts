@@ -3,7 +3,7 @@
 import { formatIsCodeRevisionLabel } from "@/components/modules/test-parameter-master/constants";
 import type { IsCodeComboboxOption } from "@/components/modules/bis-projects/is-code-combobox";
 import { loadIsCodeFormDropdownOptions } from "@backend/shared/data/is-code-form-dropdowns";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 export async function loadTestParameterAssistantData(): Promise<{
   isCodeOptions: IsCodeComboboxOption[];

@@ -375,7 +375,7 @@ export function createClient() {
         });
         return (await res.json()) as { error: { message: string } | null };
       },
-      // Browser client has no admin API; stub keeps SupabaseClient structural match.
+      // Browser client has no admin API; stub keeps AppDbClient structural match.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       admin: null as any,
     },

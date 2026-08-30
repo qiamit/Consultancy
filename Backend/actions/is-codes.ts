@@ -19,7 +19,7 @@ import {
   IS_CODE_DOCUMENTS_BUCKET,
   isCodeDocumentStoragePath,
 } from "@backend/modules/storage/is-code-documents";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();

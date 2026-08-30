@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, Sora, JetBrains_Mono } from "next/font/google";
 import { cookies } from "next/headers";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { QEAssistant } from "@/components/public/qe-assistant";
 import "./globals.css";
 

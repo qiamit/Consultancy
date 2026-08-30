@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 export async function GET(req: Request) {
   const supabase = await createClient();

@@ -120,7 +120,7 @@ function parseInList(raw: unknown): unknown[] {
   return [trimmed];
 }
 
-/** Parse simple PostgREST `.or()` clauses: `status.is.null,status.eq.in_progress`. */
+/** Parse simple `.or()` clauses: `status.is.null,status.eq.in_progress`. */
 export function parseOrFilter(
   filter: string,
   startIndex: number,
@@ -377,9 +377,21 @@ async function nestEmbeds(
   const result = rows.map((r) => ({ ...r }));
 
   for (const embed of embeds) {
-    const m2o = fks.find(
+    const m2oFk = fks.find(
       (fk) => fk.fromTable === table && fk.toTable === embed.alias,
     );
+    // Fallback when FK metadata is missing: clients -> client_id, is_codes -> is_code_id
+    const inferredFrom =
+      !m2oFk && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(embed.alias)
+        ? `${embed.alias.replace(/s$/, "")}_id`
+        : null;
+    const m2o = m2oFk
+      ? { fromColumn: m2oFk.fromColumn, toColumn: m2oFk.toColumn }
+      : inferredFrom &&
+          result.some((r) => Object.prototype.hasOwnProperty.call(r, inferredFrom))
+        ? { fromColumn: inferredFrom, toColumn: "id" }
+        : null;
+
     const o2m = fks.find(
       (fk) => fk.fromTable === embed.alias && fk.toTable === table,
     );
@@ -392,24 +404,35 @@ async function nestEmbeds(
         ...new Set(
           result
             .map((r) => r[m2o.fromColumn])
-            .filter((v) => v !== null && v !== undefined),
+            .filter((v) => v !== null && v !== undefined)
+            .map((v) => String(v)),
         ),
       ];
-      const byId = new Map<unknown, Record<string, unknown>>();
+      const byId = new Map<string, Record<string, unknown>>();
       if (ids.length > 0) {
         const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+        // Always fetch the join key so lookups work even when callers omit it
+        // (e.g. clients(name, company_name) without id).
+        const needsJoinKey =
+          colSql !== "*" &&
+          !embedParsed.columns.includes(m2o.toColumn) &&
+          !embedParsed.columns.includes("*");
+        const selectSql = needsJoinKey
+          ? `${quoteIdent(m2o.toColumn)}, ${colSql}`
+          : colSql;
         const { rows: related } = await query<Record<string, unknown>>(
-          `select ${colSql} from ${quoteQualified(embed.alias)}
+          `select ${selectSql} from ${quoteQualified(embed.alias)}
            where ${quoteIdent(m2o.toColumn)} in (${placeholders})`,
           ids,
         );
         for (const row of related) {
-          byId.set(row[m2o.toColumn], row);
+          byId.set(String(row[m2o.toColumn]), row);
         }
       }
       for (const row of result) {
         const key = row[m2o.fromColumn];
-        row[embed.alias] = key == null ? null : (byId.get(key) ?? null);
+        row[embed.alias] =
+          key == null ? null : (byId.get(String(key)) ?? null);
       }
       continue;
     }

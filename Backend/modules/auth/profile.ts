@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@backend/db/supabase/types";
+import type { AppDbClient } from "@backend/db/client/types";
 import type { DashboardModuleKey } from "@backend/modules/auth/modules";
 import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
 
@@ -11,7 +11,7 @@ export type UserProfile = {
 };
 
 export async function getCurrentProfile(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
 ): Promise<UserProfile | null> {
   const {
     data: { user },
@@ -23,7 +23,7 @@ export async function getCurrentProfile(
 }
 
 export async function requireAdminProfile(
-  supabase: SupabaseClient,
+  supabase: AppDbClient,
 ): Promise<UserProfile> {
   const {
     data: { user },

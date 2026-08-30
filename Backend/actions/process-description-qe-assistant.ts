@@ -7,7 +7,7 @@ import type { LicenseScopeFormat } from "@backend/modules/bis/license-scope-form
 import type { ProcessFlowChartStored } from "@backend/modules/bis/process-flow-chart";
 import { hierarchyLabelForLevel } from "@backend/modules/bis/process-flow-outline";
 import { IS_CODE_DOCUMENTS_BUCKET } from "@backend/modules/storage/is-code-documents";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 export { getLicenseScopeAssistantIsCodeStatus };
 

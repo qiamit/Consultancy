@@ -4,6 +4,20 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
 import { FinanceFormOverlayHeader } from "@/components/modules/finance/finance-form-overlay-header";
+import { FinanceLinesColgroup, FINANCE_LINE_DESC_EDIT_BTN_CLASS, FINANCE_LINES_INPUT_CELL_CLASS, FINANCE_LINES_TABLE_CLASS } from "@/components/modules/finance/finance-lines-colgroup";
+import { FinanceLinesSectionHeader } from "@/components/modules/finance/finance-lines-section-header";
+import { FINANCE_LINES_STANDARD_COLUMNS } from "@/components/modules/finance/finance-lines-table-columns";
+import { useFinanceLinesColumnVisibility } from "@/components/modules/finance/use-finance-lines-column-visibility";
+import {
+  FINANCE_CLIENT_DETAILS_PANEL_CLASS,
+  FINANCE_FORM_CLIENT_FIELD_CLASS,
+  FINANCE_FORM_DATE_FIELD_CLASS,
+  FINANCE_FORM_HEADER_FIELDS_CLASS,
+  FINANCE_FORM_HEADER_GRID_CLASS,
+  FINANCE_FORM_HEADER_ROW_CLASS,
+  FINANCE_FORM_NUMBER_FIELD_CLASS,
+  FINANCE_FORM_TYPE_FIELD_CLASS,
+} from "@/components/modules/finance/finance-form-layout";
 import { CLIENT_FIELD_LABEL_BLOCK_CLASS } from "@/components/modules/client-master/constants";
 import { DROPDOWN_KEY_FINANCE_QUOTATION_CLIENT } from "@backend/shared/dropdown-keys";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
@@ -44,9 +58,8 @@ type ClientDetailsPreview = {
 const fieldClass =
   "block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100";
 
-/** Same width as date columns (`min-w-[10.5rem]`) so inputs align in the row. */
 const quotationNumberSplitShell =
-  "flex h-[38px] w-full shrink-0 items-stretch overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:focus-within:ring-sky-500/30";
+  "flex h-[38px] w-full items-stretch overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:focus-within:ring-sky-500/30";
 
 const quotationNumberSplitInner =
   "min-w-0 flex-1 border-0 bg-transparent px-2 py-0 text-sm font-mono text-zinc-900 outline-none ring-0 placeholder:text-zinc-400 focus:ring-0 dark:bg-transparent dark:text-zinc-100 dark:placeholder:text-zinc-500";
@@ -224,6 +237,12 @@ export function FinanceQuotationForm({
   const [scopeDraft, setScopeDraft] = useState("");
   const [scopeModalOpen, setScopeModalOpen] = useState(false);
   const [scopeSaveError, setScopeSaveError] = useState<string | null>(null);
+
+  const { visibleColumns, isVisible, toggleColumn } =
+    useFinanceLinesColumnVisibility(
+      "quotations",
+      FINANCE_LINES_STANDARD_COLUMNS,
+    );
   const [isSavingScopeTemplate, startSaveScopeTemplate] = useTransition();
   const defaultNotesTemplate = useMemo(
     () => pickDefaultTemplate(notesTemplates, ["quotation_notes", "quotation notes"]),
@@ -616,11 +635,11 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
           />
           <input type="hidden" name="scope_of_work" value={formValues.scope_of_work} />
 
-          <div className="flex flex-col gap-4">
+          <div className={FINANCE_FORM_HEADER_GRID_CLASS}>
             {/* Line 1: quotation number, dates, type */}
-            <div className="flex min-w-0 flex-col gap-2">
-              <div className="-mx-0.5 flex flex-nowrap items-end gap-3 overflow-x-auto pb-0.5 pt-0.5 sm:gap-4">
-                <div className="min-w-[10.5rem] shrink-0 space-y-1.5 lg:w-[17.5%]">
+            <div className={FINANCE_FORM_HEADER_FIELDS_CLASS}>
+              <div className={FINANCE_FORM_HEADER_ROW_CLASS}>
+                <div className={FINANCE_FORM_NUMBER_FIELD_CLASS}>
                   <span className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>
                     Quotation Number
                   </span>
@@ -669,7 +688,7 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
                     />
                   </div>
                 </div>
-                <div className="min-w-[125px] shrink-0 space-y-1.5 lg:w-[8.75%]">
+                <div className={FINANCE_FORM_DATE_FIELD_CLASS}>
                   <label
                     className={CLIENT_FIELD_LABEL_BLOCK_CLASS}
                     htmlFor="finance-quotation-date"
@@ -689,7 +708,7 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
                     className={fieldClass}
                   />
                 </div>
-                <div className="min-w-[125px] shrink-0 space-y-1.5 lg:w-[8.75%]">
+                <div className={FINANCE_FORM_TYPE_FIELD_CLASS}>
                   <label
                     className={CLIENT_FIELD_LABEL_BLOCK_CLASS}
                     htmlFor="finance-quotation-type"
@@ -713,8 +732,7 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
             </div>
 
             {/* Line 2: client */}
-            <div className="grid min-w-0 gap-3 lg:grid-cols-[minmax(0,450px)_minmax(0,1fr)]">
-              <div className="min-w-0 max-w-full space-y-2">
+              <div className={FINANCE_FORM_CLIENT_FIELD_CLASS}>
                 <ClientDropdownField
                   optionKey={DROPDOWN_KEY_FINANCE_QUOTATION_CLIENT}
                   name="client_id"
@@ -734,7 +752,7 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
                   onSuffixButtonClick={() => setQuickAddClientOpen(true)}
                 />
               </div>
-              <div className="-mt-[20mm] space-y-1 rounded-lg border border-zinc-200 bg-white px-3 py-2 text-xs text-zinc-700 shadow-sm dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-200">
+              <div className={FINANCE_CLIENT_DETAILS_PANEL_CLASS}>
                 {selectedClientDetails ? (
                   <>
                     <p>
@@ -788,32 +806,38 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
                   </p>
                 )}
               </div>
-            </div>
           </div>
 
           <div className="space-y-2">
-            <label className={CLIENT_FIELD_LABEL_BLOCK_CLASS}>
-              Product &amp; Services
-            </label>
+            <FinanceLinesSectionHeader
+              availableColumns={FINANCE_LINES_STANDARD_COLUMNS}
+              visibleColumns={visibleColumns}
+              onToggleColumn={toggleColumn}
+            />
             <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-800">
-              <table className="w-full text-sm">
-                <colgroup>
-                  <col style={{ width: "auto" }} />
-                  <col style={{ width: "80px" }} />
-                  <col style={{ width: "60px" }} />
-                  <col style={{ width: "110px" }} />
-                  <col style={{ width: "90px" }} />
-                  <col style={{ width: "120px" }} />
-                  <col style={{ width: "32px" }} />
-                </colgroup>
+              <table className={FINANCE_LINES_TABLE_CLASS}>
+                <FinanceLinesColgroup
+                  visibleColumns={visibleColumns}
+                  isVisible={isVisible}
+                />
                 <thead className="bg-zinc-50 text-xs font-semibold uppercase text-zinc-500 dark:bg-zinc-900/60 dark:text-zinc-400">
                   <tr>
-                    <th className="w-full px-2 py-2 text-left">Item</th>
-                    <th className="whitespace-nowrap px-2 py-2 text-center">Unit</th>
-                    <th className="whitespace-nowrap px-2 py-2 text-center">Qty</th>
-                    <th className="whitespace-nowrap px-2 py-2 text-center">Rate</th>
-                    <th className="whitespace-nowrap px-2 py-2 text-center">Discount</th>
-                    <th className="whitespace-nowrap px-2 py-2 text-right">Total</th>
+                    <th className="px-2 py-2 text-left">Item</th>
+                    {isVisible("unit") ? (
+                      <th className="whitespace-nowrap px-2 py-2 text-center">Unit</th>
+                    ) : null}
+                    {isVisible("qty") ? (
+                      <th className="whitespace-nowrap px-2 py-2 text-center">Qty</th>
+                    ) : null}
+                    {isVisible("rate") ? (
+                      <th className="whitespace-nowrap px-2 py-2 text-center">Rate</th>
+                    ) : null}
+                    {isVisible("discount") ? (
+                      <th className="whitespace-nowrap px-2 py-2 text-center">Discount</th>
+                    ) : null}
+                    {isVisible("total") ? (
+                      <th className="whitespace-nowrap px-2 py-2 text-right">Total</th>
+                    ) : null}
                     <th className="whitespace-nowrap px-1 py-2 text-right" aria-hidden="true" />
                   </tr>
                 </thead>
@@ -900,7 +924,7 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
                                             <button
                                               type="button"
                                               onClick={() => setEditingDescLine(i)}
-                                              className="text-xs font-medium text-sky-600 hover:underline dark:text-sky-400"
+                                              className={FINANCE_LINE_DESC_EDIT_BTN_CLASS}
                                             >
                                               Edit
                                             </button>
@@ -914,25 +938,30 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
                             )}
                           </div>
                         </td>
+                        {isVisible("unit") ? (
                         <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.unit_of_item}
                             onChange={(e) =>
                               onUpdateLine(i, { unit_of_item: e.target.value })
                             }
-                            style={{ width: "64.66px", height: "36.56px" }}
-                            className={`${fieldClass} min-w-0 text-center`}
+                            style={{ height: "36.56px" }}
+                            className={`${fieldClass} ${FINANCE_LINES_INPUT_CELL_CLASS} text-center`}
                           />
                         </td>
+                        ) : null}
+                        {isVisible("qty") ? (
                         <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.qty}
                             onChange={(e) => onUpdateLine(i, { qty: e.target.value })}
                             inputMode="decimal"
-                            style={{ width: "50px", height: "36.56px" }}
-                            className={`${fieldClass} min-w-0 text-center`}
+                            style={{ height: "36.56px" }}
+                            className={`${fieldClass} ${FINANCE_LINES_INPUT_CELL_CLASS} text-center`}
                           />
                         </td>
+                        ) : null}
+                        {isVisible("rate") ? (
                         <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.unit_rate}
@@ -944,10 +973,12 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
                             step="0.01"
                             inputMode="decimal"
                             aria-label="Rate (currency)"
-                            style={{ width: "80px", height: "36.56px" }}
-                            className={`${fieldClass} min-w-0 text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
+                            style={{ height: "36.56px" }}
+                            className={`${fieldClass} ${FINANCE_LINES_INPUT_CELL_CLASS} text-right [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none`}
                           />
                         </td>
+                        ) : null}
+                        {isVisible("discount") ? (
                         <td className="min-w-0 px-2 py-1.5 align-top text-center">
                           <input
                             value={L.line_discount}
@@ -955,12 +986,15 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
                               onUpdateLine(i, { line_discount: e.target.value })
                             }
                             placeholder="0%"
-                            className={`${fieldClass} min-w-0 w-[75px] text-center`}
+                            className={`${fieldClass} ${FINANCE_LINES_INPUT_CELL_CLASS} text-center`}
                           />
                         </td>
+                        ) : null}
+                        {isVisible("total") ? (
                         <td className="px-2 py-1.5 text-right align-middle tabular-nums text-zinc-800 dark:text-zinc-200">
                           {formatInrCurrency(pv.tot)}
                         </td>
+                        ) : null}
                         <td className="w-min px-[0.225rem] py-[0.36rem] text-right align-middle">
                           {isLastRow ? (
                             <button

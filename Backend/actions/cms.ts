@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { revalidatePath } from "next/cache";
 
 // --- Services ---

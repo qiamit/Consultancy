@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { buildConversationThread, normalizeEmailSubject } from "@backend/modules/email/threading";
 import type { EmailMessageRow } from "@backend/shared/types/email";
 

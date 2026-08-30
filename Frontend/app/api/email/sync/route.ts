@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { resolveImapFolder } from "@backend/modules/email/providers";
 import { providerMismatchMessage } from "@backend/modules/email/domain-provider-hints";
 import { syncFolderMessages, formatImapError } from "@backend/modules/email/imap-client";

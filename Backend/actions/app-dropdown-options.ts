@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import {
   DROPDOWN_KEY_BIS_BILLING_FREQUENCY,
   DROPDOWN_KEY_BIS_NEW_APPLICATION_BILLING_FREQUENCY,

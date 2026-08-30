@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { applyProviderPreset } from "@backend/modules/email/providers";
 import { providerMismatchMessage } from "@backend/modules/email/domain-provider-hints";
 import type { EmailAccountRow, EmailAccountSafe, EmailProvider } from "@backend/shared/types/email";

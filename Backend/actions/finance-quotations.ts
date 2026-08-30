@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { joinQuotationNumberParts } from "@backend/modules/finance/finance-quotation-number";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 
 const LIST_PATH = "/dashboard/finance/sales/quotation-estimate";
 type QuotationStatus = "pending" | "accepted" | "cancelled";

@@ -1,9 +1,9 @@
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import { DashboardTabs } from "@/components/dashboard/dashboard-tabs";
 import {
   applicationProjectKindDbValues,
   isPendingApplicationRow,
-  supabaseInFilter,
+  inFilter,
   type BisApplicationSource,
 } from "@backend/modules/bis/bis-project-kind";
 import { dashboardLicenseDateBounds } from "@backend/shared/dashboard-date-bounds";
@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardHomePage() {
   const supabase = await createClient();
   const applicationKinds = await applicationProjectKindDbValues(supabase);
-  const applicationKindFilter = supabaseInFilter(applicationKinds);
+  const applicationKindFilter = inFilter(applicationKinds);
 
   const { today, plus90Days, minus90Days, before90Days } = dashboardLicenseDateBounds();
 
@@ -41,58 +41,52 @@ export default async function DashboardHomePage() {
     // Pending renewals: License (not application) with validity today → today+90
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
       .not("project_kind", "in", applicationKindFilter)
       .gte("license_validity_date", today)
       .lte("license_validity_date", plus90Days)
       .or("status.is.null,status.eq.in_progress")
-      .order("license_validity_date", { ascending: true })
-      .limit(100),
+      .order("license_validity_date", { ascending: true }),
     // Pending applications: Application type only, not yet converted to a license
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, created_at, target_date, client_id, cm_l_digits, license_validity_date, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, created_at, target_date, client_id, cm_l_digits, license_validity_date, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .in("project_kind", applicationKinds)
       .is("license_validity_date", null)
       .or("status.is.null,status.eq.in_progress")
-      .order("created_at", { ascending: false })
-      .limit(100),
+      .order("created_at", { ascending: false }),
     // Deferred: License (not application), validity crossed but within 90 days grace
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
       .not("project_kind", "in", applicationKindFilter)
       .lt("license_validity_date", today)
       .gte("license_validity_date", minus90Days)
       .or("status.is.null,status.eq.in_progress")
-      .order("license_validity_date", { ascending: true })
-      .limit(100),
+      .order("license_validity_date", { ascending: true }),
     // Stop Marking (non-compliance)
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .eq("status", "stop_marking")
-      .order("license_validity_date", { ascending: true })
-      .limit(100),
+      .order("license_validity_date", { ascending: true }),
     // Cancelled
     supabase
       .from("bis_projects")
-      .select("id, title, status, license_number, license_validity_date, target_date, clients(name, company_name)")
+      .select("id, title, status, license_number, license_validity_date, target_date, client_id, clients(name, company_name, email)")
       .eq("status", "cancelled")
-      .order("updated_at", { ascending: false })
-      .limit(100),
+      .order("updated_at", { ascending: false }),
     // Expired: validity > 90 days past, only normal/auto status
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
       .not("project_kind", "in", applicationKindFilter)
       .lt("license_validity_date", before90Days)
       .or("status.is.null,status.eq.in_progress")
-      .order("license_validity_date", { ascending: false })
-      .limit(100),
+      .order("license_validity_date", { ascending: false }),
     supabase.from("finance_quotations").select("id", { count: "exact", head: true }),
     supabase.from("finance_sales_orders").select("id", { count: "exact", head: true }),
     supabase.from("finance_tax_invoices").select("id", { count: "exact", head: true }),
@@ -102,13 +96,17 @@ export default async function DashboardHomePage() {
     supabase
       .from("license_surveillance")
       .select(
-        "id, surveillance_date, allotted_employee_name, cm_l_digits, project_kind, client_id, bis_project_id, is_code_id, created_at, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)",
+        "id, surveillance_date, allotted_employee_name, cm_l_digits, project_kind, client_id, bis_project_id, is_code_id, created_at, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)",
       )
       .order("surveillance_date", { ascending: false })
       .limit(200),
   ]);
 
-  type ClientJoin = { name: string | null; company_name: string | null } | null;
+  type ClientJoin = {
+    name: string | null;
+    company_name: string | null;
+    email: string | null;
+  } | null;
 
   function mapBisRow(r: Record<string, unknown>) {
     const c = (Array.isArray(r.clients) ? r.clients[0] : r.clients) as ClientJoin;
@@ -125,6 +123,7 @@ export default async function DashboardHomePage() {
       target_date: r.target_date as string | null,
       client_id: r.client_id as string | null,
       client_name: c?.company_name ?? c?.name ?? "Unknown Client",
+      client_email: (c?.email ?? "").trim() || null,
       is_number: ic?.is_number ?? null,
       is_revision_year: ic?.revision_year ?? null,
       is_code_title: ic?.is_code_title ?? null,

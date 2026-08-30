@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 import Link from "next/link";
 import { FinanceManagementCard } from "@/components/dashboard/finance-management-card";
 import { PendingRenewalsSection } from "@/components/dashboard/pending-renewals-section";
@@ -10,6 +10,11 @@ import { PendingApplicationsSection } from "@/components/dashboard/pending-appli
 import { SurveillanceSection, type SurveillanceRow } from "@/components/dashboard/surveillance-section";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { formatDisplayDate } from "@backend/shared/format-date";
+import {
+  syncStopMarkingFromManak,
+  type SyncStopMarkingResult,
+} from "@backend/actions/stop-marking-sync";
+import { MANAK_STOP_MARKING_REPORT_URL } from "@backend/modules/bis/manak-online-portal";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type FinanceModule = {
@@ -31,6 +36,7 @@ type RenewalRow = {
   target_date: string | null;
   client_id: string | null;
   client_name: string;
+  client_email?: string | null;
   is_number: string | null;
   is_revision_year: number | null;
   is_code_title: string | null;
@@ -141,6 +147,111 @@ const CANCELLED_STARTERS = [
 // ── Stop Marking Add Modal ────────────────────────────────────────────────────
 type ClientOption = { id: string; name: string; company_name: string | null };
 type ProjectOption = { id: string; cm_l_digits: string | null; is_number: string | null; is_revision_year: number | null; is_code_id: string | null };
+
+function StopMarkingAiSyncResultModal({
+  result,
+  onClose,
+}: {
+  result: SyncStopMarkingResult;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white shadow-2xl dark:bg-zinc-900">
+        <div
+          className={`flex items-center justify-between rounded-t-2xl px-5 py-4 ${
+            result.ok ? "bg-violet-600" : "bg-rose-600"
+          }`}
+        >
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wider text-white/70">
+              Manak Sync
+            </p>
+            <h2 className="text-base font-bold text-white">
+              {result.ok ? "AI Sync complete" : "AI Sync failed"}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
+          >
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="space-y-3 px-5 py-5 text-sm text-zinc-700 dark:text-zinc-200">
+          {result.ok ? (
+            <>
+              <ul className="space-y-1.5">
+                <li>
+                  Manak CMLs found:{" "}
+                  <span className="font-semibold tabular-nums">{result.manakCount}</span>
+                </li>
+                <li>
+                  Matched in your DB:{" "}
+                  <span className="font-semibold tabular-nums">{result.matched}</span>
+                </li>
+                <li>
+                  Newly marked Stop Marking:{" "}
+                  <span className="font-semibold tabular-nums text-emerald-700 dark:text-emerald-400">
+                    {result.added}
+                  </span>
+                </li>
+                <li>
+                  Already on Stop Marking:{" "}
+                  <span className="font-semibold tabular-nums">{result.alreadyMarked}</span>
+                </li>
+                <li>
+                  On Manak but not in DB:{" "}
+                  <span className="font-semibold tabular-nums">{result.notInDbCount}</span>
+                </li>
+              </ul>
+              {result.notInDbSample.length > 0 && (
+                <p className="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 font-mono text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300">
+                  Sample not in DB: {result.notInDbSample.join(", ")}
+                  {result.notInDbCount > result.notInDbSample.length ? "…" : ""}
+                </p>
+              )}
+            </>
+          ) : (
+            <>
+              <p className="text-rose-700 dark:text-rose-300">{result.error}</p>
+              <a
+                href={result.reportUrl || MANAK_STOP_MARKING_REPORT_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-sm font-semibold text-violet-700 underline-offset-2 hover:underline dark:text-violet-300"
+              >
+                Open Manak report
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            </>
+          )}
+        </div>
+
+        <div className="flex justify-end rounded-b-2xl border-t border-zinc-100 px-5 py-4 dark:border-zinc-800">
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function StopMarkingAddModal({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
   const [clientSearch, setClientSearch] = useState("");
@@ -583,6 +694,8 @@ export function DashboardTabs({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [stopMarkingModalOpen, setStopMarkingModalOpen] = useState(false);
+  const [aiSyncPending, startAiSync] = useTransition();
+  const [aiSyncResult, setAiSyncResult] = useState<SyncStopMarkingResult | null>(null);
   const tabParam = searchParams.get("tab");
   const activeTab = tabParam && TAB_IDS.has(tabParam) ? tabParam : "general";
 
@@ -599,6 +712,18 @@ export function DashboardTabs({
     const params = new URLSearchParams(searchParams.toString());
     params.set("tab", id);
     router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  function runAiSyncFromManak() {
+    const ok = window.confirm(
+      "Fetch Manak suspension list and mark matching CM/L as Stop Marking?",
+    );
+    if (!ok) return;
+    startAiSync(async () => {
+      const result = await syncStopMarkingFromManak();
+      setAiSyncResult(result);
+      if (result.ok) router.refresh();
+    });
   }
 
   return (
@@ -689,22 +814,45 @@ export function DashboardTabs({
               sectionLabel="Under Stop Marking"
               emptyMsg="No licenses under Stop Marking."
               extraHeaderButton={
-                <button
-                  type="button"
-                  onClick={() => setStopMarkingModalOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3.5 py-2 text-sm font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100 dark:border-orange-700 dark:bg-orange-950/30 dark:text-orange-300 dark:hover:bg-orange-950/50"
-                >
-                  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                  </svg>
-                  Add to Stop Marking
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={runAiSyncFromManak}
+                    disabled={aiSyncPending}
+                    className="inline-flex items-center gap-2 rounded-lg border border-violet-300 bg-violet-50 px-3.5 py-2 text-sm font-semibold text-violet-700 shadow-sm transition-colors hover:bg-violet-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-violet-700 dark:bg-violet-950/30 dark:text-violet-300 dark:hover:bg-violet-950/50"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
+                      />
+                    </svg>
+                    {aiSyncPending ? "Syncing…" : "AI Sync from Manak"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStopMarkingModalOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-lg border border-orange-300 bg-orange-50 px-3.5 py-2 text-sm font-semibold text-orange-700 shadow-sm transition-colors hover:bg-orange-100 dark:border-orange-700 dark:bg-orange-950/30 dark:text-orange-300 dark:hover:bg-orange-950/50"
+                  >
+                    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    Add to Stop Marking
+                  </button>
+                </div>
               }
             />
             {stopMarkingModalOpen && (
               <StopMarkingAddModal
                 onClose={() => setStopMarkingModalOpen(false)}
                 onAdded={() => router.refresh()}
+              />
+            )}
+            {aiSyncResult && (
+              <StopMarkingAiSyncResultModal
+                result={aiSyncResult}
+                onClose={() => setAiSyncResult(null)}
               />
             )}
           </>

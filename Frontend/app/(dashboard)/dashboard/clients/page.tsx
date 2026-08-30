@@ -23,7 +23,7 @@ import {
   DROPDOWN_KEY_CLIENT_PIN_CODE,
   DROPDOWN_KEY_CLIENT_STATE,
 } from "@backend/shared/dropdown-keys";
-import { createClient } from "@backend/db/supabase/server";
+import { createClient } from "@backend/db/client/server";
 import type { ClientMasterRow } from "@backend/shared/types/client-master";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 

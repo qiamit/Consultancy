@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { bisProjectSavedLicenseScope } from "@backend/modules/bis/bis-project-scope-label";
-import { createClient } from "@backend/db/supabase/client";
+import { createClient } from "@backend/db/client/client";
 
 export type ClientSnapshotRow = {
   id: string;

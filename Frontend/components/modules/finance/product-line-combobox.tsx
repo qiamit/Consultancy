@@ -306,7 +306,7 @@ export function ProductLineCombobox({
           onFocus={handleFocus}
           onBlur={handleBlur}
           onKeyDown={handleKeyDown}
-          placeholder="Search product / service…"
+          placeholder="Search Product & Services"
           className={inputInner}
         />
         {onOpenProductModal && (
