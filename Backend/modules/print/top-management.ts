@@ -46,10 +46,8 @@ function formatBisBranchLine(branchName: string, state: string, country: string)
   return parts.join(", ");
 }
 
-function formatInspectionDateDisplay(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "N/A";
-  return formatDisplayDate(raw, "N/A");
+function formatInspectionDateDisplay(dateStr: string | Date | null | undefined): string {
+  return formatDisplayDate(dateStr, "N/A");
 }
 
 function formatApplicationNo(raw: string | undefined): string {
@@ -242,27 +240,60 @@ function buildLetterBody(
 </div>`;
 }
 
-export function buildTopManagementCompany(data: TopManagementLetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({
-    ...data,
-    licenseScope: "",
-  });
+export type TopManagementPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildTopManagementCompany(
+  data: TopManagementLetterData,
+  assets?: TopManagementPrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({
+      ...data,
+      licenseScope: "",
+    }),
+    ...assets,
+    // Top Management letterhead is text-only — never show company logo.
+    logo_url: null,
+  };
 }
 
 export function defaultTopManagementPrintSettings(): PrintSettings {
-  return defaultDeclarationPrintSettings();
+  return {
+    ...defaultDeclarationPrintSettings(),
+    letterhead_layout: "logo-na",
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Top Management preview / Word. */
+export function topManagementLetterheadSettings(
+  settings: PrintSettings,
+): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+  };
 }
 
 export function buildTopManagementHtml(
   data: TopManagementLetterData,
   settings: PrintSettings,
   tableColumns: TopManagementTableColumnKey[] = DEFAULT_TOP_MANAGEMENT_TABLE_COLUMNS,
+  assets?: TopManagementPrintAssets,
 ): string {
   return buildPrintDocument({
     title: "Top Management Details",
     bodyHtml: buildLetterBody(data, tableColumns, settings),
-    settings,
-    company: buildTopManagementCompany(data),
+    settings: topManagementLetterheadSettings(settings),
+    company: buildTopManagementCompany(data, assets),
   });
 }
 

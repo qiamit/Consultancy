@@ -2,22 +2,28 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
+  ImageRun,
   Packer,
   Paragraph,
+  ShadingType,
   Table,
   TableCell,
   TableRow,
   TextRun,
+  VerticalAlign,
   WidthType,
 } from "docx";
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import {
   buildTechnicalStaffCompany,
+  technicalStaffLetterheadSettings,
   type TechnicalStaffLetterData,
+  type TechnicalStaffPrintAssets,
 } from "@backend/modules/print/technical-staff";
 import {
   DEFAULT_TECHNICAL_STAFF_TABLE_COLUMNS,
   TECHNICAL_STAFF_TABLE_COLUMN_OPTIONS,
+  technicalStaffColumnWidthPct,
   type TechnicalStaffTableColumnKey,
 } from "@backend/modules/print/technical-staff-table-columns";
 import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff";
@@ -25,18 +31,67 @@ import { rowHasContent } from "@backend/modules/bis/technical-staff";
 import type { PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  contentWidthTwip,
+  DOCX_LETTERHEAD_FONT,
+  loadImageFromUrl,
+  PAGE_HEIGHT_TWIP,
+  PAGE_WIDTH_TWIP,
+  pageMarginsFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 
-const DOCX_FONT = "Times New Roman";
+const DOCX_FONT = DOCX_LETTERHEAD_FONT;
 const DOCX_BODY_SIZE = 24;
+const DOCX_TABLE_SIZE = 20;
+const DOCX_TABLE_BODY_SIZE = 22;
+
+const BOX_BORDER = {
+  style: BorderStyle.SINGLE,
+  size: 8,
+  color: "CBD5E1",
+} as const;
+
+const BOX_BORDERS = {
+  top: BOX_BORDER,
+  bottom: BOX_BORDER,
+  left: BOX_BORDER,
+  right: BOX_BORDER,
+};
+
+const THIN_BORDER = {
+  style: BorderStyle.SINGLE,
+  size: 4,
+  color: "CBD5E1",
+} as const;
+
+const CELL_BORDERS = {
+  top: THIN_BORDER,
+  bottom: THIN_BORDER,
+  left: THIN_BORDER,
+  right: THIN_BORDER,
+};
+
+const NO_BORDER = {
+  style: BorderStyle.NONE,
+  size: 0,
+  color: "FFFFFF",
+} as const;
+
+const NO_BORDERS = {
+  top: NO_BORDER,
+  bottom: NO_BORDER,
+  left: NO_BORDER,
+  right: NO_BORDER,
+};
 
 function safeFilePart(value: string): string {
   return value.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 60);
 }
 
-function formatInspectionDate(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "N/A";
-  return formatDisplayDate(raw, "N/A");
+function formatInspectionDate(dateStr: string | Date | null | undefined): string {
+  return formatDisplayDate(dateStr, "N/A");
 }
 
 function formatApplicationNo(raw: string | undefined): string {
@@ -110,22 +165,23 @@ function triggerBlobDownload(blob: Blob, filename: string) {
   URL.revokeObjectURL(url);
 }
 
-function bodyRun(text: string, bold = false): TextRun {
+function bodyRun(text: string, bold = false, size = DOCX_BODY_SIZE): TextRun {
   return new TextRun({
     text,
     bold,
     font: DOCX_FONT,
-    size: DOCX_BODY_SIZE,
+    size,
   });
 }
 
 function bodyParagraph(
   runs: TextRun[],
   alignment: (typeof AlignmentType)[keyof typeof AlignmentType] = AlignmentType.JUSTIFIED,
+  spacingAfter = 200,
 ): Paragraph {
   return new Paragraph({
     alignment,
-    spacing: { after: 200, line: 360 },
+    spacing: { after: spacingAfter, line: 360 },
     children: runs,
   });
 }
@@ -134,142 +190,337 @@ function plainParagraph(text: string, bold = false): Paragraph {
   return bodyParagraph([bodyRun(text, bold)]);
 }
 
-function centerParagraph(text: string, bold = false): Paragraph {
-  return bodyParagraph([bodyRun(text, bold)], AlignmentType.CENTER);
+function centerParagraph(text: string, bold = false, size = DOCX_TABLE_SIZE): Paragraph {
+  return new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 0, line: 276 },
+    children: [bodyRun(text, bold, size)],
+  });
 }
 
-function buildLetterheadParagraphs(
+function buildAddressHeaderTable(
   data: TechnicalStaffLetterData,
   settings: PrintSettings,
-): Paragraph[] {
-  if (!settings.show_letterhead) return [];
+): Table {
+  const bisBranch = bisBranchLine(data);
+  const inspectionDate = formatInspectionDate(data.inspectionDate);
+  const applicationNo = formatApplicationNo(data.applicationNumber);
+  const width = contentWidthTwip(settings);
+  const leftW = Math.round(width * 0.58);
+  const rightW = width - leftW;
 
-  const company = buildTechnicalStaffCompany(data);
-  const out: Paragraph[] = [
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 120 },
-      children: [
-        new TextRun({
-          text: company.name,
-          bold: true,
-          font: DOCX_FONT,
-          size: 32,
-          color: settings.primary_color.replace("#", ""),
-        }),
-      ],
-    }),
-  ];
-
-  if (settings.letterhead_show_address && company.address.trim()) {
-    out.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 240 },
-        children: [bodyRun(company.address)],
+  return new Table({
+    width: { size: width, type: WidthType.DXA },
+    columnWidths: [leftW, rightW],
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: leftW, type: WidthType.DXA },
+            borders: NO_BORDERS,
+            children: [
+              new Paragraph({
+                spacing: { after: 0, line: 360 },
+                children: [bodyRun("To")],
+              }),
+              new Paragraph({
+                spacing: { after: 0, line: 360 },
+                children: [bodyRun("The Director & Head")],
+              }),
+              new Paragraph({
+                spacing: { after: 0, line: 360 },
+                children: [bodyRun("Bureau of Indian Standards")],
+              }),
+              new Paragraph({
+                spacing: { after: 0, line: 360 },
+                children: [bodyRun(bisBranch, true)],
+              }),
+            ],
+          }),
+          new TableCell({
+            width: { size: rightW, type: WidthType.DXA },
+            borders: NO_BORDERS,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                spacing: { after: 60, line: 360 },
+                children: [bodyRun("Date: ", true), bodyRun(inspectionDate, true)],
+              }),
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                spacing: { after: 0, line: 360 },
+                children: [
+                  bodyRun("Application No.: ", true),
+                  bodyRun(applicationNo, true),
+                ],
+              }),
+            ],
+          }),
+        ],
       }),
-    );
-  } else {
-    out.push(new Paragraph({ spacing: { after: 240 }, children: [] }));
-  }
-
-  return out;
+    ],
+  });
 }
 
-function buildTechnicalStaffTableDocx(rows: TechnicalStaffStored[]): Table {
+function buildTechnicalStaffTableDocx(
+  rows: TechnicalStaffStored[],
+  settings: PrintSettings,
+): Table {
   const columns = DEFAULT_TECHNICAL_STAFF_TABLE_COLUMNS;
   const columnDefs = TECHNICAL_STAFF_TABLE_COLUMN_OPTIONS.filter((col) =>
     columns.includes(col.key),
   );
   const visible = visibleRows(rows);
+  const outerWidth = contentWidthTwip(settings);
+  const boxPad = 80;
+  const innerWidth = Math.max(1200, outerWidth - boxPad * 2);
+  const widths = columnDefs.map((col) => {
+    const pct = Number.parseFloat(technicalStaffColumnWidthPct(col.key, columns));
+    return Math.max(400, Math.round((pct / 100) * innerWidth));
+  });
+  const sum = widths.reduce((a, b) => a + b, 0);
+  if (widths.length > 0 && sum !== innerWidth) {
+    widths[widths.length - 1] = Math.max(
+      400,
+      (widths[widths.length - 1] ?? 400) + (innerWidth - sum),
+    );
+  }
 
   const header = new TableRow({
     tableHeader: true,
     children: columnDefs.map(
-      (col) =>
+      (col, i) =>
         new TableCell({
-          children: [centerParagraph(col.label, true)],
+          width: { size: widths[i]!, type: WidthType.DXA },
+          borders: CELL_BORDERS,
+          verticalAlign: VerticalAlign.CENTER,
+          shading: { type: ShadingType.CLEAR, fill: "F1F5F9" },
+          children: [centerParagraph(col.label, true, DOCX_TABLE_SIZE)],
         }),
     ),
   });
 
   const bodyRows = visible.map(
-    (row, i) =>
+    (row, rowIndex) =>
       new TableRow({
         children: columnDefs.map(
-          (col) =>
+          (col, i) =>
             new TableCell({
-              children: [centerParagraph(cellPlainText(col.key, row, i))],
+              width: { size: widths[i]!, type: WidthType.DXA },
+              borders: {
+                top: { ...THIN_BORDER, color: "E2E8F0" },
+                bottom: { ...THIN_BORDER, color: "E2E8F0" },
+                left: { ...THIN_BORDER, color: "E2E8F0" },
+                right: { ...THIN_BORDER, color: "E2E8F0" },
+              },
+              verticalAlign: VerticalAlign.CENTER,
+              children: [
+                centerParagraph(
+                  cellPlainText(col.key, row, rowIndex),
+                  false,
+                  DOCX_TABLE_BODY_SIZE,
+                ),
+              ],
             }),
         ),
       }),
   );
 
-  return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+  const innerTable = new Table({
+    width: { size: innerWidth, type: WidthType.DXA },
+    columnWidths: widths,
     rows: [header, ...bodyRows],
   });
+
+  return new Table({
+    width: { size: outerWidth, type: WidthType.DXA },
+    columnWidths: [outerWidth],
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: outerWidth, type: WidthType.DXA },
+            borders: BOX_BORDERS,
+            shading: { type: ShadingType.CLEAR, fill: "F8FAFC" },
+            margins: {
+              top: boxPad,
+              bottom: boxPad,
+              left: boxPad,
+              right: boxPad,
+            },
+            children: [innerTable],
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+async function buildSignatureBlock(
+  data: TechnicalStaffLetterData,
+  settings: PrintSettings,
+): Promise<(Paragraph | Table)[]> {
+  const sigName = data.signatoryName.trim() || data.contactPerson.trim() || "—";
+  const sigDesig = data.signatoryDesignation.trim() || "—";
+  const totalWidth = contentWidthTwip(settings);
+  const sigWidth = Math.min(3200, Math.round(totalWidth * 0.42));
+  const spacerWidth = totalWidth - sigWidth;
+  const parsed = await loadImageFromUrl(data.signatureImageUrl?.trim() || null);
+
+  const sigChildren: Paragraph[] = [
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 0 },
+      children: [bodyRun(`For ${data.companyName}`, true)],
+    }),
+  ];
+
+  if (parsed) {
+    sigChildren.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { before: 120, after: 0 },
+        children: [
+          new ImageRun({
+            type: parsed.type,
+            data: parsed.data,
+            transformation: { width: 120, height: 48 },
+            altText: {
+              title: "Signature",
+              description: "Signatory signature",
+              name: "signature",
+            },
+          }),
+        ],
+      }),
+    );
+  } else {
+    sigChildren.push(
+      new Paragraph({
+        spacing: { before: 280, after: 0 },
+        children: [],
+      }),
+    );
+  }
+
+  sigChildren.push(
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 80, after: 0 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
+      },
+      children: [bodyRun("Name: ", true), bodyRun(sigName)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun("Designation: ", true), bodyRun(sigDesig)],
+    }),
+  );
+
+  return [
+    new Paragraph({ spacing: { before: 280, after: 0 }, children: [] }),
+    new Table({
+      width: { size: totalWidth, type: WidthType.DXA },
+      columnWidths: [spacerWidth, sigWidth],
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: spacerWidth, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              children: [new Paragraph({ children: [] })],
+            }),
+            new TableCell({
+              width: { size: sigWidth, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              children: sigChildren,
+            }),
+          ],
+        }),
+      ],
+    }),
+  ];
 }
 
 async function buildTechnicalStaffDocx(
   data: TechnicalStaffLetterData,
   settings: PrintSettings,
+  assets?: TechnicalStaffPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = technicalStaffLetterheadSettings(settings);
+  const company = buildTechnicalStaffCompany(data, assets);
   const isRef = isStandardRef(data);
-  const bisBranch = bisBranchLine(data);
-  const inspectionDate = formatInspectionDate(data.inspectionDate);
-  const applicationNo = formatApplicationNo(data.applicationNumber);
-  const sigName = data.signatoryName.trim() || data.contactPerson.trim() || "—";
-  const sigDesig = data.signatoryDesignation.trim() || "—";
   const visible = visibleRows(data.rows);
 
   const tableSection: (Paragraph | Table)[] =
     visible.length > 0
       ? [
-          plainParagraph("TECHNICAL STAFF DETAILS", true),
-          buildTechnicalStaffTableDocx(data.rows),
+          new Paragraph({ spacing: { before: 120, after: 120 }, children: [] }),
+          buildTechnicalStaffTableDocx(data.rows, letterheadSettings),
+          new Paragraph({ spacing: { before: 120, after: 0 }, children: [] }),
         ]
-      : [plainParagraph("No technical staff details entered yet.")];
+      : [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 160, after: 160 },
+            children: [
+              new TextRun({
+                text: "No technical staff details entered yet.",
+                font: DOCX_FONT,
+                size: DOCX_BODY_SIZE,
+                color: "64748B",
+              }),
+            ],
+          }),
+        ];
 
   const children: (Paragraph | Table)[] = [
-    ...buildLetterheadParagraphs(data, settings),
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 280 },
+      spacing: { after: 240 },
       children: [
         new TextRun({
-          text: "TECHNICAL STAFF DETAILS",
+          text: "Technical Staff Details",
           bold: true,
+          allCaps: true,
           underline: {},
           font: DOCX_FONT,
           size: 30,
         }),
       ],
     }),
+    buildAddressHeaderTable(data, letterheadSettings),
+    new Paragraph({ spacing: { after: 160 }, children: [] }),
     bodyParagraph([
-      bodyRun("To\nThe Director & Head\nBureau of Indian Standards\n"),
-      bodyRun(bisBranch, true),
-      bodyRun("\t\t\t\tDate: "),
-      bodyRun(inspectionDate, true),
-      bodyRun("\n\t\t\t\tApplication No.: "),
-      bodyRun(applicationNo, true),
-    ]),
-    bodyParagraph([
-      bodyRun("Sub: "),
+      bodyRun("Sub: ", true),
       bodyRun("Details of Technical Staff for BIS licence application", true),
       ...(isRef
-        ? [bodyRun(" under Indian Standard "), bodyRun(isRef, true), bodyRun(".")]
+        ? [
+            bodyRun(" under Indian Standard "),
+            bodyRun(isRef, true),
+            bodyRun("."),
+          ]
         : [bodyRun(".")]),
     ]),
     bodyParagraph([
       bodyRun("We, "),
       bodyRun(`M/s. ${data.companyName}`, true),
       ...(data.address.trim()
-        ? [bodyRun(" having our factory at "), bodyRun(data.address, true), bodyRun(",")]
-        : []),
+        ? [
+            bodyRun(", having our factory at "),
+            bodyRun(data.address, true),
+            bodyRun(","),
+          ]
+        : [bodyRun(",")]),
       bodyRun(" hereby furnish the following details of our Technical Staff"),
       ...(isRef
-        ? [bodyRun(" in connection with BIS certification under "), bodyRun(isRef, true)]
+        ? [
+            bodyRun(" in connection with BIS certification under "),
+            bodyRun(isRef, true),
+          ]
         : [bodyRun(" in connection with BIS certification")]),
       bodyRun(". The particulars are as under:"),
     ]),
@@ -277,34 +528,34 @@ async function buildTechnicalStaffDocx(
     plainParagraph(
       "We declare that the information furnished above is true and correct to the best of our knowledge and belief. The persons listed above are responsible for technical operations and compliance of the unit with respect to BIS certification requirements.",
     ),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 360, after: 0 },
-      children: [bodyRun(`For ${data.companyName}`, true)],
-    }),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 320, after: 0 },
-      border: {
-        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-      },
-      children: [bodyRun(`Name: ${sigName}`)],
-    }),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 40, after: 0 },
-      children: [bodyRun(`Designation: ${sigDesig}`)],
-    }),
+    ...(await buildSignatureBlock(data, letterheadSettings)),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: {
+              width: PAGE_WIDTH_TWIP,
+              height: PAGE_HEIGHT_TWIP,
+            },
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadTechnicalStaffWord(
   data: TechnicalStaffLetterData,
   settings: PrintSettings,
+  assets?: TechnicalStaffPrintAssets,
 ): Promise<void> {
-  const doc = await buildTechnicalStaffDocx(data, settings);
+  const doc = await buildTechnicalStaffDocx(data, settings, assets);
   const blob = await Packer.toBlob(doc);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

@@ -150,26 +150,58 @@ function buildFormBody(data: UndertakingOption2LetterData): string {
 </div>`;
 }
 
-export function buildUndertakingOption2Company(data: UndertakingOption2LetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+export type UndertakingOption2PrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildUndertakingOption2Company(
+  data: UndertakingOption2LetterData,
+  assets?: UndertakingOption2PrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultUndertakingOption2PrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
     show_letterhead: true,
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 11,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Undertaking Option 2 preview / Word (same as Top Management). */
+export function undertakingOption2LetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildUndertakingOption2Html(
   data: UndertakingOption2LetterData,
   settings: PrintSettings,
+  assets?: UndertakingOption2PrintAssets,
 ): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const letterheadSettings = undertakingOption2LetterheadSettings(settings);
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .u2-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -275,8 +307,8 @@ export function buildUndertakingOption2Html(
     title: "Undertaking for Simplified Procedure (Option 2)",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings: { ...settings, show_page_numbers: false },
-    company: buildUndertakingOption2Company(data),
+    settings: letterheadSettings,
+    company: buildUndertakingOption2Company(data, assets),
   });
 }
 

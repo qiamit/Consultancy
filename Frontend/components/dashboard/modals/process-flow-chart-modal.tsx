@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent } from "react";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import {
   ProcessFlowChartEditor,
@@ -15,11 +22,16 @@ import {
   defaultProcessFlowChartPrintSettings,
   iframeSizeForProcessFlowChartPrintSettings,
   type ProcessFlowChartLetterData,
+  type ProcessFlowChartPrintAssets,
 } from "@backend/modules/print/process-flow-chart";
 import { downloadProcessFlowChartWord } from "@backend/modules/print/process-flow-chart-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import { type ProcessFlowChartStored, defaultProcessFlowChartDocument } from "@backend/modules/bis/process-flow-chart";
-import type { ProcessFlowChartSettings } from "@backend/modules/bis/process-flow-chart-settings";
+import {
+  parseProcessFlowChartSettings,
+  type ProcessFlowChartSettings,
+} from "@backend/modules/bis/process-flow-chart-settings";
 import {resolvePrimaryTopManagementPerson,
   type TopManagementStored,
   withDocumentSignatureImage,
@@ -62,24 +74,89 @@ export function ProcessFlowChartModal({
 }) {
   const [document, setDocument] = useState<ProcessFlowChartStored>(() => ({
     ...storedDocument,
-    chart_settings:
-      storedDocument.chart_settings ?? defaultProcessFlowChartDocument().chart_settings,
+    chart_settings: parseProcessFlowChartSettings({
+      ...(storedDocument.chart_settings ?? defaultProcessFlowChartDocument().chart_settings),
+      // Keep print preview on a single A4 page by default.
+      print_chart_size: "fit_page",
+    }),
   }));
   const chartSettings = useMemo(
-    () => document.chart_settings ?? defaultProcessFlowChartDocument().chart_settings,
+    () => parseProcessFlowChartSettings(document.chart_settings),
     [document.chart_settings],
   );
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultProcessFlowChartPrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<ProcessFlowChartPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | "chart" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const canvasEditorRef = useRef<ProcessFlowChartEditorHandle>(null);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultProcessFlowChartPrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+        show_page_numbers: false,
+        show_footer_line: false,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep Process Flow Chart margin defaults in sync (matches Top Management).
+  useEffect(() => {
+    const defaults = defaultProcessFlowChartPrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+    }));
+  }, []);
 
   const { firmRepName, firmRepDesignation } = useMemo(() => {
     const primary = resolvePrimaryTopManagementPerson(topManagement);
@@ -101,13 +178,15 @@ export function ProcessFlowChartModal({
   }, [letterData, applicationNumber, dateOfApplication, document, firmRepName, firmRepDesignation, topManagement]);
 
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const html = buildProcessFlowChartHtml(previewData, printSettings);
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
+    const html = buildProcessFlowChartHtml(previewData, printSettings, printAssets);
     doc.open();
     doc.write(html);
     doc.close();
-  }, [previewData, printSettings]);
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+  }, [previewData, printSettings, printAssets]);
 
   useEffect(() => {
     if (showPrintPreview) {
@@ -115,6 +194,7 @@ export function ProcessFlowChartModal({
     }
   }, [showPrintPreview, refreshPreview]);
 
+  const fitOnePagePreview = chartSettings.print_chart_size !== "full";
   const iframeSize = iframeSizeForProcessFlowChartPrintSettings(printSettings);
   const isFullNumber = letterData.isNumber?.trim() || "—";
 
@@ -123,13 +203,21 @@ export function ProcessFlowChartModal({
   }
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      // Keep letterhead logo-free even if Print Settings changes layout.
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function patchChartSettings(patch: Partial<ProcessFlowChartSettings>) {
     setDocument((prev) => ({
       ...prev,
-      chart_settings: { ...prev.chart_settings, ...patch },
+      chart_settings: parseProcessFlowChartSettings({
+        ...prev.chart_settings,
+        ...patch,
+      }),
     }));
   }
 
@@ -168,28 +256,33 @@ export function ProcessFlowChartModal({
 
     const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
     if (!printWindow) return;
-    printWindow.document.write(buildProcessFlowChartHtml(previewData, printSettings));
+    printWindow.document.write(buildProcessFlowChartHtml(previewData, printSettings, printAssets));
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
   }
 
   function handleDownloadWord() {
-    void downloadProcessFlowChartWord(previewData, printSettings).catch(() =>
+    void downloadProcessFlowChartWord(previewData, printSettings, printAssets).catch(() =>
       window.alert("Unable to download Word file."),
     );
   }
 
-  function handleDownloadPng() {
-    if (!document.drawing_data_url) {
-      window.alert("Draw the process flow chart before downloading.");
-      return;
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildProcessFlowChartHtml(previewData, printSettings, printAssets);
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `Process_Flow_Chart_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
     }
-
-    const link = window.document.createElement("a");
-    link.href = document.drawing_data_url;
-    link.download = `Process_Flow_Chart_${letterData.companyName.replace(/[^\w\-]+/g, "_").slice(0, 40) || "flow"}.png`;
-    link.click();
   }
 
   function handleUploadImageClick() {
@@ -280,6 +373,14 @@ export function ProcessFlowChartModal({
             </button>
             <button
               type="button"
+              onClick={() => void handleDownloadPdf()}
+              disabled={pdfDownloading}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
+            </button>
+            <button
+              type="button"
               onClick={handleUploadImageClick}
               className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
             >
@@ -292,13 +393,6 @@ export function ProcessFlowChartModal({
               className="hidden"
               onChange={handleImageFileChange}
             />
-            <button
-              type="button"
-              onClick={handleDownloadPng}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-            >
-              Download PNG
-            </button>
             <button
               type="button"
               onClick={() => toggleSettingsPanel("chart")}
@@ -378,7 +472,7 @@ export function ProcessFlowChartModal({
 
           {showPrintPreview && (
             <div
-              className={`flex min-w-0 flex-1 flex-col bg-zinc-600 ${
+              className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-600 ${
                 settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
               }`}
             >
@@ -387,15 +481,17 @@ export function ProcessFlowChartModal({
                   Form Preview — Process Flow Chart
                 </p>
               </div>
-              <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+              <div
+                className={`flex min-h-0 flex-1 items-start justify-center p-3 sm:p-6 ${
+                  fitOnePagePreview ? "overflow-hidden" : "overflow-y-auto"
+                }`}
+              >
                 <iframe
                   ref={iframeRef}
                   title="Process flow chart print preview"
-                  className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  style={{
-                    width: `min(100%, ${iframeSize.widthMm}mm)`,
-                    minHeight: `${iframeSize.heightMm}mm`,
-                  }}
+                  className="max-w-full border-0 bg-white shadow-2xl"
+                  scrolling="no"
+                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
                 />
               </div>
             </div>
@@ -413,6 +509,7 @@ export function ProcessFlowChartModal({
                   mode={settingsPanel}
                   settings={printSettings}
                   onChange={patchPrintSettings}
+                  hideLetterheadLogo
                 />
               )}
             </div>

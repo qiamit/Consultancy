@@ -2,33 +2,26 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
 import {
-  useCloseWhenHidden,
   useFinanceListPagination,
   usePrunedSetSelection,
-  useRouteBoundFormState,
   useSyncedRows,
 } from "@/components/modules/finance/use-finance-master-state";
 import {
-  deleteTestParameter,
-  deleteTestParameters,
+  deleteTestParameterInline,
+  deleteTestParametersInline,
+  saveTestParameterInline,
 } from "@backend/actions/test-parameters";
-import {
-  clearTestParameterFormDraft,
-  currentTestParameterFormMode,
-  getStoredTestParameterOpenMode,
-  loadTestParameterFormDraft,
-  saveTestParameterFormDraft,
-} from "@backend/modules/test-parameters/test-parameter-form-draft";
-import { emptyForm as isCodeEmptyForm } from "@/components/modules/is-code-master/constants";
-import { IsCodeMasterForm } from "@/components/modules/is-code-master/form";
 import type { IsCodeFormDropdownOptions } from "@backend/shared/data/is-code-form-dropdowns";
-import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import type { TestParameterMasterRow } from "@backend/shared/types/test-parameter-master";
 import type { IsCodeComboboxOption } from "@/components/modules/bis-projects/is-code-combobox";
-import { emptyForm, rowToForm, formatIsCodeRevisionLabel } from "./constants";
-import { TestParameterMasterForm } from "./form";
+import {
+  buildEditorRowsFromMaster,
+  createBlankEditorRow,
+  createExtraBlankEditorRow,
+  isEditorRowBlank,
+  type TestParameterEditorRow,
+} from "./constants";
 import { TestParameterMasterHeaderBar } from "./header-bar";
 import {
   filterTestParametersBySearch,
@@ -39,6 +32,35 @@ import {
   printTestParameterList,
 } from "./print-test-parameter-list";
 import { TestParameterMasterTable } from "./table";
+
+function editorToMasterRow(r: TestParameterEditorRow): TestParameterMasterRow {
+  return {
+    id: r.id ?? r.key,
+    is_code_id: r.is_code_id,
+    test_name: r.test_name,
+    clause_no: r.clause_no,
+    test_method: r.test_method,
+    unit: r.unit,
+    specified_value: r.specified_value,
+    created_at: "",
+  };
+}
+
+function filterEditorRows(
+  rows: TestParameterEditorRow[],
+  query: string,
+): TestParameterEditorRow[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return rows;
+  const saved = rows.filter((r) => r.id);
+  const blanks = rows.filter((r) => !r.id);
+  const matched = filterTestParametersBySearch(
+    saved.map(editorToMasterRow),
+    query,
+  );
+  const matchedIds = new Set(matched.map((m) => m.id));
+  return [...rows.filter((r) => r.id && matchedIds.has(r.id)), ...blanks];
+}
 
 export function TestParameterMaster({
   initialRows,
@@ -58,169 +80,369 @@ export function TestParameterMaster({
   isCodeFormDropdowns: IsCodeFormDropdownOptions;
 }) {
   const router = useRouter();
-  const { open: sidebarOpen } = useSidebarLayout();
   const searchParams = useSearchParams();
-  const [rows] = useSyncedRows(initialRows);
+  const [serverRows] = useSyncedRows(initialRows);
   const [searchQuery, setSearchQuery] = useState("");
-  const [embedIsCodeOpen, setEmbedIsCodeOpen] = useState(false);
-  const [embedIsCodeForm, setEmbedIsCodeForm] = useState(() =>
-    isCodeEmptyForm(),
-  );
-  const [isCodeView, setIsCodeView] = useState<{
-    id: string;
-    is_number: string | null;
-    revision_year: number | null;
-  } | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [editingKey, setEditingKey] = useState<string | null>(null);
+  const [nameFocusToken, setNameFocusToken] = useState(0);
+  const editorRowsRef = useRef<TestParameterEditorRow[]>([]);
+  const editingKeyRef = useRef<string | null>(null);
+  const inFlightSaveKeysRef = useRef<Set<string>>(new Set());
 
-  function viewIsCodeFromRow(r: TestParameterMasterRow) {
-    if (!r.is_code_id) return;
-    setIsCodeView({
-      id: r.is_code_id,
-      is_number: r.is_codes?.is_number ?? null,
-      revision_year: r.is_codes?.revision_year ?? null,
-    });
-  }
-
+  const isCodeIdParam = searchParams.get("is_code_id");
   const idParam = searchParams.get("id");
-  const isNewParam = searchParams.get("new") === "1";
-  const savedRecently = searchParams.get("saved") === "1";
-  const storedOpenMode = getStoredTestParameterOpenMode();
-  const editRow =
-    idParam && !isNewParam
-      ? (rows.find((r) => r.id === idParam) ?? undefined)
-      : undefined;
-  const formVisible =
-    !savedRecently &&
-    (isNewParam ||
-      !!editRow ||
-      storedOpenMode === "new" ||
-      (!!storedOpenMode && storedOpenMode !== "new"));
-  const formOpenKey = formVisible
-    ? isNewParam
-      ? "new"
-      : idParam
-        ? `edit:${idParam}`
-        : storedOpenMode === "new"
-          ? "stored:new"
-          : storedOpenMode
-            ? `stored:edit:${storedOpenMode}`
-            : null
-    : null;
-  const [form, setForm] = useRouteBoundFormState(
-    formOpenKey,
-    () => {
-      if (isNewParam) {
-        return loadTestParameterFormDraft("new") ?? emptyForm();
-      }
-      if (idParam) {
-        const draft = loadTestParameterFormDraft(idParam);
-        if (draft) return draft;
-        const row = initialRows.find((r) => r.id === idParam);
-        if (row) return rowToForm(row);
-      }
-      if (storedOpenMode === "new") {
-        return loadTestParameterFormDraft("new") ?? emptyForm();
-      }
-      if (storedOpenMode) {
-        const draft = loadTestParameterFormDraft(storedOpenMode);
-        if (draft) return draft;
-        const row = initialRows.find((r) => r.id === storedOpenMode);
-        if (row) return rowToForm(row);
-      }
-      if (!getStoredTestParameterOpenMode()) {
-        return emptyForm();
-      }
-      return emptyForm();
-    },
-    emptyForm(),
-  );
-  const restoredUrlRef = useRef(false);
 
-  useCloseWhenHidden(formVisible, [setEmbedIsCodeOpen]);
-
-  useEffect(() => {
-    if (searchParams.get("saved") !== "1") return;
-    clearTestParameterFormDraft();
-    router.replace("/dashboard/test-parameters", { scroll: false });
-  }, [searchParams, router]);
-
-  useEffect(() => {
-    if (restoredUrlRef.current) return;
-    if (isNewParam || idParam) {
-      restoredUrlRef.current = true;
-      return;
-    }
-    const stored = getStoredTestParameterOpenMode();
-    if (!stored) return;
-    restoredUrlRef.current = true;
-    if (stored === "new") {
-      router.replace("/dashboard/test-parameters?new=1", { scroll: false });
-      return;
-    }
-    router.replace(
-      `/dashboard/test-parameters?id=${encodeURIComponent(stored)}`,
-      { scroll: false },
+  const scopedIsCodeLabel = useMemo(() => {
+    if (!isCodeIdParam) return null;
+    return (
+      isCodeOptions.find((o) => o.id === isCodeIdParam)?.label ??
+      "Selected IS Code"
     );
-  }, [idParam, isNewParam, router]);
+  }, [isCodeIdParam, isCodeOptions]);
+
+  const defaultTestMethod = useMemo(() => {
+    if (!scopedIsCodeLabel) return "";
+    // Test Method default is IS number only (no revision year).
+    const colon = scopedIsCodeLabel.indexOf(":");
+    return (colon === -1
+      ? scopedIsCodeLabel
+      : scopedIsCodeLabel.slice(0, colon)
+    ).trim();
+  }, [scopedIsCodeLabel]);
+
+  const scopedServerRows = useMemo(() => {
+    if (!isCodeIdParam) return serverRows;
+    return serverRows.filter((r) => r.is_code_id === isCodeIdParam);
+  }, [serverRows, isCodeIdParam]);
+
+  const [editorRows, setEditorRows] = useState<TestParameterEditorRow[]>(() => {
+    const fullLabel = isCodeIdParam
+      ? (isCodeOptions.find((o) => o.id === isCodeIdParam)?.label ?? "")
+      : "";
+    const colon = fullLabel.indexOf(":");
+    const label =
+      colon === -1 ? fullLabel.trim() : fullLabel.slice(0, colon).trim();
+    return isCodeIdParam
+      ? buildEditorRowsFromMaster(scopedServerRows, isCodeIdParam, label)
+      : [createBlankEditorRow("")];
+  });
+
+  useEffect(() => {
+    editorRowsRef.current = editorRows;
+  }, [editorRows]);
+
+  useEffect(() => {
+    editingKeyRef.current = editingKey;
+  }, [editingKey]);
+
+  // Keep local editor in sync with server after refresh; preserve dirty drafts.
+  useEffect(() => {
+    if (!isCodeIdParam) return;
+    setEditorRows((prev) => {
+      const dirtyById = new Map(
+        prev.filter((r) => r.id && r.dirty).map((r) => [r.id!, r]),
+      );
+      const drafts = prev.filter((r) => !r.id);
+      const emptyDrafts = drafts
+        .filter((r) => isEditorRowBlank(r, defaultTestMethod))
+        .map((r) => {
+          const method = r.test_method.trim();
+          const needsDefault =
+            !method ||
+            method === defaultTestMethod ||
+            (scopedIsCodeLabel != null && method === scopedIsCodeLabel.trim());
+          return needsDefault
+            ? { ...r, test_method: defaultTestMethod }
+            : r;
+        });
+      const nextSaved = scopedServerRows.map((r) => {
+        const dirty = dirtyById.get(r.id);
+        return (
+          dirty ?? {
+            key: r.id,
+            id: r.id,
+            is_code_id: r.is_code_id,
+            test_name: r.test_name ?? "",
+            clause_no: r.clause_no ?? "",
+            test_method: r.test_method ?? "",
+            unit: r.unit ?? "",
+            specified_value: r.specified_value ?? "",
+            dirty: false,
+          }
+        );
+      });
+      const serverFp = new Set(
+        nextSaved.map(
+          (r) =>
+            `${r.test_name}\0${r.clause_no}\0${r.test_method}\0${r.unit}\0${r.specified_value}`,
+        ),
+      );
+      // Drop non-empty drafts that already exist on the server (avoids duplicate rows after save+refresh).
+      const nonEmptyDrafts = drafts.filter((r) => {
+        if (isEditorRowBlank(r, defaultTestMethod)) return false;
+        if (inFlightSaveKeysRef.current.has(r.key)) return false;
+        const fp = `${r.test_name}\0${r.clause_no}\0${r.test_method}\0${r.unit}\0${r.specified_value}`;
+        return !serverFp.has(fp);
+      });
+      return [
+        ...nextSaved,
+        ...nonEmptyDrafts,
+        ...emptyDrafts,
+        ...(nextSaved.length === 0 &&
+        nonEmptyDrafts.length === 0 &&
+        emptyDrafts.length === 0
+          ? [createBlankEditorRow(isCodeIdParam, undefined, defaultTestMethod)]
+          : []),
+      ];
+    });
+  }, [scopedServerRows, isCodeIdParam, defaultTestMethod, scopedIsCodeLabel]);
+
+  // Tests are per-IS only.
+  useEffect(() => {
+    if (isCodeIdParam) {
+      // Drop legacy modal query params.
+      if (
+        searchParams.get("new") === "1" ||
+        searchParams.get("saved") === "1" ||
+        searchParams.get("id")
+      ) {
+        router.replace(
+          `/dashboard/test-parameters?is_code_id=${encodeURIComponent(isCodeIdParam)}`,
+          { scroll: false },
+        );
+      }
+      return;
+    }
+    if (idParam) {
+      const row = serverRows.find((r) => r.id === idParam);
+      if (row?.is_code_id) {
+        router.replace(
+          `/dashboard/test-parameters?is_code_id=${encodeURIComponent(row.is_code_id)}`,
+          { scroll: false },
+        );
+        return;
+      }
+    }
+    router.replace("/dashboard/is-code-master", { scroll: false });
+  }, [isCodeIdParam, idParam, serverRows, router, searchParams]);
 
   const filteredRows = useMemo(
-    () => filterTestParametersBySearch(rows, searchQuery),
-    [rows, searchQuery],
+    () => filterEditorRows(editorRows, searchQuery),
+    [editorRows, searchQuery],
   );
 
-  const grandTotal = rows.length;
-  const filteredTotal = filteredRows.length;
+  const savedFilteredRows = useMemo(
+    () => filteredRows.filter((r) => r.id),
+    [filteredRows],
+  );
+  const draftRows = useMemo(
+    () => filteredRows.filter((r) => !r.id),
+    [filteredRows],
+  );
+
+  const savedCount = editorRows.filter((r) => r.id).length;
+  const filteredSavedCount = savedFilteredRows.length;
   const searchActive = searchQuery.trim().length > 0;
+  const grandTotal = savedCount;
+  const filteredTotal = searchActive ? filteredSavedCount : savedCount;
 
   const {
     pageSize,
     page,
     setPage,
     totalPages,
-    paginated: paginatedRows,
+    paginated: paginatedSavedRows,
     onPageSizeChange,
-  } = useFinanceListPagination(filteredRows, searchQuery, PAGE_SIZE_OPTIONS[0]);
-
-  const filteredRowIds = useMemo(
-    () => filteredRows.map((r) => r.id),
-    [filteredRows],
+  } = useFinanceListPagination(
+    savedFilteredRows,
+    searchQuery,
+    PAGE_SIZE_OPTIONS[0],
   );
-  const { selectedIds, toggleRowSelection, toggleSelectPage } =
-    usePrunedSetSelection(filteredRowIds);
+
+  // Blank / draft rows always stay at the bottom so + is always reachable.
+  const displayRows = useMemo(
+    () => [...paginatedSavedRows, ...draftRows],
+    [paginatedSavedRows, draftRows],
+  );
+
+  const filteredRowKeys = useMemo(
+    () => savedFilteredRows.map((r) => r.key),
+    [savedFilteredRows],
+  );
+  const { selectedIds: selectedKeys, toggleRowSelection, toggleSelectPage } =
+    usePrunedSetSelection(filteredRowKeys);
 
   const toggleSelectPageRows = useCallback(() => {
-    toggleSelectPage(paginatedRows.map((r) => r.id));
-  }, [toggleSelectPage, paginatedRows]);
+    toggleSelectPage(paginatedSavedRows.map((r) => r.key));
+  }, [toggleSelectPage, paginatedSavedRows]);
 
-  function selectRow(r: TestParameterMasterRow) {
-    const next = rowToForm(r);
-    saveTestParameterFormDraft(r.id, next);
-    router.replace(`/dashboard/test-parameters?id=${r.id}`, { scroll: false });
+  function updateRow(
+    key: string,
+    patch: Partial<
+      Pick<
+        TestParameterEditorRow,
+        | "test_name"
+        | "clause_no"
+        | "test_method"
+        | "unit"
+        | "specified_value"
+      >
+    >,
+  ) {
+    setEditorRows((prev) =>
+      prev.map((r) =>
+        r.key === key ? { ...r, ...patch, dirty: true } : r,
+      ),
+    );
   }
 
-  function addNew() {
-    clearTestParameterFormDraft();
-    const next = emptyForm();
-    saveTestParameterFormDraft("new", next);
-    router.replace("/dashboard/test-parameters?new=1", { scroll: false });
+  async function addRow() {
+    if (!isCodeIdParam) return;
+    // Lock upper rows; save current last row, then add a new blank.
+    setEditingKey(null);
+    const last = editorRowsRef.current[editorRowsRef.current.length - 1];
+    if (last?.dirty) {
+      if (!last.test_name.trim()) {
+        setLocalError("Name of the Test is required before adding a new row.");
+        return;
+      }
+      await saveRow(last.key);
+    }
+    setEditorRows((prev) => [
+      ...prev,
+      createExtraBlankEditorRow(isCodeIdParam, defaultTestMethod),
+    ]);
+    setNameFocusToken((n) => n + 1);
   }
 
-  function closeForm() {
-    clearTestParameterFormDraft();
-    router.replace("/dashboard/test-parameters", { scroll: false });
+  function editRow(row: TestParameterEditorRow) {
+    setEditingKey(row.key);
   }
 
-  function updateField(key: string, value: string) {
-    setForm((f) => {
-      const next = { ...f, [key]: value };
-      const mode = currentTestParameterFormMode(idParam, isNewParam);
-      if (mode) saveTestParameterFormDraft(mode, next);
+  async function doneEditRow(row: TestParameterEditorRow) {
+    if (row.dirty) {
+      if (!row.test_name.trim()) {
+        setLocalError("Name of the Test is required.");
+        return;
+      }
+      await saveRow(row.key);
+    }
+    setEditingKey(null);
+  }
+
+  async function persistRow(
+    row: TestParameterEditorRow,
+  ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+    if (!isCodeIdParam) {
+      return { ok: false, error: "IS Code is required." };
+    }
+    if (!row.test_name.trim()) {
+      return { ok: false, error: "Name of the Test is required." };
+    }
+    const result = await saveTestParameterInline({
+      id: row.id,
+      scopeIsCodeId: isCodeIdParam,
+      test_name: row.test_name,
+      clause_no: row.clause_no,
+      test_method: row.test_method,
+      unit: row.unit,
+      specified_value: row.specified_value,
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return { ok: true, id: result.id };
+  }
+
+  /** Persist only when + or Done is clicked — never while typing. */
+  async function saveRow(key: string) {
+    if (inFlightSaveKeysRef.current.has(key)) return;
+
+    const row = editorRowsRef.current.find((r) => r.key === key);
+    if (!row || !row.dirty || !row.test_name.trim()) return;
+
+    inFlightSaveKeysRef.current.add(key);
+    setLocalError(null);
+
+    const snapshot: TestParameterEditorRow = { ...row, dirty: false };
+    setEditorRows((prev) =>
+      prev.map((r) => (r.key === key ? { ...r, dirty: false } : r)),
+    );
+
+    try {
+      const result = await persistRow(snapshot);
+      if (!result.ok) {
+        setLocalError(result.error);
+        setEditorRows((prev) =>
+          prev.map((r) => (r.key === key ? { ...r, dirty: true } : r)),
+        );
+        return;
+      }
+
+      const newId = result.id;
+      setEditorRows((prev) =>
+        prev.map((r) =>
+          r.key === key
+            ? {
+                ...r,
+                id: newId,
+                key: newId,
+                dirty: false,
+              }
+            : r,
+        ),
+      );
+
+      if (editingKeyRef.current === key) {
+        setEditingKey(newId);
+      }
+    } finally {
+      inFlightSaveKeysRef.current.delete(key);
+    }
+  }
+
+  async function handleDeleteRow(row: TestParameterEditorRow) {
+    if (editingKey === row.key) setEditingKey(null);
+
+    if (!row.id) {
+      setEditorRows((prev) => {
+        const next = prev.filter((r) => r.key !== row.key);
+        if (next.length === 0 && isCodeIdParam) {
+          return [createBlankEditorRow(isCodeIdParam, undefined, defaultTestMethod)];
+        }
+        return next;
+      });
+      return;
+    }
+
+    const label = row.test_name.trim() || "this record";
+    if (
+      !window.confirm(`Delete "${label}" permanently? This cannot be undone.`)
+    ) {
+      return;
+    }
+    setLocalError(null);
+    const result = await deleteTestParameterInline(row.id, isCodeIdParam);
+    if (!result.ok) {
+      setLocalError(result.error);
+      return;
+    }
+    setEditorRows((prev) => {
+      const next = prev.filter((r) => r.key !== row.key);
+      if (next.length === 0 && isCodeIdParam) {
+        return [createBlankEditorRow(isCodeIdParam, undefined, defaultTestMethod)];
+      }
       return next;
     });
+    router.refresh();
   }
 
   function handleExport() {
-    const csv = buildTestParameterExportCsv(filteredRows);
+    const rows = filteredRows
+      .filter((r) => r.id)
+      .map(editorToMasterRow);
+    const csv = buildTestParameterExportCsv(rows);
     const blob = new Blob([`\uFEFF${csv}`], {
       type: "text/csv;charset=utf-8;",
     });
@@ -233,79 +455,68 @@ export function TestParameterMaster({
   }
 
   function handlePrintList() {
-    const selectedRows = filteredRows.filter((r) => selectedIds.has(r.id));
-    const toPrint =
-      selectedRows.length > 0 ? selectedRows : filteredRows;
+    const selectedRows = filteredRows.filter(
+      (r) => r.id && selectedKeys.has(r.key),
+    );
+    const source =
+      selectedRows.length > 0
+        ? selectedRows
+        : filteredRows.filter((r) => r.id);
+    const toPrint = source.map(editorToMasterRow);
     if (toPrint.length === 0) {
       window.alert(
-        selectedIds.size > 0
+        selectedKeys.size > 0
           ? "No matching rows for the current search. Clear the search or adjust filters."
-          : "No rows to print. Adjust your search or add test parameters.",
+          : "No rows to print. Adjust your search or add tests.",
       );
       return;
     }
     printTestParameterList(toPrint);
   }
 
-  function handleDelete() {
+  async function handleBulkDelete() {
     const bulkIds = filteredRows
-      .filter((r) => selectedIds.has(r.id))
-      .map((r) => r.id);
-
-    if (bulkIds.length > 0) {
-      const n = bulkIds.length;
-      if (
-        !window.confirm(
-          n === 1
-            ? "Delete this test parameter permanently? This cannot be undone."
-            : `Delete ${n} test parameters permanently? This cannot be undone.`,
-        )
-      ) {
-        return;
+      .filter((r) => r.id && selectedKeys.has(r.key))
+      .map((r) => r.id!);
+    if (bulkIds.length === 0) return;
+    const n = bulkIds.length;
+    if (
+      !window.confirm(
+        n === 1
+          ? "Delete this test permanently? This cannot be undone."
+          : `Delete ${n} tests permanently? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    setLocalError(null);
+    const result = await deleteTestParametersInline(bulkIds, isCodeIdParam);
+    if (!result.ok) {
+      setLocalError(result.error);
+      return;
+    }
+    const idSet = new Set(bulkIds);
+    setEditorRows((prev) => {
+      const next = prev.filter((r) => !r.id || !idSet.has(r.id));
+      if (next.length === 0 && isCodeIdParam) {
+        return [createBlankEditorRow(isCodeIdParam, undefined, defaultTestMethod)];
       }
-      void deleteTestParameters(bulkIds);
-      return;
-    }
-
-    if (!idParam || isNewParam) return;
-    if (!rows.some((r) => r.id === idParam)) return;
-    if (
-      !window.confirm(
-        "Delete this test parameter permanently? This cannot be undone.",
-      )
-    ) {
-      return;
-    }
-    void deleteTestParameter(idParam);
+      return next;
+    });
+    router.refresh();
   }
 
-  function handleDeleteRow(r: TestParameterMasterRow) {
-    const label = r.test_name ?? "this record";
-    if (
-      !window.confirm(
-        `Delete "${label}" permanently? This cannot be undone.`,
-      )
-    ) {
-      return;
-    }
-    void deleteTestParameter(r.id);
-  }
-
-  const hasSelection = selectedIds.size > 0;
-  const canDeleteOpenRow =
-    !!idParam &&
-    !isNewParam &&
-    rows.some((r) => r.id === idParam);
-  const deleteDisabled = !hasSelection && !canDeleteOpenRow;
+  const deleteDisabled = selectedKeys.size === 0;
 
   const errMsg =
-    queryError === "is_code_id"
+    localError ??
+    (queryError === "is_code_id"
       ? "IS Code is required."
       : queryError === "test_name"
         ? "Name of the Test is required."
         : queryError === "db"
           ? "Could not save. Check your connection and try again."
-          : (fetchError ?? null);
+          : (fetchError ?? null));
 
   return (
     <div className="w-full max-w-none space-y-0">
@@ -323,7 +534,6 @@ export function TestParameterMaster({
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <TestParameterMasterHeaderBar
-          onAddNew={addNew}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           pageSize={pageSize}
@@ -333,124 +543,36 @@ export function TestParameterMaster({
           page={page}
           totalPages={totalPages}
           onPageChange={setPage}
+          scopedIsCodeLabel={scopedIsCodeLabel}
+          isCodeMasterHref={
+            isCodeIdParam
+              ? `/dashboard/is-code-master?id=${encodeURIComponent(isCodeIdParam)}`
+              : null
+          }
         />
 
         <TestParameterMasterTable
-          rows={paginatedRows}
-          idParam={idParam}
-          onEditRow={selectRow}
-          onViewIsCode={viewIsCodeFromRow}
+          rows={displayRows}
+          unitOptions={isCodeFormDropdowns.unitOptions}
+          editingKey={editingKey}
+          nameFocusToken={nameFocusToken}
           matchedCount={filteredTotal}
           grandCount={grandTotal}
           searchActive={searchActive}
           onExport={handleExport}
           onPrintList={handlePrintList}
-          onDelete={handleDelete}
+          onDelete={() => void handleBulkDelete()}
           deleteDisabled={deleteDisabled}
-          onDeleteRow={handleDeleteRow}
-          selectedIds={selectedIds}
+          onAddRow={() => void addRow()}
+          onDeleteRow={(row) => void handleDeleteRow(row)}
+          onEditRow={editRow}
+          onDoneEditRow={(row) => void doneEditRow(row)}
+          onUpdateRow={updateRow}
+          selectedKeys={selectedKeys}
           onToggleRowSelection={toggleRowSelection}
           onToggleSelectPage={toggleSelectPageRows}
         />
       </div>
-
-      {formVisible ? (
-        <div
-          className={`fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-zinc-950/50 p-4 dark:bg-black/55 ${
-            sidebarOpen ? "lg:left-64" : "lg:left-0"
-          }`}
-          role="presentation"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) closeForm();
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="test-parameter-master-form-title"
-            className="my-auto w-full max-w-5xl rounded-none border-[2mm] border-zinc-300 bg-zinc-50 shadow-2xl dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-black/40"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <TestParameterMasterForm
-              visible
-              overlay
-              formValues={form}
-              isNewParam={isNewParam}
-              idParam={idParam}
-              isCodeOptions={isCodeOptions}
-              unitOptions={isCodeFormDropdowns.unitOptions}
-              onClose={closeForm}
-              onAddNew={addNew}
-              onUpdateField={updateField}
-              onRequestQuickAddIsCode={() => {
-                setEmbedIsCodeForm(isCodeEmptyForm());
-                setEmbedIsCodeOpen(true);
-              }}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      {embedIsCodeOpen ? (
-        <div
-          className={`fixed inset-0 z-[127] flex items-center justify-center overflow-y-auto bg-zinc-950/50 p-4 dark:bg-black/55 ${
-            sidebarOpen ? "lg:left-64" : "lg:left-0"
-          }`}
-          role="presentation"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setEmbedIsCodeOpen(false);
-          }}
-        >
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="is-code-master-form-title"
-            className="my-auto w-full max-w-5xl rounded-none border-[2mm] border-zinc-300 bg-zinc-50 shadow-2xl dark:border-zinc-600 dark:bg-zinc-900 dark:shadow-black/40"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <IsCodeMasterForm
-              visible
-              overlay
-              formValues={embedIsCodeForm}
-              isNewParam
-              idParam={null}
-              existingFiles={[]}
-              onClose={() => setEmbedIsCodeOpen(false)}
-              onAddNew={() => setEmbedIsCodeForm(isCodeEmptyForm())}
-              onUpdateField={(key, value) =>
-                setEmbedIsCodeForm((f) => ({ ...f, [key]: value }))
-              }
-              aspectOptions={isCodeFormDropdowns.aspectOptions}
-              unitOptions={isCodeFormDropdowns.unitOptions}
-              embeddedInBis
-              onEmbeddedSaveSuccess={(id) => {
-                updateField("is_code_id", id);
-                const savedLabel =
-                  isCodeOptions.find((o) => o.id === id)?.label ??
-                  formatIsCodeRevisionLabel(
-                    embedIsCodeForm.is_number,
-                    embedIsCodeForm.revision_year
-                      ? Number(embedIsCodeForm.revision_year)
-                      : undefined,
-                  );
-                updateField("test_method", savedLabel);
-                setEmbedIsCodeOpen(false);
-                router.refresh();
-              }}
-            />
-          </div>
-        </div>
-      ) : null}
-
-      {isCodeView ? (
-        <IsCodeViewModal
-          isCodeId={isCodeView.id}
-          isNumber={isCodeView.is_number}
-          revisionYear={isCodeView.revision_year}
-          onClose={() => setIsCodeView(null)}
-          overlayZIndexClass="z-[120]"
-        />
-      ) : null}
     </div>
   );
 }

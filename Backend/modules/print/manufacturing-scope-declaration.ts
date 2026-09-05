@@ -51,10 +51,8 @@ function formatBisBranchLine(
   return parts.join(", ");
 }
 
-function formatInspectionDate(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "";
-  return formatDisplayDate(raw, "");
+function formatInspectionDate(dateStr: string | Date | null | undefined): string {
+  return formatDisplayDate(dateStr, "");
 }
 
 function formatApplicationNo(raw: string | undefined): string {
@@ -187,8 +185,39 @@ export function defaultDeclarationPrintSettings(): PrintSettings {
   };
 }
 
+/** Top Management–aligned defaults for Manufacturing Scope declaration. */
+export function defaultManufacturingScopePrintSettings(): PrintSettings {
+  return {
+    ...defaultDeclarationPrintSettings(),
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+    show_footer_line: false,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Manufacturing Scope preview / Word. */
+export function manufacturingScopeLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+  };
+}
+
+export type ManufacturingScopePrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildManufacturingScopeCompany(
   data: ManufacturingScopeDeclarationData,
+  assets?: ManufacturingScopePrintAssets,
 ): PrintCompanyInfo {
   return {
     name: data.companyName,
@@ -201,23 +230,26 @@ export function buildManufacturingScopeCompany(
     email: data.email,
     phone: data.phone,
     contact_person: data.contactPerson,
-    logo_url: null,
     website: "",
     letterhead_upper_url: null,
     letterhead_lower_url: null,
     seal_sign_url: null,
+    ...assets,
+    // Manufacturing Scope letterhead matches Top Management — text-only / no logo tile.
+    logo_url: null,
   };
 }
 
 export function buildManufacturingScopeDeclarationHtml(
   data: ManufacturingScopeDeclarationData,
   settings: PrintSettings,
+  assets?: ManufacturingScopePrintAssets,
 ): string {
   return buildPrintDocument({
     title: "Declaration Regarding Manufacturing Scope",
     bodyHtml: buildDeclarationBody(data),
-    settings,
-    company: buildManufacturingScopeCompany(data),
+    settings: manufacturingScopeLetterheadSettings(settings),
+    company: buildManufacturingScopeCompany(data, assets),
   });
 }
 

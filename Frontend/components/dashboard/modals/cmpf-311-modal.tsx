@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
@@ -10,11 +17,14 @@ import {
   defaultCmpf311PrintSettings,
   iframeSizeForCmpf311PrintSettings,
   type Cmpf311LetterData,
+  type Cmpf311PrintAssets,
 } from "@backend/modules/print/cmpf-311";
 import { downloadCmpf311Word } from "@backend/modules/print/cmpf-311-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import { resolveCmpf311Document, type Cmpf311Stored } from "@backend/modules/bis/cmpf-311";
-import {resolvePrimaryTopManagementPerson,
+import {
+  resolvePrimaryTopManagementPerson,
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
@@ -80,12 +90,74 @@ export function Cmpf311Modal({
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCmpf311PrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<Cmpf311PrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultCmpf311PrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+        show_page_numbers: false,
+        show_footer_line: false,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep CMPF 311 margin defaults in sync (matches Top Management / Plant & Machinery).
+  useEffect(() => {
+    const defaults = defaultCmpf311PrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+    }));
+  }, []);
 
   const isFullNumber = letterData.isNumber?.trim() || "—";
 
@@ -118,13 +190,15 @@ export function Cmpf311Modal({
     topManagement]);
 
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const html = buildCmpf311Html(previewData, printSettings);
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
+    const html = buildCmpf311Html(previewData, printSettings, printAssets);
     doc.open();
     doc.write(html);
     doc.close();
-  }, [previewData, printSettings]);
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+  }, [previewData, printSettings, printAssets]);
 
   useEffect(() => {
     if (showPrintPreview) {
@@ -135,7 +209,12 @@ export function Cmpf311Modal({
   const iframeSize = iframeSizeForCmpf311PrintSettings(printSettings);
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      // Keep letterhead logo-free even if Print Settings changes layout.
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function handleSave() {
@@ -152,9 +231,26 @@ export function Cmpf311Modal({
   }
 
   function handleDownloadWord() {
-    void downloadCmpf311Word(previewData, printSettings).catch(() =>
+    void downloadCmpf311Word(previewData, printSettings, printAssets).catch(() =>
       window.alert("Unable to download Word file."),
     );
+  }
+
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildCmpf311Html(previewData, printSettings, printAssets);
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `CMPF_311_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
+    }
   }
 
   function toggleSettingsPanel(panel: "page" | "print") {
@@ -207,6 +303,14 @@ export function Cmpf311Modal({
               className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
             >
               Download Word File
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDownloadPdf()}
+              disabled={pdfDownloading}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
             </button>
             <button
               type="button"
@@ -306,10 +410,8 @@ export function Cmpf311Modal({
                   ref={iframeRef}
                   title="CMPF 311 form preview"
                   className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  style={{
-                    width: `min(100%, ${iframeSize.widthMm}mm)`,
-                    minHeight: `${iframeSize.heightMm}mm`,
-                  }}
+                  scrolling="no"
+                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
                 />
               </div>
             </div>
@@ -321,6 +423,7 @@ export function Cmpf311Modal({
                 mode={settingsPanel}
                 settings={printSettings}
                 onChange={patchPrintSettings}
+                hideLetterheadLogo
               />
             </div>
           )}

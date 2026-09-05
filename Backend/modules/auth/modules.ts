@@ -33,7 +33,7 @@ export const DASHBOARD_MODULES = [
     key: "test_parameters",
     label: "Test Parameter",
     href: "/dashboard/test-parameters",
-    inMainNav: true,
+    inMainNav: false,
   },
   {
     key: "products",

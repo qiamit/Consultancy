@@ -286,27 +286,58 @@ function buildFormBody(data: SelfEvaluationFormLetterData, sheetMinHeight: strin
   return `${buildPage1Html(data, sheetMinHeight)}${buildPage2Html(data, sheetMinHeight)}`;
 }
 
+export type SelfEvaluationFormPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildSelfEvaluationFormCompany(
   data: SelfEvaluationFormLetterData,
+  assets?: SelfEvaluationFormPrintAssets,
 ): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultSelfEvaluationFormPrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
+    orientation: "portrait",
+    letterhead_layout: "logo-na",
     font_family: "Times New Roman",
     font_size: 10,
     show_page_numbers: false,
     show_footer_line: false,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Self Evaluation Form preview / Word (same as Top Management). */
+export function selfEvaluationFormLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildSelfEvaluationFormHtml(
   data: SelfEvaluationFormLetterData,
   settings: PrintSettings,
+  assets?: SelfEvaluationFormPrintAssets,
 ): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const letterheadSettings = selfEvaluationFormLetterheadSettings(settings);
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .sef-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -420,8 +451,8 @@ export function buildSelfEvaluationFormHtml(
     title: "Self Evaluation cum Verification Form",
     bodyHtml: buildFormBody(data, sheetMinHeight),
     extraStyles: styles,
-    settings: { ...settings, show_page_numbers: false },
-    company: buildSelfEvaluationFormCompany(data),
+    settings: letterheadSettings,
+    company: buildSelfEvaluationFormCompany(data, assets),
   });
 }
 

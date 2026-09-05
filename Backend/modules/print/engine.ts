@@ -267,7 +267,7 @@ ${s.show_watermark && s.watermark_text ? `<div class="watermark">${esc(s.waterma
 <div class="doc-page">
   ${letterheadHtml}
   ${bodyHtml}
-  ${c.letterhead_lower_url ? `<div style="margin-top:16px;"><img src="${esc(c.letterhead_lower_url)}" alt="Footer letterhead" style="width:100%;max-height:80px;object-fit:contain;"/></div>` : ""}
+  ${s.show_letterhead && c.letterhead_lower_url ? `<div style="margin-top:16px;"><img src="${esc(c.letterhead_lower_url)}" alt="Footer letterhead" style="width:100%;max-height:80px;object-fit:contain;"/></div>` : ""}
 </div>
 ${footerHtml}
 </body>

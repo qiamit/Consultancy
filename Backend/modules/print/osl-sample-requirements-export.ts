@@ -2,18 +2,23 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
+  ImageRun,
   Packer,
   Paragraph,
+  ShadingType,
   Table,
   TableCell,
   TableRow,
   TextRun,
+  VerticalAlign,
   WidthType,
 } from "docx";
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import {
   buildOslSampleCompany,
+  oslSampleLetterheadSettings,
   type OslSampleOfferLetterData,
+  type OslSamplePrintAssets,
 } from "@backend/modules/print/osl-sample-requirements";
 import {
   normalizeOslSampleTableColumns,
@@ -27,19 +32,72 @@ import {
 import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  contentWidthTwip,
+  loadImageFromUrl,
+  pageMarginsFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
-const DOCX_BODY_SIZE = 24;
+const DOCX_BODY_SIZE = 24; // 12pt — matches Print Preview body
+const DOCX_TABLE_SIZE = 20; // 10pt
+const DOCX_TABLE_BODY_SIZE = 22; // 11pt
+
+const BOX_BORDER = {
+  style: BorderStyle.SINGLE,
+  size: 8,
+  color: "CBD5E1",
+} as const;
+
+const BOX_BORDERS = {
+  top: BOX_BORDER,
+  bottom: BOX_BORDER,
+  left: BOX_BORDER,
+  right: BOX_BORDER,
+};
+
+const THIN_BORDER = {
+  style: BorderStyle.SINGLE,
+  size: 4,
+  color: "CBD5E1",
+} as const;
+
+const CELL_BORDERS = {
+  top: THIN_BORDER,
+  bottom: THIN_BORDER,
+  left: THIN_BORDER,
+  right: THIN_BORDER,
+};
+
+const ROW_BORDERS = {
+  top: { ...THIN_BORDER, color: "E2E8F0" },
+  bottom: { ...THIN_BORDER, color: "E2E8F0" },
+  left: { ...THIN_BORDER, color: "E2E8F0" },
+  right: { ...THIN_BORDER, color: "E2E8F0" },
+};
+
+const NO_BORDER = {
+  style: BorderStyle.NONE,
+  size: 0,
+  color: "FFFFFF",
+} as const;
+
+const NO_BORDERS = {
+  top: NO_BORDER,
+  bottom: NO_BORDER,
+  left: NO_BORDER,
+  right: NO_BORDER,
+};
 
 function safeFilePart(value: string): string {
   return value.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 60);
 }
 
-function formatInspectionDate(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "N/A";
-  return formatDisplayDate(raw, "N/A");
+function formatInspectionDate(dateStr: string | Date | null | undefined): string {
+  return formatDisplayDate(dateStr, "N/A");
 }
 
 function formatApplicationNo(raw: string): string {
@@ -172,88 +230,277 @@ function bodyParagraph(
   });
 }
 
-function plainParagraph(text: string, bold = false, center = false): Paragraph {
-  return bodyParagraph(
-    [bodyRun(text, bold)],
-    center ? AlignmentType.CENTER : AlignmentType.LEFT,
-  );
+function plainParagraph(
+  text: string,
+  bold = false,
+  opts?: { after?: number; before?: number; center?: boolean },
+): Paragraph {
+  return new Paragraph({
+    alignment: opts?.center ? AlignmentType.CENTER : AlignmentType.JUSTIFIED,
+    spacing: { before: opts?.before ?? 0, after: opts?.after ?? 200, line: 360 },
+    children: [bodyRun(text, bold)],
+  });
 }
 
-function buildLetterheadParagraphs(
-  data: OslSampleOfferLetterData,
-  settings: PrintSettings,
-): Paragraph[] {
-  if (!settings.show_letterhead) return [];
-
-  const company = buildOslSampleCompany(data);
-  const out: Paragraph[] = [
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 120 },
-      children: [
-        new TextRun({
-          text: company.name,
-          bold: true,
-          font: DOCX_FONT,
-          size: 32,
-          color: settings.primary_color.replace("#", ""),
-        }),
-      ],
-    }),
-  ];
-
-  if (settings.letterhead_show_address && company.address.trim()) {
-    out.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 240 },
-        children: [bodyRun(company.address)],
+function tableCellParagraph(
+  text: string,
+  opts?: { bold?: boolean; center?: boolean; size?: number },
+): Paragraph {
+  return new Paragraph({
+    alignment: opts?.center ? AlignmentType.CENTER : AlignmentType.LEFT,
+    spacing: { after: 0, line: 276 },
+    children: [
+      new TextRun({
+        text,
+        bold: opts?.bold ?? false,
+        font: DOCX_FONT,
+        size: opts?.size ?? DOCX_TABLE_BODY_SIZE,
       }),
-    );
-  } else {
-    out.push(new Paragraph({ spacing: { after: 240 }, children: [] }));
-  }
-
-  return out;
+    ],
+  });
 }
 
-function buildSampleTableDocx(
+function smallLabelRun(text: string): TextRun {
+  return new TextRun({
+    text,
+    bold: true,
+    font: DOCX_FONT,
+    size: DOCX_TABLE_SIZE,
+    color: "64748B",
+    allCaps: true,
+  });
+}
+
+function columnWidthsTwip(
+  columnDefs: typeof OSL_SAMPLE_TABLE_COLUMN_OPTIONS,
+  totalWidth: number,
+): number[] {
+  const weights = columnDefs.map((col) => (col.wide ? 3 : col.key === "sr_no" ? 0.7 : 1.2));
+  const sum = weights.reduce((a, b) => a + b, 0) || 1;
+  const widths = weights.map((w) => Math.max(350, Math.round((w / sum) * totalWidth)));
+  const diff = totalWidth - widths.reduce((a, b) => a + b, 0);
+  if (widths.length > 0) {
+    widths[widths.length - 1] = Math.max(350, (widths[widths.length - 1] ?? 350) + diff);
+  }
+  return widths;
+}
+
+/** Inner sample table — borders / header shading match Print Preview. */
+function buildSampleInnerTable(
   rows: OslSampleRequirementStored[],
   tableColumns: OslSampleTableColumnKey[],
+  widthTwip: number,
 ): Table {
   const columns = normalizeOslSampleTableColumns(tableColumns);
   const columnDefs = OSL_SAMPLE_TABLE_COLUMN_OPTIONS.filter((col) =>
     columns.includes(col.key),
   );
   const visible = visibleSampleRows(rows);
+  const widths = columnWidthsTwip(columnDefs, widthTwip);
 
   const header = new TableRow({
     tableHeader: true,
     children: columnDefs.map(
-      (col) =>
+      (col, i) =>
         new TableCell({
-          children: [plainParagraph(col.label, true, Boolean(col.cellCenter))],
+          width: { size: widths[i]!, type: WidthType.DXA },
+          borders: CELL_BORDERS,
+          verticalAlign: VerticalAlign.CENTER,
+          shading: { type: ShadingType.CLEAR, fill: "F1F5F9" },
+          children: [
+            tableCellParagraph(col.label, {
+              bold: true,
+              center: Boolean(col.headerCenter || col.cellCenter || col.stackHeader),
+              size: DOCX_TABLE_SIZE,
+            }),
+          ],
         }),
     ),
   });
 
-  const bodyRows = visible.map((row, i) =>
-    new TableRow({
-      children: columnDefs.map(
-        (col) =>
-          new TableCell({
-            children: [
-              plainParagraph(cellPlainText(col.key, row, i), false, Boolean(col.cellCenter)),
-            ],
-          }),
-      ),
-    }),
+  const bodyRows = visible.map(
+    (row, rowIndex) =>
+      new TableRow({
+        children: columnDefs.map(
+          (col, i) =>
+            new TableCell({
+              width: { size: widths[i]!, type: WidthType.DXA },
+              borders: ROW_BORDERS,
+              verticalAlign: VerticalAlign.TOP,
+              children: [
+                tableCellParagraph(cellPlainText(col.key, row, rowIndex), {
+                  center: Boolean(col.cellCenter || col.stackHeader),
+                }),
+              ],
+            }),
+        ),
+      }),
   );
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: widths,
     rows: [header, ...bodyRows],
   });
+}
+
+/** Outer slate box around sample details — same as Print Preview. */
+function buildSampleDetailsBox(
+  data: OslSampleOfferLetterData,
+  tableColumns: OslSampleTableColumnKey[],
+  variant: SampleOfferLetterVariant,
+  widthTwip: number,
+): Table {
+  const boxPad = 100;
+  const innerWidth = Math.max(1200, widthTwip - boxPad * 2);
+  const label =
+    variant === "pi" ? "Sample Details for PI" : "Sample Details for OSL";
+  const visible = visibleSampleRows(data.rows);
+
+  const innerChildren: (Paragraph | Table)[] = [
+    new Paragraph({
+      spacing: { after: 80 },
+      children: [smallLabelRun(label)],
+    }),
+    ...(visible.length > 0
+      ? [buildSampleInnerTable(data.rows, tableColumns, innerWidth)]
+      : [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 80, after: 80 },
+            children: [
+              new TextRun({
+                text: "No sample details entered yet.",
+                font: DOCX_FONT,
+                size: DOCX_BODY_SIZE,
+                color: "64748B",
+              }),
+            ],
+          }),
+        ]),
+  ];
+
+  return new Table({
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: [widthTwip],
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: widthTwip, type: WidthType.DXA },
+            borders: BOX_BORDERS,
+            shading: { type: ShadingType.CLEAR, fill: "F8FAFC" },
+            margins: {
+              top: boxPad,
+              bottom: boxPad,
+              left: boxPad,
+              right: boxPad,
+            },
+            children: innerChildren,
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+async function buildSignatoryBlock(
+  data: OslSampleOfferLetterData,
+  settings: PrintSettings,
+): Promise<(Paragraph | Table)[]> {
+  const sigName = data.signatoryName.trim() || data.contactPerson.trim() || "—";
+  const sigDesig = data.signatoryDesignation.trim() || "—";
+  const totalWidth = contentWidthTwip(settings);
+  const sigWidth = Math.min(3600, Math.round(totalWidth * 0.42));
+  const spacerWidth = totalWidth - sigWidth;
+
+  const sigChildren: Paragraph[] = [
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 0 },
+      children: [bodyRun(`For ${data.companyName}`, true)],
+    }),
+  ];
+
+  const sigImg = await loadImageFromUrl(data.signatureImageUrl?.trim() || null);
+  if (sigImg) {
+    sigChildren.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { before: 120, after: 0 },
+        children: [
+          new ImageRun({
+            type: sigImg.type,
+            data: sigImg.data,
+            transformation: { width: 120, height: 48 },
+            altText: {
+              title: "Signature",
+              description: "Signatory signature",
+              name: "signature",
+            },
+          }),
+        ],
+      }),
+    );
+  } else {
+    sigChildren.push(
+      new Paragraph({
+        spacing: { before: 280, after: 0 },
+        children: [],
+      }),
+    );
+  }
+
+  sigChildren.push(
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 80, after: 0 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
+      },
+      children: [
+        new TextRun({ text: "Name: ", bold: true, font: DOCX_FONT, size: 22 }),
+        new TextRun({ text: sigName, font: DOCX_FONT, size: 22 }),
+      ],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [
+        new TextRun({
+          text: "Designation: ",
+          bold: true,
+          font: DOCX_FONT,
+          size: 22,
+        }),
+        new TextRun({ text: sigDesig, font: DOCX_FONT, size: 22 }),
+      ],
+    }),
+  );
+
+  return [
+    new Paragraph({ spacing: { before: 360, after: 0 }, children: [] }),
+    new Table({
+      width: { size: totalWidth, type: WidthType.DXA },
+      columnWidths: [spacerWidth, sigWidth],
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: spacerWidth, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              children: [new Paragraph({ children: [] })],
+            }),
+            new TableCell({
+              width: { size: sigWidth, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              children: sigChildren,
+            }),
+          ],
+        }),
+      ],
+    }),
+  ];
 }
 
 async function buildOslSampleDocx(
@@ -261,32 +508,24 @@ async function buildOslSampleDocx(
   settings: PrintSettings,
   tableColumns: OslSampleTableColumnKey[],
   variant: SampleOfferLetterVariant,
+  assets?: OslSamplePrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = oslSampleLetterheadSettings(settings);
+  const company = buildOslSampleCompany(data, assets);
   const labels = sampleOfferLetterLabels(variant);
+  const widthTwip = contentWidthTwip(letterheadSettings);
   const isRef = isStandardRef(data);
   const bisBranch = bisBranchLine(data);
   const inspectionDate = formatInspectionDate(data.inspectionDate);
   const applicationNo = formatApplicationNo(data.applicationNumber);
-  const sigName = data.signatoryName.trim() || data.contactPerson.trim() || "—";
-  const sigDesig = data.signatoryDesignation.trim() || "—";
-  const visible = visibleSampleRows(data.rows);
-
-  const sampleSectionLabel =
-    variant === "pi" ? "SAMPLE DETAILS FOR PI" : "SAMPLE DETAILS FOR OSL";
-
-  const sampleSection: (Paragraph | Table)[] =
-    visible.length > 0
-      ? [
-          plainParagraph(sampleSectionLabel, true),
-          buildSampleTableDocx(data.rows, tableColumns),
-        ]
-      : [plainParagraph("No sample details entered yet.")];
+  const leftCol = Math.round(widthTwip * 0.62);
+  const rightCol = widthTwip - leftCol;
 
   const children: (Paragraph | Table)[] = [
-    ...buildLetterheadParagraphs(data, settings),
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 280 },
+      spacing: { after: 240 },
       children: [
         new TextRun({
           text: labels.documentHeading.toUpperCase(),
@@ -294,22 +533,53 @@ async function buildOslSampleDocx(
           underline: {},
           font: DOCX_FONT,
           size: 30,
+          allCaps: true,
+        }),
+      ],
+    }),
+    new Table({
+      width: { size: widthTwip, type: WidthType.DXA },
+      columnWidths: [leftCol, rightCol],
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              borders: NO_BORDERS,
+              width: { size: leftCol, type: WidthType.DXA },
+              children: [
+                plainParagraph("To", false, { after: 40 }),
+                plainParagraph("The Director & Head", false, { after: 20 }),
+                plainParagraph("Bureau of Indian Standards", false, { after: 20 }),
+                plainParagraph(bisBranch, false, { after: 0 }),
+              ],
+            }),
+            new TableCell({
+              borders: NO_BORDERS,
+              width: { size: rightCol, type: WidthType.DXA },
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.RIGHT,
+                  spacing: { after: 40 },
+                  children: [bodyRun("Date: ", true), bodyRun(inspectionDate)],
+                }),
+                new Paragraph({
+                  alignment: AlignmentType.RIGHT,
+                  spacing: { after: 0 },
+                  children: [
+                    bodyRun("Application No.: ", true),
+                    bodyRun(applicationNo),
+                  ],
+                }),
+              ],
+            }),
+          ],
         }),
       ],
     }),
     bodyParagraph([
-      bodyRun("To\nThe Director & Head\nBureau of Indian Standards\n"),
-      bodyRun(bisBranch, true),
-      bodyRun("\t\t\t\tDate: "),
-      bodyRun(inspectionDate, true),
-      bodyRun("\n\t\t\t\tApplication No.: "),
-      bodyRun(applicationNo, true),
-    ]),
-    bodyParagraph([
-      bodyRun("Sub: "),
+      bodyRun("Sub: ", true),
       bodyRun(
         "Submission of samples for testing at Outside Testing Laboratory (OSL)",
-        true,
       ),
       ...(isRef
         ? [bodyRun(" under Indian Standard "), bodyRun(isRef, true), bodyRun(".")]
@@ -320,7 +590,7 @@ async function buildOslSampleDocx(
       bodyRun(`M/s. ${data.companyName}`, true),
       ...(data.address.trim()
         ? [
-            bodyRun(" having our factory at "),
+            bodyRun(", having our factory at "),
             bodyRun(data.address, true),
             bodyRun(","),
           ]
@@ -336,31 +606,29 @@ async function buildOslSampleDocx(
         : [bodyRun(" in connection with BIS certification")]),
       bodyRun(". The details of the samples sent are as under:"),
     ]),
-    ...sampleSection,
+    new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
+    buildSampleDetailsBox(data, tableColumns, variant, widthTwip),
     plainParagraph(
       "We declare that the above samples have been prepared prior to grant of the BIS licence, are drawn from trial production, and are being manufactured for the purpose of obtaining BIS licence. The information furnished above is true and correct to the best of our knowledge and belief.",
+      false,
+      { before: 200, after: 120 },
     ),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 360, after: 0 },
-      children: [bodyRun(`For ${data.companyName}`, true)],
-    }),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 320, after: 0 },
-      border: {
-        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-      },
-      children: [bodyRun(`Name: ${sigName}`)],
-    }),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 40, after: 0 },
-      children: [bodyRun(`Designation: ${sigDesig}`)],
-    }),
+    ...(await buildSignatoryBlock(data, letterheadSettings)),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 /** Modern Office Open XML Word document (.docx) for OSL / PI sample offer letter. */
@@ -369,8 +637,9 @@ export async function downloadOslSampleRequirementsWord(
   settings: PrintSettings,
   tableColumns: OslSampleTableColumnKey[],
   variant: SampleOfferLetterVariant = "osl",
+  assets?: OslSamplePrintAssets,
 ): Promise<void> {
-  const doc = await buildOslSampleDocx(data, settings, tableColumns, variant);
+  const doc = await buildOslSampleDocx(data, settings, tableColumns, variant, assets);
   const blob = await Packer.toBlob(doc);
   triggerBlobDownload(blob, `${exportFilenameBase(data, variant)}.docx`);
 }

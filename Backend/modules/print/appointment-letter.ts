@@ -12,7 +12,7 @@ import {
 
 } from "@backend/modules/print/manufacturing-scope-declaration";
 
-import type { PrintSettings } from "@backend/modules/print/types";
+import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate, parseToDate } from "@backend/shared/format-date";
 import { buildRightAlignedSignatoryBlockHtml } from "@backend/modules/print/signatory-signature";
 import {
@@ -20,33 +20,26 @@ import {
   type TopManagementStored,
 } from "@backend/modules/bis/top-management";
 
-
-
 export type AppointmentLetterData = Omit<
-
   ManufacturingScopeDeclarationData,
-
   "licenseScope" | "licenseScopeFormat" | "licenseScopeRows"
-
 > & {
-
   person_name: string;
-
   designation: string;
-
   educational_qualification: string;
-
   experience_years: string;
-
   appointment_date: string;
-
   reference_no: string;
-
   signatory_name: string;
-
   signatory_designation: string;
-
 };
+
+export type AppointmentLetterPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
 
 
 
@@ -236,43 +229,52 @@ function buildAppointmentLetterBody(data: AppointmentLetterData): string {
 
 
 
-export function defaultAppointmentLetterPrintSettings(): PrintSettings {
-
-  return defaultDeclarationPrintSettings();
-
+export function buildAppointmentLetterCompany(
+  data: AppointmentLetterData,
+  assets?: AppointmentLetterPrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({
+      ...data,
+      licenseScope: "",
+    }),
+    ...assets,
+    logo_url: null,
+  };
 }
 
+export function defaultAppointmentLetterPrintSettings(): PrintSettings {
+  return {
+    ...defaultDeclarationPrintSettings(),
+    letterhead_layout: "logo-na",
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
 
+export function appointmentLetterLetterheadSettings(
+  settings: PrintSettings,
+): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+  };
+}
 
 export function buildAppointmentLetterHtml(
-
   data: AppointmentLetterData,
-
   settings: PrintSettings,
-
+  assets?: AppointmentLetterPrintAssets,
 ): string {
-
   return buildPrintDocument({
-
     title: "Appointment Letter",
-
     bodyHtml: buildAppointmentLetterBody(data),
-
-    settings,
-
-    company: buildManufacturingScopeCompany({
-
-      ...data,
-
-      licenseScope: "",
-
-    }),
-
+    settings: appointmentLetterLetterheadSettings(settings),
+    company: buildAppointmentLetterCompany(data, assets),
   });
-
 }
-
-
 
 export { iframeSizeForPrintSettings };
 

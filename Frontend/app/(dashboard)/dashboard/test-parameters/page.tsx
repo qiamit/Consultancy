@@ -10,7 +10,7 @@ import type { TestParameterMasterRow } from "@backend/shared/types/test-paramete
 function MasterFallback() {
   return (
     <div className="w-full animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-      Loading Test Parameter…
+      Loading Test…
     </div>
   );
 }
@@ -30,19 +30,27 @@ export default async function TestParametersPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const sp = await searchParams;
+  const scopeIsCodeId = firstSearchParam(sp, "is_code_id");
   const supabase = await createClient();
+
+  let parametersQuery = supabase
+    .from("test_parameters")
+    .select(
+      "id, is_code_id, test_name, clause_no, test_method, unit, specified_value, created_at, is_codes(is_number, revision_year)",
+    )
+    .order("created_at", { ascending: false });
+
+  // Each IS code has its own test list — never load other IS rows when scoped.
+  if (scopeIsCodeId) {
+    parametersQuery = parametersQuery.eq("is_code_id", scopeIsCodeId);
+  }
 
   const [
     { data: parameters, error: paramError },
     { data: codes },
     isCodeFormDropdowns,
   ] = await Promise.all([
-      supabase
-        .from("test_parameters")
-        .select(
-          "id, is_code_id, test_name, clause_no, test_method, unit, specified_value, created_at, is_codes(is_number, revision_year)",
-        )
-        .order("created_at", { ascending: false }),
+      parametersQuery,
       supabase
         .from("is_codes")
         .select("id, is_number, revision_year, is_code_title")

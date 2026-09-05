@@ -48,10 +48,8 @@ function formatBisBranchLine(branchName: string, state: string, country: string)
   return parts.join(", ");
 }
 
-function formatInspectionDateDisplay(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "N/A";
-  return formatDisplayDate(raw, "N/A");
+function formatInspectionDateDisplay(dateStr: string | Date | null | undefined): string {
+  return formatDisplayDate(dateStr, "N/A");
 }
 
 function formatApplicationNo(raw: string): string {
@@ -275,15 +273,48 @@ function buildOfferLetterBody(
 </div>`;
 }
 
-export function buildOslSampleCompany(data: OslSampleOfferLetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({
-    ...data,
-    licenseScope: "",
-  });
+export type OslSamplePrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildOslSampleCompany(
+  data: OslSampleOfferLetterData,
+  assets?: OslSamplePrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({
+      ...data,
+      licenseScope: "",
+    }),
+    ...assets,
+    // OSL Sample letterhead matches Top Management — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultOslSamplePrintSettings(): PrintSettings {
-  return defaultDeclarationPrintSettings();
+  return {
+    ...defaultDeclarationPrintSettings(),
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+    show_footer_line: false,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for OSL Sample preview / Word. */
+export function oslSampleLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+  };
 }
 
 export function buildOslSampleRequirementsHtml(
@@ -291,13 +322,14 @@ export function buildOslSampleRequirementsHtml(
   settings: PrintSettings,
   tableColumns: OslSampleTableColumnKey[] = DEFAULT_OSL_SAMPLE_TABLE_COLUMNS,
   variant: SampleOfferLetterVariant = "osl",
+  assets?: OslSamplePrintAssets,
 ): string {
   const labels = sampleOfferLetterLabels(variant);
   return buildPrintDocument({
     title: labels.documentTitle,
     bodyHtml: buildOfferLetterBody(data, variant, tableColumns),
-    settings,
-    company: buildOslSampleCompany(data),
+    settings: oslSampleLetterheadSettings(settings),
+    company: buildOslSampleCompany(data, assets),
   });
 }
 

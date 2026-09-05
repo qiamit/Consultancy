@@ -2,20 +2,50 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
+  ImageRun,
   Packer,
   Paragraph,
+  Table,
+  TableCell,
+  TableRow,
   TextRun,
+  WidthType,
 } from "docx";
 import { buildWorkbookBuffer, triggerBlobDownload } from "@backend/shared/spreadsheet/excel";
-import type { AppointmentLetterData } from "@backend/modules/print/appointment-letter";
 import {
-  buildManufacturingScopeCompany,
-} from "@backend/modules/print/manufacturing-scope-declaration";
+  appointmentLetterLetterheadSettings,
+  buildAppointmentLetterCompany,
+  type AppointmentLetterData,
+  type AppointmentLetterPrintAssets,
+} from "@backend/modules/print/appointment-letter";
 import type { PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate, parseToDate } from "@backend/shared/format-date";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  contentWidthTwip,
+  DOCX_LETTERHEAD_FONT,
+  loadImageFromUrl,
+  PAGE_HEIGHT_TWIP,
+  PAGE_WIDTH_TWIP,
+  pageMarginsFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 
-const DOCX_FONT = "Times New Roman";
+const DOCX_FONT = DOCX_LETTERHEAD_FONT;
 const DOCX_BODY_SIZE = 24;
+
+const NO_BORDER = {
+  style: BorderStyle.NONE,
+  size: 0,
+  color: "FFFFFF",
+} as const;
+
+const NO_BORDERS = {
+  top: NO_BORDER,
+  bottom: NO_BORDER,
+  left: NO_BORDER,
+  right: NO_BORDER,
+};
 
 function safeFilePart(value: string): string {
   return value.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 60);
@@ -84,67 +114,93 @@ function bulletParagraph(text: string): Paragraph {
   });
 }
 
-function buildLetterheadParagraphs(
+async function buildSignatureBlock(
   data: AppointmentLetterData,
   settings: PrintSettings,
-): Paragraph[] {
-  if (!settings.show_letterhead) return [];
-
-  const company = buildManufacturingScopeCompany({ ...data, licenseScope: "" });
-  const out: Paragraph[] = [
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 120 },
-      children: [
-        new TextRun({
-          text: company.name,
-          bold: true,
-          font: DOCX_FONT,
-          size: 32,
-          color: settings.primary_color.replace("#", ""),
-        }),
-      ],
-    }),
-  ];
-
-  if (settings.letterhead_show_address && company.address.trim()) {
-    out.push(
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 240 },
-        children: [bodyRun(company.address, false)],
-      }),
-    );
-  } else {
-    out.push(new Paragraph({ spacing: { after: 240 }, children: [] }));
-  }
-
-  return out;
-}
-
-function buildSignatoryParagraphs(data: AppointmentLetterData): Paragraph[] {
+): Promise<(Paragraph | Table)[]> {
   const sigName =
     data.signatory_name.trim() || data.contactPerson.trim() || "—";
   const sigDesig = data.signatory_designation.trim() || "—";
+  const totalWidth = contentWidthTwip(settings);
+  const sigWidth = Math.min(3200, Math.round(totalWidth * 0.42));
+  const spacerWidth = totalWidth - sigWidth;
+  const parsed = await loadImageFromUrl(
+    (data as { signatureImageUrl?: string }).signatureImageUrl?.trim() || null,
+  );
 
-  return [
+  const sigChildren: Paragraph[] = [
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 360, after: 0 },
+      spacing: { after: 0 },
       children: [bodyRun(`For ${data.companyName}`, true)],
     }),
+  ];
+
+  if (parsed) {
+    sigChildren.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { before: 120, after: 0 },
+        children: [
+          new ImageRun({
+            type: parsed.type,
+            data: parsed.data,
+            transformation: { width: 120, height: 48 },
+            altText: {
+              title: "Signature",
+              description: "Signatory signature",
+              name: "signature",
+            },
+          }),
+        ],
+      }),
+    );
+  } else {
+    sigChildren.push(
+      new Paragraph({
+        spacing: { before: 280, after: 0 },
+        children: [],
+      }),
+    );
+  }
+
+  sigChildren.push(
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 320, after: 0 },
+      spacing: { before: 80, after: 0 },
       border: {
         top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
       },
-      children: [bodyRun(`Name: ${sigName}`)],
+      children: [bodyRun("Name: ", true), bodyRun(sigName)],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       spacing: { before: 40, after: 0 },
-      children: [bodyRun(`Designation: ${sigDesig}`)],
+      children: [bodyRun("Designation: ", true), bodyRun(sigDesig)],
+    }),
+  );
+
+  return [
+    new Paragraph({ spacing: { before: 280, after: 0 }, children: [] }),
+    new Table({
+      width: { size: totalWidth, type: WidthType.DXA },
+      columnWidths: [spacerWidth, sigWidth],
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: spacerWidth, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              children: [new Paragraph({ children: [] })],
+            }),
+            new TableCell({
+              width: { size: sigWidth, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              children: sigChildren,
+            }),
+          ],
+        }),
+      ],
     }),
   ];
 }
@@ -152,27 +208,31 @@ function buildSignatoryParagraphs(data: AppointmentLetterData): Paragraph[] {
 async function buildAppointmentLetterDocx(
   data: AppointmentLetterData,
   settings: PrintSettings,
+  assets?: AppointmentLetterPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = appointmentLetterLetterheadSettings(settings);
+  const company = buildAppointmentLetterCompany(data, assets);
   const personName = data.person_name.trim() || "_______________________";
   const designation = data.designation.trim() || "Technical Staff";
   const dateLabel = formatDate(data.appointment_date);
   const qualPhrase = qualificationPhrasePlain(data);
-  const salutation = personName && personName !== "_______________________"
-    ? `Dear ${personName},`
-    : "Dear Sir/Madam,";
+  const salutation =
+    personName && personName !== "_______________________"
+      ? `Dear ${personName},`
+      : "Dear Sir/Madam,";
 
   const factoryPart = data.address.trim()
     ? `, having its registered office / manufacturing unit at ${data.address.trim()}`
     : "";
 
-  const children: Paragraph[] = [
-    ...buildLetterheadParagraphs(data, settings),
+  const children: (Paragraph | Table)[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 280 },
       children: [
         new TextRun({
-          text: "APPOINTMENT LETTER",
+          text: "Appointment Letter",
           bold: true,
           font: DOCX_FONT,
           size: 34,
@@ -182,7 +242,11 @@ async function buildAppointmentLetterDocx(
     }),
     ...(data.reference_no.trim()
       ? [
-          plainParagraph(`Ref. No.: ${data.reference_no.trim()}`, false, AlignmentType.CENTER),
+          plainParagraph(
+            `Ref. No.: ${data.reference_no.trim()}`,
+            false,
+            AlignmentType.CENTER,
+          ),
         ]
       : []),
     bodyParagraph([
@@ -207,10 +271,7 @@ async function buildAppointmentLetterDocx(
     plainParagraph(
       `You ${qualPhrase}. Based on your credentials, the Management is confident that you will discharge your responsibilities with competence and integrity.`,
     ),
-    plainParagraph(
-      "Your duties and responsibilities shall include, inter alia:",
-      true,
-    ),
+    plainParagraph("Your duties and responsibilities shall include, inter alia:", true),
     bulletParagraph(
       "Ensuring adherence to applicable quality standards, process controls, and internal procedures of the unit;",
     ),
@@ -237,19 +298,34 @@ async function buildAppointmentLetterDocx(
     ),
     plainParagraph("Thanking you,"),
     plainParagraph("Yours faithfully,"),
-    ...buildSignatoryParagraphs(data),
+    ...(await buildSignatureBlock(data, letterheadSettings)),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
   return new Document({
-    sections: [{ properties: {}, children }],
+    sections: [
+      {
+        properties: {
+          page: {
+            size: {
+              width: PAGE_WIDTH_TWIP,
+              height: PAGE_HEIGHT_TWIP,
+            },
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
   });
 }
 
 export async function downloadAppointmentLetterWord(
   data: AppointmentLetterData,
   settings: PrintSettings,
+  assets?: AppointmentLetterPrintAssets,
 ): Promise<void> {
-  const doc = await buildAppointmentLetterDocx(data, settings);
+  const doc = await buildAppointmentLetterDocx(data, settings, assets);
   const blob = await Packer.toBlob(doc);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

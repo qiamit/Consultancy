@@ -13,8 +13,19 @@ import {
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import { brandRowsForPrintTable, type Cmpf307BrandStored } from "@backend/modules/bis/cmpf-307";
-import type { Cmpf307LetterData } from "@backend/modules/print/cmpf-307";
+import {
+  buildCmpf307Company,
+  cmpf307LetterheadSettings,
+  type Cmpf307LetterData,
+  type Cmpf307PrintAssets,
+} from "@backend/modules/print/cmpf-307";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -108,7 +119,13 @@ function brandTableSection(rows: Cmpf307BrandStored[]): Table {
   });
 }
 
-async function buildCmpf307Docx(data: Cmpf307LetterData): Promise<Document> {
+async function buildCmpf307Docx(
+  data: Cmpf307LetterData,
+  settings: PrintSettings,
+  assets?: Cmpf307PrintAssets,
+): Promise<Document> {
+  const letterheadSettings = cmpf307LetterheadSettings(settings);
+  const company = buildCmpf307Company(data, assets);
   const bisBranch = [data.bisBranchName, data.bisBranchState, data.bisBranchCountry]
     .filter((p) => p.trim())
     .join(", ") || "—";
@@ -116,6 +133,7 @@ async function buildCmpf307Docx(data: Cmpf307LetterData): Promise<Document> {
   const sigDesig = data.firmRepDesignation || "—";
 
   const children: (Paragraph | Table)[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       children: [bodyRun("CMPF - 307", true)],
@@ -177,16 +195,30 @@ async function buildCmpf307Docx(data: Cmpf307LetterData): Promise<Document> {
       spacing: { before: 40, after: 0 },
       children: [bodyRun(`Designation: ${sigDesig}`)],
     }),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadCmpf307Word(
   data: Cmpf307LetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: Cmpf307PrintAssets,
 ): Promise<void> {
-  const doc = await buildCmpf307Docx(data);
+  const doc = await buildCmpf307Docx(data, settings, assets);
   const blob = await Packer.toBlob(doc);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

@@ -62,6 +62,7 @@ export function DocumentPrintSettingsPanel({
   onTopMgmtTableColumnsChange,
   ftrPrintOptions,
   onFtrPrintOptionsChange,
+  hideLetterheadLogo = false,
 }: {
   mode: "page" | "print";
   settings: PrintSettings;
@@ -74,6 +75,8 @@ export function DocumentPrintSettingsPanel({
   onFtrPrintOptionsChange?: (
     patch: Partial<{ show_witnessed_by: boolean; show_tested_by: boolean }>,
   ) => void;
+  /** Hide logo layout control (Top Management / Technical Staff text letterhead). */
+  hideLetterheadLogo?: boolean;
 }) {
   if (mode === "page") {
     return (
@@ -194,22 +197,24 @@ export function DocumentPrintSettingsPanel({
           checked={settings.show_letterhead}
           onChange={(v) => onChange({ show_letterhead: v })}
         />
-        <Field label="Logo">
-          <select
-            value={settings.letterhead_layout}
-            onChange={(e) =>
-              onChange({
-                letterhead_layout: e.target.value as PrintSettings["letterhead_layout"],
-              })
-            }
-            className={inp}
-          >
-            <option value="logo-na">N/A (No Logo)</option>
-            <option value="logo-left">Logo Left</option>
-            <option value="logo-center">Logo Centre</option>
-            <option value="logo-right">Logo Right</option>
-          </select>
-        </Field>
+        {!hideLetterheadLogo && !topMgmtTableColumns ? (
+          <Field label="Logo">
+            <select
+              value={settings.letterhead_layout}
+              onChange={(e) =>
+                onChange({
+                  letterhead_layout: e.target.value as PrintSettings["letterhead_layout"],
+                })
+              }
+              className={inp}
+            >
+              <option value="logo-na">N/A (No Logo)</option>
+              <option value="logo-left">Logo Left</option>
+              <option value="logo-center">Logo Centre</option>
+              <option value="logo-right">Logo Right</option>
+            </select>
+          </Field>
+        ) : null}
         <Field label="Tagline">
           <input
             type="text"

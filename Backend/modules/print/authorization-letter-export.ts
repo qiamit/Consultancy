@@ -7,8 +7,19 @@ import {
 } from "docx";
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
-import type { AuthorizationLetterLetterData } from "@backend/modules/print/authorization-letter";
+import {
+  authorizationLetterLetterheadSettings,
+  buildAuthorizationLetterCompany,
+  type AuthorizationLetterLetterData,
+  type AuthorizationLetterPrintAssets,
+} from "@backend/modules/print/authorization-letter";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import {
   AUTH_LETTER_REPRESENTATION_PARAGRAPH,
@@ -60,7 +71,11 @@ function plainParagraph(text: string): Paragraph {
 
 async function buildAuthorizationLetterDocx(
   data: AuthorizationLetterLetterData,
+  settings: PrintSettings,
+  assets?: AuthorizationLetterPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = authorizationLetterLetterheadSettings(settings);
+  const company = buildAuthorizationLetterCompany(data, assets);
   const doc = data.document;
   const authorizedName =
     doc.authorized_name || data.contactPerson || data.companyName || "—";
@@ -69,6 +84,7 @@ async function buildAuthorizationLetterDocx(
   const sigDesig = doc.signatory_designation || authorizedDesig;
 
   const children: Paragraph[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -85,16 +101,30 @@ async function buildAuthorizationLetterDocx(
     plainParagraph(`For M/s. ${data.companyName}`),
     plainParagraph(`Name: ${sigName}`),
     plainParagraph(`Designation: ${sigDesig}`),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadAuthorizationLetterWord(
   data: AuthorizationLetterLetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: AuthorizationLetterPrintAssets,
 ): Promise<void> {
-  const docx = await buildAuthorizationLetterDocx(data);
+  const docx = await buildAuthorizationLetterDocx(data, settings, assets);
   const blob = await Packer.toBlob(docx);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

@@ -203,24 +203,59 @@ function buildFormBody(data: Cmpf307LetterData): string {
     .join("");
 }
 
-export function buildCmpf307Company(data: Cmpf307LetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+export type Cmpf307PrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildCmpf307Company(
+  data: Cmpf307LetterData,
+  assets?: Cmpf307PrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultCmpf307PrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
     orientation: "portrait",
+    letterhead_layout: "logo-na",
     show_letterhead: true,
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 10,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
   };
 }
 
-export function buildCmpf307Html(data: Cmpf307LetterData, settings: PrintSettings): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+/** Force no-logo letterhead for CMPF 307 preview / Word (same as Top Management). */
+export function cmpf307LetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+  };
+}
+
+export function buildCmpf307Html(
+  data: Cmpf307LetterData,
+  settings: PrintSettings,
+  assets?: Cmpf307PrintAssets,
+): string {
+  const letterheadSettings = cmpf307LetterheadSettings(settings);
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -328,8 +363,8 @@ export function buildCmpf307Html(data: Cmpf307LetterData, settings: PrintSetting
     title: "CMPF 307 — Declaration of Brand Names",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings,
-    company: buildCmpf307Company(data),
+    settings: letterheadSettings,
+    company: buildCmpf307Company(data, assets),
   });
 }
 

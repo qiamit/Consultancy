@@ -4,15 +4,28 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { Cmpf306AddEquipmentForm } from "@/components/dashboard/cmpf-306-add-equipment-form";
 import { Cmpf306QeAssistantModal } from "@/components/dashboard/modals/cmpf-306-qe-assistant-modal";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
-import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
   buildCmpf306Html,
+  cmpf306PrintPageCount,
   defaultCmpf306PrintSettings,
   iframeSizeForCmpf306PrintSettings,
   type Cmpf306LetterData,
+  type Cmpf306PrintAssets,
 } from "@backend/modules/print/cmpf-306";
-import { downloadCmpf306ImportTemplate } from "@backend/modules/print/cmpf-306-export";
+import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
+import {
+  downloadCmpf306ImportTemplate,
+  downloadCmpf306Word,
+} from "@backend/modules/print/cmpf-306-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
   editorRowsFromStored,
@@ -79,13 +92,75 @@ export function Cmpf306Modal({
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCmpf306PrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<Cmpf306PrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const importFileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultCmpf306PrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+        show_page_numbers: false,
+        show_footer_line: false,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep Testing Equipment margin defaults in sync (matches Top Management).
+  useEffect(() => {
+    const defaults = defaultCmpf306PrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+    }));
+  }, []);
 
   const isFullNumber =
     isNumber && revisionYear != null
@@ -140,13 +215,15 @@ export function Cmpf306Modal({
   ]);
 
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const html = buildCmpf306Html(previewData, printSettings);
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
+    const html = buildCmpf306Html(previewData, printSettings, printAssets);
     doc.open();
     doc.write(html);
     doc.close();
-  }, [previewData, printSettings]);
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+  }, [previewData, printSettings, printAssets]);
 
   useEffect(() => {
     refreshPreview();
@@ -158,10 +235,22 @@ export function Cmpf306Modal({
     }
   }, [showPrintPreview, refreshPreview]);
 
-  const iframeSize = iframeSizeForCmpf306PrintSettings(printSettings);
+  const previewPageCount = useMemo(
+    () => cmpf306PrintPageCount(previewData, printSettings),
+    [previewData, printSettings],
+  );
+  const iframeSize = iframeSizeForCmpf306PrintSettings(
+    printSettings,
+    previewPageCount,
+  );
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      // Keep letterhead logo-free even if Print Settings changes layout.
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function handleSave() {
@@ -180,6 +269,29 @@ export function Cmpf306Modal({
   function handlePrint() {
     iframeRef.current?.contentWindow?.focus();
     iframeRef.current?.contentWindow?.print();
+  }
+
+  function handleDownloadWord() {
+    void downloadCmpf306Word(previewData, printSettings, printAssets).catch(() =>
+      window.alert("Unable to download Word file."),
+    );
+  }
+
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildCmpf306Html(previewData, printSettings, printAssets);
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `CMPF_306_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
+    }
   }
 
   function handleDownloadImportTemplate() {
@@ -273,6 +385,21 @@ export function Cmpf306Modal({
             </button>
             <button
               type="button"
+              onClick={handleDownloadWord}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Download Word File
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDownloadPdf()}
+              disabled={pdfDownloading}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
+            </button>
+            <button
+              type="button"
               onClick={() => toggleSettingsPanel("print")}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                 settingsPanel === "print"
@@ -351,18 +478,16 @@ export function Cmpf306Modal({
             >
               <div className="border-b border-zinc-700/80 px-4 py-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-                  Form Preview (CMPF 306)
+                  Print Preview
                 </p>
               </div>
               <div className="flex-1 overflow-y-auto p-3 sm:p-6">
                 <iframe
                   ref={iframeRef}
-                  title="CMPF 306 form preview"
+                  title="CMPF 306 print preview"
                   className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  style={{
-                    width: `min(100%, ${iframeSize.widthMm}mm)`,
-                    minHeight: `${iframeSize.heightMm}mm`,
-                  }}
+                  scrolling="no"
+                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
                 />
               </div>
             </div>
@@ -374,6 +499,7 @@ export function Cmpf306Modal({
                 mode={settingsPanel}
                 settings={printSettings}
                 onChange={patchPrintSettings}
+                hideLetterheadLogo
               />
             </div>
           )}

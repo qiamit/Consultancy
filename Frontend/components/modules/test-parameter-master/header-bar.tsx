@@ -8,7 +8,6 @@ const pageBtn =
   "rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700";
 
 export function TestParameterMasterHeaderBar({
-  onAddNew,
   searchQuery,
   onSearchChange,
   pageSize,
@@ -18,8 +17,9 @@ export function TestParameterMasterHeaderBar({
   page,
   totalPages,
   onPageChange,
+  scopedIsCodeLabel = null,
+  isCodeMasterHref = null,
 }: {
-  onAddNew: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   pageSize: number;
@@ -29,6 +29,8 @@ export function TestParameterMasterHeaderBar({
   page: number;
   totalPages: number;
   onPageChange: (p: number) => void;
+  scopedIsCodeLabel?: string | null;
+  isCodeMasterHref?: string | null;
 }) {
   const searchActive = searchQuery.trim().length > 0;
   const { goDisplay: goDraft, setGoDraft, clearGoDraft } = useGoPageDraft(page);
@@ -50,9 +52,11 @@ export function TestParameterMasterHeaderBar({
   return (
     <header className="border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/80">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
-        <div className="shrink-0">
-          <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
-            Test Parameter
+        <div className="min-w-0 shrink-0">
+          <h1 className="truncate text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+            {scopedIsCodeLabel
+              ? `Test Parameter as per ${scopedIsCodeLabel}`
+              : "Test Parameter"}
           </h1>
         </div>
 
@@ -60,7 +64,7 @@ export function TestParameterMasterHeaderBar({
           <div className="flex min-w-0 shrink-0 items-center gap-2">
             <div className="w-full max-w-[min(100%,14rem)] sm:max-w-[16rem] md:max-w-[18rem] lg:max-w-[20rem]">
               <label htmlFor="test-parameter-master-search" className="sr-only">
-                Search all fields: IS code, test name, clause, method, unit, and
+                Search all fields: test name, clause, method, unit, and
                 specified value
               </label>
               <input
@@ -187,13 +191,29 @@ export function TestParameterMasterHeaderBar({
           >
             QE Assistant
           </button>
-          <button
-            type="button"
-            onClick={onAddNew}
-            className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
-          >
-            Add New Test Parameter
-          </button>
+          {isCodeMasterHref ? (
+            <a
+              href={isCodeMasterHref}
+              className="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-zinc-300 bg-white text-zinc-600 shadow-sm hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700 dark:hover:text-zinc-50"
+              title="Back to IS Code"
+              aria-label="Back to IS Code"
+            >
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                aria-hidden
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </a>
+          ) : null}
         </div>
       </div>
     </header>

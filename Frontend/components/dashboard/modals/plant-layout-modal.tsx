@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition, type ChangeEvent } from "react";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import { PlantLayoutCanvasEditor, type PlantLayoutCanvasEditorHandle } from "@/components/dashboard/plant-layout-canvas-editor";
 import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
@@ -11,8 +18,10 @@ import {
   defaultPlantLayoutPrintSettings,
   iframeSizeForPlantLayoutPrintSettings,
   type PlantLayoutLetterData,
+  type PlantLayoutPrintAssets,
 } from "@backend/modules/print/plant-layout";
 import { downloadPlantLayoutWord } from "@backend/modules/print/plant-layout-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import { type PlantLayoutStored } from "@backend/modules/bis/plant-layout";
 import {resolvePrimaryTopManagementPerson,
@@ -59,10 +68,12 @@ export function PlantLayoutModal({
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultPlantLayoutPrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<PlantLayoutPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const canvasEditorRef = useRef<PlantLayoutCanvasEditorHandle>(null);
@@ -71,6 +82,66 @@ export function PlantLayoutModal({
   useEffect(() => {
     setDocument(storedDocument);
   }, [storedDocument]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultPlantLayoutPrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+        show_page_numbers: false,
+        show_footer_line: false,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep Plant Layout margin defaults in sync (matches Top Management).
+  useEffect(() => {
+    const defaults = defaultPlantLayoutPrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+    }));
+  }, []);
 
   const { firmRepName, firmRepDesignation } = useMemo(() => {
     const primary = resolvePrimaryTopManagementPerson(topManagement);
@@ -92,13 +163,15 @@ export function PlantLayoutModal({
   }, [letterData, applicationNumber, dateOfApplication, document, firmRepName, firmRepDesignation, topManagement]);
 
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const html = buildPlantLayoutHtml(previewData, printSettings);
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
+    const html = buildPlantLayoutHtml(previewData, printSettings, printAssets);
     doc.open();
     doc.write(html);
     doc.close();
-  }, [previewData, printSettings]);
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+  }, [previewData, printSettings, printAssets]);
 
   useEffect(() => {
     if (showPrintPreview) {
@@ -114,7 +187,12 @@ export function PlantLayoutModal({
   }
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      // Keep letterhead logo-free even if Print Settings changes layout.
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function handleSave() {
@@ -138,28 +216,33 @@ export function PlantLayoutModal({
 
     const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
     if (!printWindow) return;
-    printWindow.document.write(buildPlantLayoutHtml(previewData, printSettings));
+    printWindow.document.write(buildPlantLayoutHtml(previewData, printSettings, printAssets));
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
   }
 
   function handleDownloadWord() {
-    void downloadPlantLayoutWord(previewData, printSettings).catch(() =>
+    void downloadPlantLayoutWord(previewData, printSettings, printAssets).catch(() =>
       window.alert("Unable to download Word file."),
     );
   }
 
-  function handleDownloadPng() {
-    if (!document.drawing_data_url) {
-      window.alert("Draw the plant layout before downloading.");
-      return;
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildPlantLayoutHtml(previewData, printSettings, printAssets);
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `Plant_Layout_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
     }
-
-    const link = window.document.createElement("a");
-    link.href = document.drawing_data_url;
-    link.download = `Plant_Layout_${letterData.companyName.replace(/[^\w\-]+/g, "_").slice(0, 40) || "layout"}.png`;
-    link.click();
   }
 
   function handleUploadImageClick() {
@@ -248,6 +331,14 @@ export function PlantLayoutModal({
             </button>
             <button
               type="button"
+              onClick={() => void handleDownloadPdf()}
+              disabled={pdfDownloading}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
+            </button>
+            <button
+              type="button"
               onClick={handleUploadImageClick}
               className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
             >
@@ -260,13 +351,6 @@ export function PlantLayoutModal({
               className="hidden"
               onChange={handleImageFileChange}
             />
-            <button
-              type="button"
-              onClick={handleDownloadPng}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
-            >
-              Download PNG
-            </button>
             <button
               type="button"
               onClick={() => toggleSettingsPanel("print")}
@@ -345,10 +429,8 @@ export function PlantLayoutModal({
                   ref={iframeRef}
                   title="Plant Layout print preview"
                   className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  style={{
-                    width: `min(100%, ${iframeSize.widthMm}mm)`,
-                    minHeight: `${iframeSize.heightMm}mm`,
-                  }}
+                  scrolling="no"
+                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
                 />
               </div>
             </div>
@@ -360,6 +442,7 @@ export function PlantLayoutModal({
                 mode={settingsPanel}
                 settings={printSettings}
                 onChange={patchPrintSettings}
+                hideLetterheadLogo
               />
             </div>
           )}

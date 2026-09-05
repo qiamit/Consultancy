@@ -10,9 +10,20 @@ import {
   TextRun,
   WidthType,
 } from "docx";
-import type { SubcontractedTestsLetterData } from "@backend/modules/print/subcontracted-tests";
+import {
+  buildSubcontractedTestsCompany,
+  subcontractedTestsLetterheadSettings,
+  type SubcontractedTestsLetterData,
+  type SubcontractedTestsPrintAssets,
+} from "@backend/modules/print/subcontracted-tests";
 import { rowHasContent } from "@backend/modules/bis/subcontracted-tests";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 
@@ -71,10 +82,8 @@ function bisBranchLine(data: SubcontractedTestsLetterData): string {
   ].join(", ");
 }
 
-function formatLetterDate(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "_______________________";
-  return formatDisplayDate(raw, "_______________________");
+function formatLetterDate(dateStr: string | Date | null | undefined): string {
+  return formatDisplayDate(dateStr, "_______________________");
 }
 
 function formatApplicationNo(raw: string | undefined): string {
@@ -148,7 +157,11 @@ function buildTestsTable(data: SubcontractedTestsLetterData): Table {
 
 async function buildSubcontractedTestsDocx(
   data: SubcontractedTestsLetterData,
+  settings: PrintSettings,
+  assets?: SubcontractedTestsPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = subcontractedTestsLetterheadSettings(settings);
+  const company = buildSubcontractedTestsCompany(data, assets);
   const isRef = isStandardRef(data);
   const bisBranch = bisBranchLine(data);
   const letterDate = formatLetterDate(data.inspectionDate);
@@ -158,6 +171,7 @@ async function buildSubcontractedTestsDocx(
   const sigDesig = data.document.signatory_designation.trim() || "—";
 
   const children: (Paragraph | Table)[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 240 },
@@ -198,16 +212,30 @@ async function buildSubcontractedTestsDocx(
       spacing: { before: 40, after: 0 },
       children: [bodyRun(`Designation: ${sigDesig}`)],
     }),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadSubcontractedTestsWord(
   data: SubcontractedTestsLetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: SubcontractedTestsPrintAssets,
 ): Promise<void> {
-  const doc = await buildSubcontractedTestsDocx(data);
+  const doc = await buildSubcontractedTestsDocx(data, settings, assets);
   const blob = await Packer.toBlob(doc);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

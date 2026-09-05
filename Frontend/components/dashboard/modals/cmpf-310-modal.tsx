@@ -7,11 +7,14 @@ import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split
 import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
   buildCmpf310Html,
+  cmpf310PrintPageCount,
   defaultCmpf310PrintSettings,
   iframeSizeForCmpf310PrintSettings,
   type Cmpf310LetterData,
+  type Cmpf310PrintAssets,
 } from "@backend/modules/print/cmpf-310";
 import { downloadCmpf310Word } from "@backend/modules/print/cmpf-310-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
   formatCmpf310RupeeDisplay,
@@ -20,6 +23,12 @@ import {
   type IsCodeMarkingFeeSource,
 } from "@backend/modules/bis/cmpf-310";
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
 
 const CMPF310_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with CMPF 310 — Acceptance of Rate of Marking Fee:
@@ -74,12 +83,74 @@ export function Cmpf310Modal({
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCmpf310PrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<Cmpf310PrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(true);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultCmpf310PrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+        show_page_numbers: false,
+        show_footer_line: false,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep CMPF 310 margin defaults in sync (matches Top Management / Plant & Machinery).
+  useEffect(() => {
+    const defaults = defaultCmpf310PrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+    }));
+  }, []);
 
   const isFullNumber = letterData.isNumber?.trim() || "—";
 
@@ -94,13 +165,15 @@ export function Cmpf310Modal({
   }, [letterData, applicationNumber, dateOfApplication, dateOfInspection, document, topManagement]);
 
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const html = buildCmpf310Html(previewData, printSettings);
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
+    const html = buildCmpf310Html(previewData, printSettings, printAssets);
     doc.open();
     doc.write(html);
     doc.close();
-  }, [previewData, printSettings]);
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+  }, [previewData, printSettings, printAssets]);
 
   useEffect(() => {
     if (showPrintPreview) {
@@ -108,10 +181,22 @@ export function Cmpf310Modal({
     }
   }, [showPrintPreview, refreshPreview]);
 
-  const iframeSize = iframeSizeForCmpf310PrintSettings(printSettings);
+  const previewPageCount = useMemo(
+    () => cmpf310PrintPageCount(printSettings),
+    [printSettings],
+  );
+  const iframeSize = iframeSizeForCmpf310PrintSettings(
+    printSettings,
+    previewPageCount,
+  );
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      // Keep letterhead logo-free even if Print Settings changes layout.
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function handleSave() {
@@ -128,9 +213,26 @@ export function Cmpf310Modal({
   }
 
   function handleDownloadWord() {
-    void downloadCmpf310Word(previewData, printSettings).catch(() =>
+    void downloadCmpf310Word(previewData, printSettings, printAssets).catch(() =>
       window.alert("Unable to download Word file."),
     );
+  }
+
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildCmpf310Html(previewData, printSettings, printAssets);
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `CMPF_310_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
+    }
   }
 
   function toggleSettingsPanel(panel: "page" | "print") {
@@ -183,6 +285,14 @@ export function Cmpf310Modal({
             className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
           >
             Download Word File
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleDownloadPdf()}
+            disabled={pdfDownloading}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+          >
+            {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
           </button>
           <button
             type="button"
@@ -283,11 +393,9 @@ export function Cmpf310Modal({
               <iframe
                 ref={iframeRef}
                 title="CMPF 310 form preview"
+                scrolling="no"
                 className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                style={{
-                  width: `min(100%, ${iframeSize.widthMm}mm)`,
-                  minHeight: `${iframeSize.heightMm}mm`,
-                }}
+                style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
               />
             </div>
           </div>
@@ -299,6 +407,7 @@ export function Cmpf310Modal({
               mode={settingsPanel}
               settings={printSettings}
               onChange={patchPrintSettings}
+              hideLetterheadLogo
             />
           </div>
         )}

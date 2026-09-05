@@ -10,14 +10,23 @@ import {
 } from "@/components/dashboard/technical-staff-table-editor";
 import { TechnicalStaffFormModal } from "@/components/dashboard/modals/technical-staff-form-modal";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import {
   buildTechnicalStaffHtml,
   defaultTechnicalStaffPrintSettings,
   iframeSizeForTechnicalStaffPrintSettings,
   type TechnicalStaffLetterData,
+  type TechnicalStaffPrintAssets,
 } from "@backend/modules/print/technical-staff";
 import { downloadTechnicalStaffWord } from "@backend/modules/print/technical-staff-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
   editorRowsFromStored,
@@ -74,6 +83,7 @@ export function TechnicalStaffModal({
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultTechnicalStaffPrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<TechnicalStaffPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
@@ -81,11 +91,70 @@ export function TechnicalStaffModal({
   const [staffFormOpen, setStaffFormOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<TechnicalStaffRow | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const isFullNumber = letterData.isNumber?.trim() || "—";
   const isTitle = letterData.isTitle ?? "";
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultTechnicalStaffPrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep Technical Staff margin defaults in sync (matches Top Management / Plant & Machinery).
+  useEffect(() => {
+    const defaults = defaultTechnicalStaffPrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+      }));
+  }, []);
 
   const previewData = useMemo((): TechnicalStaffLetterData => {
     const primary = resolvePrimaryTopManagementPerson(topManagement);
@@ -101,13 +170,15 @@ export function TechnicalStaffModal({
   }, [letterData, topManagement, rows]);
 
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const html = buildTechnicalStaffHtml(previewData, printSettings);
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
+    const html = buildTechnicalStaffHtml(previewData, printSettings, printAssets);
     doc.open();
     doc.write(html);
     doc.close();
-  }, [previewData, printSettings]);
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+  }, [previewData, printSettings, printAssets]);
 
   useEffect(() => {
     refreshPreview();
@@ -122,7 +193,11 @@ export function TechnicalStaffModal({
   const iframeSize = iframeSizeForTechnicalStaffPrintSettings(printSettings);
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function handleSave() {
@@ -140,9 +215,26 @@ export function TechnicalStaffModal({
   }
 
   function handleDownloadWord() {
-    void downloadTechnicalStaffWord(previewData, printSettings).catch(() =>
+    void downloadTechnicalStaffWord(previewData, printSettings, printAssets).catch(() =>
       window.alert("Unable to download Word file."),
     );
+  }
+
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildTechnicalStaffHtml(previewData, printSettings, printAssets);
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `Technical_Staff_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
+    }
   }
 
   function toggleSettingsPanel(panel: "page" | "print") {
@@ -217,6 +309,14 @@ export function TechnicalStaffModal({
               className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
             >
               Download Word File
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDownloadPdf()}
+              disabled={pdfDownloading}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
             </button>
             <button
               type="button"
@@ -318,10 +418,8 @@ export function TechnicalStaffModal({
                   ref={iframeRef}
                   title="Technical Staff print preview"
                   className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  style={{
-                    width: `min(100%, ${iframeSize.widthMm}mm)`,
-                    minHeight: `${iframeSize.heightMm}mm`,
-                  }}
+                  scrolling="no"
+                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
                 />
               </div>
             </div>
@@ -333,6 +431,7 @@ export function TechnicalStaffModal({
                 mode={settingsPanel}
                 settings={printSettings}
                 onChange={patchPrintSettings}
+                hideLetterheadLogo
               />
             </div>
           )}

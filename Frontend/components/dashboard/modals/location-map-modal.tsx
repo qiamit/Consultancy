@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
@@ -10,22 +17,30 @@ import {
   defaultLocationMapPrintSettings,
   iframeSizeForLocationMapPrintSettings,
   type LocationMapLetterData,
+  type LocationMapPrintAssets,
 } from "@backend/modules/print/location-map";
 import { downloadLocationMapWord } from "@backend/modules/print/location-map-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
   buildGoogleMapsDirectionsUrl,
   buildGoogleMapsEmbedUrl,
-  DEFAULT_MAP_ZOOM,
+  computeFitZoom,
+  isMapZoomFit,
+  MAP_ZOOM_FIT,
   locationMapHasValidRoute,
   MAX_MAP_ZOOM,
   mergeLocationMapWithDefaults,
   MIN_MAP_ZOOM,
+  normalizeMapZoom,
+  parseCoordinate,
   resolveLocationMapDefaults,
   resolveMapZoom,
+  sanitizeCoordinateInput,
   type LocationMapStored,
 } from "@backend/modules/bis/location-map";
-import {resolvePrimaryTopManagementPerson,
+import {
+  resolvePrimaryTopManagementPerson,
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
@@ -56,23 +71,22 @@ function CoordinateField({
   value,
   onChange,
   placeholder,
-  step = "any",
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
   placeholder: string;
-  step?: string;
 }) {
   return (
     <label className="block">
       <span className={labelClass}>{label}</span>
       <input
-        type="number"
+        type="text"
         inputMode="decimal"
-        step={step}
+        autoComplete="off"
+        spellCheck={false}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => onChange(sanitizeCoordinateInput(e.target.value))}
         placeholder={placeholder}
         className={inputClass}
       />
@@ -141,10 +155,12 @@ export function LocationMapModal({
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultLocationMapPrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<LocationMapPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
@@ -152,8 +168,68 @@ export function LocationMapModal({
     setDocument(mergeLocationMapWithDefaults(storedDocument, resolvedDefaults));
   }, [storedDocument, resolvedDefaults]);
 
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultLocationMapPrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+        show_page_numbers: false,
+        show_footer_line: false,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep Location Map margin defaults in sync (matches Top Management).
+  useEffect(() => {
+    const defaults = defaultLocationMapPrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+      }));
+  }, []);
+
   const routeValid = useMemo(() => locationMapHasValidRoute(document), [document]);
-  const embedUrl = useMemo(
+  const liveEmbedUrl = useMemo(
     () => (routeValid ? buildGoogleMapsEmbedUrl(document) : null),
     [document, routeValid],
   );
@@ -161,6 +237,28 @@ export function LocationMapModal({
     () => (routeValid ? buildGoogleMapsDirectionsUrl(document) : null),
     [document, routeValid],
   );
+
+  // Debounce Google Maps iframe remounts while typing coordinates / changing zoom.
+  const [embedUrl, setEmbedUrl] = useState<string | null>(liveEmbedUrl);
+  const [mapUpdating, setMapUpdating] = useState(false);
+
+  useEffect(() => {
+    if (liveEmbedUrl === embedUrl) {
+      setMapUpdating(false);
+      return;
+    }
+    if (!liveEmbedUrl) {
+      setEmbedUrl(null);
+      setMapUpdating(false);
+      return;
+    }
+    setMapUpdating(true);
+    const timer = window.setTimeout(() => {
+      setEmbedUrl(liveEmbedUrl);
+      setMapUpdating(false);
+    }, 650);
+    return () => window.clearTimeout(timer);
+  }, [liveEmbedUrl, embedUrl]);
 
   const { firmRepName, firmRepDesignation } = useMemo(() => {
     const primary = resolvePrimaryTopManagementPerson(topManagement);
@@ -192,14 +290,36 @@ export function LocationMapModal({
     firmRepDesignation,
     topManagement]);
 
+  const previewBlobUrlRef = useRef<string | null>(null);
+
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const html = buildLocationMapHtml(previewData, printSettings);
-    doc.open();
-    doc.write(html);
-    doc.close();
-  }, [previewData, printSettings]);
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+    const html = buildLocationMapHtml(previewData, printSettings, printAssets);
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    if (previewBlobUrlRef.current) {
+      URL.revokeObjectURL(previewBlobUrlRef.current);
+    }
+    previewBlobUrlRef.current = url;
+    iframe.onload = () => {
+      requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+    };
+    iframe.src = url;
+  }, [previewData, printSettings, printAssets]);
+
+  useEffect(() => {
+    return () => {
+      if (previewBlobUrlRef.current) {
+        URL.revokeObjectURL(previewBlobUrlRef.current);
+        previewBlobUrlRef.current = null;
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    refreshPreview();
+  }, [refreshPreview]);
 
   useEffect(() => {
     if (showPrintPreview) {
@@ -209,11 +329,27 @@ export function LocationMapModal({
 
   const iframeSize = iframeSizeForLocationMapPrintSettings(printSettings);
   const isFullNumber = letterData.isNumber?.trim() || "—";
-  const mapZoom = resolveMapZoom(document.map_zoom);
+  const zoomIsFit = isMapZoomFit(normalizeMapZoom(document.map_zoom));
+  const fromLatNum = parseCoordinate(document.from_latitude);
+  const fromLngNum = parseCoordinate(document.from_longitude);
+  const toLatNum = parseCoordinate(document.to_latitude);
+  const toLngNum = parseCoordinate(document.to_longitude);
+  const fitZoomValue =
+    fromLatNum !== null &&
+    fromLngNum !== null &&
+    toLatNum !== null &&
+    toLngNum !== null
+      ? computeFitZoom(fromLatNum, fromLngNum, toLatNum, toLngNum)
+      : 12;
+  const mapZoom = zoomIsFit ? fitZoomValue : resolveMapZoom(document.map_zoom);
 
   function patchMapZoom(nextZoom: number) {
     const clamped = Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, Math.round(nextZoom)));
     patchDocument({ map_zoom: String(clamped) });
+  }
+
+  function patchMapZoomFit() {
+    patchDocument({ map_zoom: MAP_ZOOM_FIT });
   }
 
   function patchDocument(patch: Partial<LocationMapStored>) {
@@ -221,7 +357,12 @@ export function LocationMapModal({
   }
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      // Keep letterhead logo-free even if Print Settings changes layout.
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function handleSave() {
@@ -233,24 +374,50 @@ export function LocationMapModal({
   }
 
   function handlePrint() {
-    if (showPrintPreview) {
-      iframeRef.current?.contentWindow?.focus();
-      iframeRef.current?.contentWindow?.print();
+    if (showPrintPreview && iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.focus();
+      iframeRef.current.contentWindow.print();
       return;
     }
-
     const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
     if (!printWindow) return;
-    printWindow.document.write(buildLocationMapHtml(previewData, printSettings));
+    printWindow.document.write(buildLocationMapHtml(previewData, printSettings, printAssets));
     printWindow.document.close();
     printWindow.focus();
     printWindow.print();
   }
 
+  const [downloadingWord, setDownloadingWord] = useState(false);
+
   function handleDownloadWord() {
-    void downloadLocationMapWord(previewData, printSettings).catch(() =>
-      window.alert("Unable to download Word file."),
-    );
+    if (downloadingWord) return;
+    setDownloadingWord(true);
+    void (async () => {
+      try {
+        await downloadLocationMapWord(previewData, printSettings, printAssets);
+      } catch {
+        window.alert("Unable to download Word file.");
+      } finally {
+        setDownloadingWord(false);
+      }
+    })();
+  }
+
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildLocationMapHtml(previewData, printSettings, printAssets);
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `Location_Map_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
+    }
   }
 
   function toggleSettingsPanel(panel: "page" | "print") {
@@ -310,9 +477,18 @@ export function LocationMapModal({
             <button
               type="button"
               onClick={handleDownloadWord}
-              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+              disabled={downloadingWord}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
             >
-              Download Word File
+              {downloadingWord ? "Preparing Word…" : "Download Word File"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleDownloadPdf()}
+              disabled={pdfDownloading}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
             </button>
             <button
               type="button"
@@ -437,25 +613,51 @@ export function LocationMapModal({
                         </span>
                         <button
                           type="button"
-                          onClick={() => patchMapZoom(mapZoom - 1)}
-                          disabled={mapZoom <= MIN_MAP_ZOOM}
+                          onClick={patchMapZoomFit}
+                          className={`rounded-md border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                            zoomIsFit
+                              ? "border-sky-500 bg-sky-600 text-white"
+                              : "border-zinc-700 text-zinc-200 hover:bg-zinc-800"
+                          }`}
+                          aria-label="Fit From and To coordinates"
+                          title="Fit From → To"
+                        >
+                          Fit
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            patchMapZoom((zoomIsFit ? fitZoomValue : mapZoom) - 1)
+                          }
+                          disabled={!zoomIsFit && mapZoom <= MIN_MAP_ZOOM}
                           className="rounded-md border border-zinc-700 px-2 py-0.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
                           aria-label="Zoom out"
                         >
                           −
                         </button>
                         <input
-                          type="number"
-                          min={MIN_MAP_ZOOM}
-                          max={MAX_MAP_ZOOM}
-                          value={mapZoom}
-                          onChange={(e) => patchMapZoom(Number(e.target.value))}
+                          type="text"
+                          inputMode="numeric"
+                          value={zoomIsFit ? "Fit" : String(mapZoom)}
+                          onChange={(e) => {
+                            const raw = e.target.value.trim();
+                            if (!raw || /fit/i.test(raw)) {
+                              patchMapZoomFit();
+                              return;
+                            }
+                            const n = Number(raw);
+                            if (Number.isFinite(n)) patchMapZoom(n);
+                          }}
+                          onFocus={(e) => e.target.select()}
                           className="w-14 rounded-md border border-zinc-700 bg-zinc-900 px-2 py-0.5 text-center text-xs text-zinc-100 outline-none focus:border-sky-500"
+                          aria-label="Zoom level"
                         />
                         <button
                           type="button"
-                          onClick={() => patchMapZoom(mapZoom + 1)}
-                          disabled={mapZoom >= MAX_MAP_ZOOM}
+                          onClick={() =>
+                            patchMapZoom((zoomIsFit ? fitZoomValue : mapZoom) + 1)
+                          }
+                          disabled={!zoomIsFit && mapZoom >= MAX_MAP_ZOOM}
                           className="rounded-md border border-zinc-700 px-2 py-0.5 text-xs font-semibold text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
                           aria-label="Zoom in"
                         >
@@ -464,23 +666,35 @@ export function LocationMapModal({
                       </div>
                     </div>
                     {embedUrl ? (
-                      <iframe
-                        key={embedUrl}
-                        title="Google Maps route"
-                        src={embedUrl}
-                        className="h-[min(70vh,520px)] w-full border-0"
-                        loading="lazy"
-                        referrerPolicy="no-referrer-when-downgrade"
-                        allowFullScreen
-                      />
+                      <div className="relative">
+                        {mapUpdating && (
+                          <div className="absolute inset-x-0 top-0 z-10 bg-zinc-950/80 px-3 py-1.5 text-center text-[11px] font-semibold text-sky-300">
+                            Updating Google Map…
+                          </div>
+                        )}
+                        <iframe
+                          key={embedUrl}
+                          title="Google Maps route"
+                          src={embedUrl}
+                          className="h-[min(70vh,520px)] w-full border-0 bg-zinc-900"
+                          loading="lazy"
+                          referrerPolicy="no-referrer-when-downgrade"
+                          allowFullScreen
+                        />
+                      </div>
                     ) : (
                       <div className="flex h-[min(70vh,520px)] items-center justify-center px-6 text-center text-sm text-zinc-400">
-                        Route map will appear here after you enter valid From and To coordinates.
+                        {routeValid
+                          ? "Preparing Google Map…"
+                          : "Route map will appear here after you enter valid From and To coordinates."}
                       </div>
                     )}
                     <p className="border-t border-zinc-800 px-3 py-2 text-[11px] leading-relaxed text-zinc-500">
-                      Set zoom here and click <strong className="text-zinc-300">Save</strong> to keep
-                      the scale after refresh. Default zoom is {DEFAULT_MAP_ZOOM}.
+                      Default zoom is <strong className="text-zinc-300">Fit</strong> (shows full
+                      From → To route). Use − / + for manual zoom, or{" "}
+                      <strong className="text-zinc-300">Fit</strong> again to reset. Click{" "}
+                      <strong className="text-zinc-300">Save</strong> to keep the choice after
+                      refresh.
                     </p>
                   </div>
                 </div>
@@ -496,18 +710,16 @@ export function LocationMapModal({
             >
               <div className="border-b border-zinc-700/80 px-4 py-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-                  Form Preview — Location Map
+                  Print Preview
                 </p>
               </div>
-              <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+              <div className="flex flex-1 justify-center overflow-y-auto p-3 sm:p-6">
                 <iframe
                   ref={iframeRef}
                   title="Location Map print preview"
-                  className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  style={{
-                    width: `min(100%, ${iframeSize.widthMm}mm)`,
-                    minHeight: `${iframeSize.heightMm}mm`,
-                  }}
+                  scrolling="no"
+                  className="mx-auto max-w-full shrink-0 border-0 bg-white shadow-2xl"
+                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
                 />
               </div>
             </div>
@@ -519,6 +731,7 @@ export function LocationMapModal({
                 mode={settingsPanel}
                 settings={printSettings}
                 onChange={patchPrintSettings}
+                hideLetterheadLogo
               />
             </div>
           )}

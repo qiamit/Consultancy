@@ -408,6 +408,25 @@ export const PlantLayoutCanvasEditor = forwardRef<
         >
           Clear All
         </button>
+        {!isProcessFlow ? (
+          <label className="flex min-w-[16rem] max-w-xl flex-1 items-center gap-2">
+            <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+              Text inside box
+            </span>
+            <input
+              type="text"
+              value={boxText}
+              onChange={(e) => setBoxText(e.target.value)}
+              disabled={!selectedRectangle}
+              placeholder={
+                selectedRectangle
+                  ? "e.g. Raw Material Store, Moulding Section"
+                  : "Draw or select a box first, then type text here"
+              }
+              className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-sm text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+            />
+          </label>
+        ) : null}
       </div>
 
       {isProcessFlow ? (
@@ -447,41 +466,7 @@ export const PlantLayoutCanvasEditor = forwardRef<
             />
           </label>
         </div>
-      ) : (
-        <label className="block">
-          <span className="text-xs font-semibold uppercase tracking-wide text-zinc-400">
-            Text inside box
-          </span>
-          <input
-            type="text"
-            value={boxText}
-            onChange={(e) => setBoxText(e.target.value)}
-            disabled={!selectedRectangle}
-            placeholder={
-              selectedRectangle
-                ? "e.g. Raw Material Store, Moulding Section"
-                : "Draw or select a box first, then type text here"
-            }
-            className="mt-1 w-full max-w-xl rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40 disabled:cursor-not-allowed disabled:opacity-50"
-          />
-        </label>
-      )}
-
-      {tool === "select" && selectedRectangle && (
-        <p className="text-xs text-zinc-400">
-          Drag the box to move · drag corner handles to resize ·
-          {isProcessFlow
-            ? " edit hierarchy type and description above."
-            : " edit text in the field above."}
-        </p>
-      )}
-      {tool === "draw" && (
-        <p className="text-xs text-zinc-400">
-          {isProcessFlow
-            ? "Draw process boxes — including nested boxes. Set hierarchy type, then use Edit Box to adjust."
-            : "Draw multiple boxes — including inside other boxes. Use Edit Box to select, move, or resize a box and add text."}
-        </p>
-      )}
+      ) : null}
 
       <div className="min-h-0 flex-1 overflow-auto rounded-xl border border-zinc-800 bg-zinc-950 p-2">
         <canvas

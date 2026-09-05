@@ -121,6 +121,7 @@ export function TestParameterMasterForm({
   onAddNew,
   onUpdateField,
   onRequestQuickAddIsCode,
+  scopeIsCodeId = null,
 }: {
   visible: boolean;
   overlay?: boolean;
@@ -133,6 +134,7 @@ export function TestParameterMasterForm({
   onAddNew: () => void;
   onUpdateField: (key: string, value: string) => void;
   onRequestQuickAddIsCode?: () => void;
+  scopeIsCodeId?: string | null;
 }) {
   if (!visible) return null;
 
@@ -148,10 +150,10 @@ export function TestParameterMasterForm({
           className="text-sm font-semibold text-zinc-50"
         >
           {isNewParam
-            ? "New Test Parameter"
+            ? "New Test"
             : idParam
-              ? "Edit Test Parameter"
-              : "Test Parameter"}
+              ? "Edit Test"
+              : "Test"}
         </h2>
         <DialogCloseXButton
           onClick={onClose}
@@ -165,19 +167,37 @@ export function TestParameterMasterForm({
         action={saveTestParameter}
       >
         <input type="hidden" name="id" value={formValues.id} />
+        {scopeIsCodeId ? (
+          <input type="hidden" name="scope_is_code_id" value={scopeIsCodeId} />
+        ) : null}
 
         <div className="grid grid-cols-1 gap-4 sm:col-span-2 sm:grid-cols-2 lg:col-span-3 lg:grid-cols-4">
           <div className="min-w-0">
-            <IsCodeCombobox
-              name="is_code_id"
-              label="IS Code"
-              value={formValues.is_code_id}
-              onChange={(id) => onUpdateField("is_code_id", id)}
-              options={isCodeOptions}
-              listZIndexClass="z-[118]"
-              onAddClick={onRequestQuickAddIsCode}
-              addButtonAriaLabel="Add new IS code"
-            />
+            {scopeIsCodeId ? (
+              <>
+                <input type="hidden" name="is_code_id" value={scopeIsCodeId} />
+                <IsCodeCombobox
+                  name="is_code_id_display"
+                  label="IS Code"
+                  value={scopeIsCodeId}
+                  onChange={() => {}}
+                  options={isCodeOptions}
+                  listZIndexClass="z-[118]"
+                  disabled
+                />
+              </>
+            ) : (
+              <IsCodeCombobox
+                name="is_code_id"
+                label="IS Code"
+                value={formValues.is_code_id}
+                onChange={(id) => onUpdateField("is_code_id", id)}
+                options={isCodeOptions}
+                listZIndexClass="z-[118]"
+                onAddClick={onRequestQuickAddIsCode}
+                addButtonAriaLabel="Add new IS code"
+              />
+            )}
           </div>
 
           <div className="min-w-0">
@@ -240,8 +260,8 @@ export function TestParameterMasterForm({
             className="rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
           >
             {idParam && !isNewParam
-              ? "Update Test Parameter"
-              : "Save Test Parameter"}
+              ? "Update Test"
+              : "Save Test"}
           </button>
           {idParam && !isNewParam ? (
             <button

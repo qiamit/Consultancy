@@ -2,6 +2,7 @@
 
 import React from "react";
 import { useMemo, useState, useEffect, useTransition, useCallback, useRef } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { createClient } from "@backend/db/client/client";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
@@ -12,36 +13,224 @@ import {
   updateBisNewApplicationTargetDate,
 } from "@backend/actions/bis-new-applications";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
-import { ClientSnapshotModal } from "@/components/dashboard/modals/client-snapshot-modal";
-import { ClientEditModal } from "@/components/dashboard/modals/client-edit-modal";
-import { ConvertToLicenseModal } from "@/components/dashboard/modals/convert-to-license-modal";
-import { LicenseScopeEditorModal } from "@/components/dashboard/modals/license-scope-editor-modal";
-import { OslSampleRequirementsModal } from "@/components/dashboard/modals/osl-sample-requirements-modal";
-import { TopManagementModal } from "@/components/dashboard/modals/top-management-modal";
-import { TechnicalStaffModal } from "@/components/dashboard/modals/technical-staff-modal";
-import { FactoryTestReportModal } from "@/components/dashboard/modals/factory-test-report-modal";
-import { SubcontractedTestsModal } from "@/components/dashboard/modals/subcontracted-tests-modal";
-import { Cmpf305Modal } from "@/components/dashboard/modals/cmpf-305-modal";
-import { Cmpf306Modal } from "@/components/dashboard/modals/cmpf-306-modal";
-import { RawMaterialDetailsModal } from "@/components/dashboard/modals/raw-material-details-modal";
-import { CertifiedReferenceMaterialsModal } from "@/components/dashboard/modals/certified-reference-materials-modal";
-import { Cmpf307Modal } from "@/components/dashboard/modals/cmpf-307-modal";
-import { Cmpf310Modal } from "@/components/dashboard/modals/cmpf-310-modal";
-import { Cmpf311Modal } from "@/components/dashboard/modals/cmpf-311-modal";
-import { UndertakingOption2Modal } from "@/components/dashboard/modals/undertaking-option-2-modal";
-import { UndertakingLongDurationTestModal } from "@/components/dashboard/modals/undertaking-long-duration-test-modal";
-import { UndertakingMinimumMarkingFeeModal } from "@/components/dashboard/modals/undertaking-minimum-marking-fee-modal";
-import { UndertakingGeneralIssModal } from "@/components/dashboard/modals/undertaking-general-iss-modal";
-import { PlantLayoutModal } from "@/components/dashboard/modals/plant-layout-modal";
-import { ProcessFlowChartModal } from "@/components/dashboard/modals/process-flow-chart-modal";
-import { ProcessDescriptionModal } from "@/components/dashboard/modals/process-description-modal";
-import { UpdatedSchemeOfInspectionModal } from "@/components/dashboard/modals/updated-scheme-of-inspection-modal";
-import { LocationMapModal } from "@/components/dashboard/modals/location-map-modal";
-import { AuthorizationLetterModal } from "@/components/dashboard/modals/authorization-letter-modal";
-import { ApplicationDetailsModal } from "@/components/dashboard/modals/application-details-modal";
-import { SelfEvaluationFormModal } from "@/components/dashboard/modals/self-evaluation-form-modal";
-import { IsCodeEditModal } from "@/components/dashboard/modals/is-code-edit-modal";
-import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
+
+const ClientSnapshotModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/client-snapshot-modal").then((m) => ({
+      default: m.ClientSnapshotModal,
+    })),
+  { ssr: false },
+);
+const ClientEditModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/client-edit-modal").then((m) => ({
+      default: m.ClientEditModal,
+    })),
+  { ssr: false },
+);
+const ConvertToLicenseModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/convert-to-license-modal").then((m) => ({
+      default: m.ConvertToLicenseModal,
+    })),
+  { ssr: false },
+);
+const LicenseScopeEditorModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/license-scope-editor-modal").then((m) => ({
+      default: m.LicenseScopeEditorModal,
+    })),
+  { ssr: false },
+);
+const OslSampleRequirementsModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/osl-sample-requirements-modal").then((m) => ({
+      default: m.OslSampleRequirementsModal,
+    })),
+  { ssr: false },
+);
+const TopManagementModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/top-management-modal").then((m) => ({
+      default: m.TopManagementModal,
+    })),
+  { ssr: false },
+);
+const TechnicalStaffModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/technical-staff-modal").then((m) => ({
+      default: m.TechnicalStaffModal,
+    })),
+  { ssr: false },
+);
+const FactoryTestReportModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/factory-test-report-modal").then((m) => ({
+      default: m.FactoryTestReportModal,
+    })),
+  { ssr: false },
+);
+const SubcontractedTestsModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/subcontracted-tests-modal").then((m) => ({
+      default: m.SubcontractedTestsModal,
+    })),
+  { ssr: false },
+);
+const Cmpf305Modal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/cmpf-305-modal").then((m) => ({
+      default: m.Cmpf305Modal,
+    })),
+  { ssr: false },
+);
+const Cmpf306Modal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/cmpf-306-modal").then((m) => ({
+      default: m.Cmpf306Modal,
+    })),
+  { ssr: false },
+);
+const RawMaterialDetailsModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/raw-material-details-modal").then((m) => ({
+      default: m.RawMaterialDetailsModal,
+    })),
+  { ssr: false },
+);
+const CertifiedReferenceMaterialsModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/certified-reference-materials-modal").then((m) => ({
+      default: m.CertifiedReferenceMaterialsModal,
+    })),
+  { ssr: false },
+);
+const Cmpf307Modal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/cmpf-307-modal").then((m) => ({
+      default: m.Cmpf307Modal,
+    })),
+  { ssr: false },
+);
+const Cmpf310Modal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/cmpf-310-modal").then((m) => ({
+      default: m.Cmpf310Modal,
+    })),
+  { ssr: false },
+);
+const Cmpf311Modal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/cmpf-311-modal").then((m) => ({
+      default: m.Cmpf311Modal,
+    })),
+  { ssr: false },
+);
+const UndertakingOption2Modal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/undertaking-option-2-modal").then((m) => ({
+      default: m.UndertakingOption2Modal,
+    })),
+  { ssr: false },
+);
+const UndertakingLongDurationTestModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/undertaking-long-duration-test-modal").then((m) => ({
+      default: m.UndertakingLongDurationTestModal,
+    })),
+  { ssr: false },
+);
+const UndertakingMinimumMarkingFeeModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/undertaking-minimum-marking-fee-modal").then((m) => ({
+      default: m.UndertakingMinimumMarkingFeeModal,
+    })),
+  { ssr: false },
+);
+const UndertakingGeneralIssModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/undertaking-general-iss-modal").then((m) => ({
+      default: m.UndertakingGeneralIssModal,
+    })),
+  { ssr: false },
+);
+const PlantLayoutModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/plant-layout-modal").then((m) => ({
+      default: m.PlantLayoutModal,
+    })),
+  { ssr: false },
+);
+const ProcessFlowChartModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/process-flow-chart-modal").then((m) => ({
+      default: m.ProcessFlowChartModal,
+    })),
+  { ssr: false },
+);
+const ProcessDescriptionModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/process-description-modal").then((m) => ({
+      default: m.ProcessDescriptionModal,
+    })),
+  { ssr: false },
+);
+const UpdatedSchemeOfInspectionModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/updated-scheme-of-inspection-modal").then((m) => ({
+      default: m.UpdatedSchemeOfInspectionModal,
+    })),
+  { ssr: false },
+);
+const LocationMapModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/location-map-modal").then((m) => ({
+      default: m.LocationMapModal,
+    })),
+  { ssr: false },
+);
+const ApplicationChecklistBulkPrintModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/application-checklist-bulk-print-modal").then((m) => ({
+      default: m.ApplicationChecklistBulkPrintModal,
+    })),
+  { ssr: false },
+);
+const AuthorizationLetterModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/authorization-letter-modal").then((m) => ({
+      default: m.AuthorizationLetterModal,
+    })),
+  { ssr: false },
+);
+const ApplicationDetailsModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/application-details-modal").then((m) => ({
+      default: m.ApplicationDetailsModal,
+    })),
+  { ssr: false },
+);
+const SelfEvaluationFormModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/self-evaluation-form-modal").then((m) => ({
+      default: m.SelfEvaluationFormModal,
+    })),
+  { ssr: false },
+);
+const IsCodeEditModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/is-code-edit-modal").then((m) => ({
+      default: m.IsCodeEditModal,
+    })),
+  { ssr: false },
+);
+const IsCodeViewModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/is-code-view-modal").then((m) => ({
+      default: m.IsCodeViewModal,
+    })),
+  { ssr: false },
+);
 import {
   buildApplicationChecklistPayload,
   parseApplicationChecklistNotes,
@@ -648,6 +837,8 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     }),
   );
   const [client, setClient] = useState<ClientDetail | null>(null);
+  const clientRef = useRef<ClientDetail | null>(null);
+  clientRef.current = client;
   const [isCode, setIsCode] = useState<IsCodeDetail | null>(null);
   const [docTemplateItem, setDocTemplateItem] = useState<ChecklistRow | null>(null);
   const [showClientEdit, setShowClientEdit] = useState(false);
@@ -678,6 +869,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [showUpdatedSchemeOfInspection, setShowUpdatedSchemeOfInspection] = useState(false);
   const [showSelfEvaluationForm, setShowSelfEvaluationForm] = useState(false);
   const [showUndertakingGeneralIss, setShowUndertakingGeneralIss] = useState(false);
+  const [showChecklistBulkPrint, setShowChecklistBulkPrint] = useState(false);
   const [reopenFtrAfterSampleEdit, setReopenFtrAfterSampleEdit] = useState(false);
   const [sampleOfferLetterFocusIndex, setSampleOfferLetterFocusIndex] = useState<number | null>(
     null,
@@ -756,8 +948,12 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [legalDocumentRows, setLegalDocumentRows] = useState<LegalDocumentRow[]>(() =>
     editorRowsFromStored(initialNotes.legalDocuments),
   );
+  const [notesReady, setNotesReady] = useState(
+    () => Boolean((row.notes ?? "").trim()),
+  );
+  const notesHydratedRef = useRef(Boolean((row.notes ?? "").trim()));
+  const notesLoadGenRef = useRef(0);
   const productManualPrefilledRef = useRef(false);
-  const firmScalePrefilledRef = useRef(false);
   const [saving, startSave] = useTransition();
   const saveNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingNotesSaveRef = useRef<{
@@ -836,13 +1032,88 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         legalDocuments: overrides.legalDocuments ?? storedFromEditor(legalDocumentRows),
         meta: overrides.meta ?? applicationMeta,
       });
-      if (row.source === "bis_new_applications") {
-        await updateBisNewApplicationNotes(row.id, payload);
-      } else {
-        await updateBisProjectNotes(row.id, payload);
+
+      // Merge with existing DB notes so a partial/stale local state cannot wipe
+      // previously saved sections (FTR, OSL samples, etc.).
+      const supabase = createClient();
+      const notesTable =
+        row.source === "bis_new_applications" ? "bis_new_applications" : "bis_projects";
+      const { data: existingRow } = await supabase
+        .from(notesTable)
+        .select("notes")
+        .eq("id", row.id)
+        .maybeSingle();
+      let mergedPayload = payload;
+      try {
+        const existingObj = JSON.parse(
+          String(existingRow?.notes ?? "").trim() || "{}",
+        ) as Record<string, unknown>;
+        const newObj = JSON.parse(payload) as Record<string, unknown>;
+        if (existingObj && typeof existingObj === "object" && existingObj.type === "application_checklist") {
+          const preserveKeys = [
+            "license_scope",
+            "license_scope_format",
+            "license_scope_rows",
+            "osl_sample_requirements",
+            "pi_sample_requirements",
+            "top_management",
+            "technical_staff",
+            "factory_test_reports",
+            "subcontracted_tests",
+            "subcontracted_tests_document",
+            "cmpf_305_machinery",
+            "raw_material_details",
+            "certified_reference_materials",
+            "cmpf_306",
+            "cmpf_307",
+            "cmpf_310",
+            "cmpf_311",
+            "undertaking_option_2",
+            "undertaking_general_iss",
+            "authorization_letter",
+            "undertaking_long_duration_test",
+            "undertaking_minimum_marking_fee",
+            "location_map",
+            "plant_layout",
+            "process_flow_chart",
+            "process_description",
+            "updated_scheme_of_inspection",
+            "self_evaluation_form",
+            "legal_documents",
+          ] as const;
+          const explicitClear = new Set<string>();
+          if (overrides.factoryTestReports !== undefined && (overrides.factoryTestReports?.length ?? 0) === 0) {
+            explicitClear.add("factory_test_reports");
+          }
+          if (overrides.oslSampleRequirements !== undefined && (overrides.oslSampleRequirements?.length ?? 0) === 0) {
+            explicitClear.add("osl_sample_requirements");
+          }
+          if (overrides.piSampleRequirements !== undefined && (overrides.piSampleRequirements?.length ?? 0) === 0) {
+            explicitClear.add("pi_sample_requirements");
+          }
+          for (const key of preserveKeys) {
+            if (!(key in newObj) && key in existingObj && !explicitClear.has(key)) {
+              newObj[key] = existingObj[key];
+            }
+          }
+          mergedPayload = JSON.stringify(newObj);
+        }
+      } catch {
+        // If existing notes are not JSON, keep the newly built payload.
+      }
+
+      const res =
+        row.source === "bis_new_applications"
+          ? await updateBisNewApplicationNotes(row.id, mergedPayload)
+          : await updateBisProjectNotes(row.id, mergedPayload);
+      if (!res.ok) {
+        window.alert(`Could not save application data: ${res.error}`);
       }
     });
   }, [row.id, row.source, items, licenseScope, licenseScopeFormat, licenseScopeRows, oslSampleRequirements, piSampleRequirements, topManagement, technicalStaff, factoryTestReports, subcontractedTests, subcontractedTestsDocument, cmpf305Machinery, rawMaterialDetails, certifiedReferenceMaterials, cmpf306, cmpf307, cmpf310, cmpf311, undertakingOption2, undertakingGeneralIss, authorizationLetter, undertakingLongDurationTest, undertakingMinimumMarkingFee, locationMap, plantLayout, processFlowChart, processDescription, updatedSchemeOfInspection, selfEvaluationForm, legalDocumentRows, applicationMeta]);
+
+  const flushNotesSaveRef = useRef(flushNotesSave);
+  flushNotesSaveRef.current = flushNotesSave;
 
   const saveNotesToDb = useCallback(
     (overrides?: {
@@ -882,15 +1153,17 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         ...pendingNotesSaveRef.current,
         ...overrides,
       };
+      // Wait until notes are hydrated from DB so an early save cannot wipe data.
+      if (!notesHydratedRef.current) return;
       if (saveNotesTimerRef.current) {
         clearTimeout(saveNotesTimerRef.current);
       }
       saveNotesTimerRef.current = setTimeout(() => {
         saveNotesTimerRef.current = null;
-        flushNotesSave();
+        flushNotesSaveRef.current();
       }, 500);
     },
-    [flushNotesSave],
+    [],
   );
 
   useEffect(() => {
@@ -900,10 +1173,11 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         saveNotesTimerRef.current = null;
       }
       if (Object.keys(pendingNotesSaveRef.current).length > 0) {
-        flushNotesSave();
+        flushNotesSaveRef.current();
       }
     };
-  }, [flushNotesSave]);
+    // Mount/unmount only — flush via ref so dependency size stays constant across HMR.
+  }, []);
 
   const reloadOptions = useCallback(async () => {
     const supabase = createClient();
@@ -967,20 +1241,38 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     })();
 
     const supabase = createClient();
+    const loadGen = ++notesLoadGenRef.current;
+    // Always re-hydrate from DB when this application modal identity changes.
+    notesHydratedRef.current = false;
+    setNotesReady(false);
 
     async function loadDetails() {
       const tasks: PromiseLike<void>[] = [];
+      const notesTable =
+        row.source === "bis_new_applications" ? "bis_new_applications" : "bis_projects";
 
       tasks.push(
         supabase
-          .from("bis_projects")
+          .from(notesTable)
           .select("notes")
           .eq("id", row.id)
           .maybeSingle()
           .then(({ data }) => {
-            if (cancelled) return;
+            if (cancelled || loadGen !== notesLoadGenRef.current) return;
             const parsed = parseApplicationChecklistNotes(data?.notes ?? row.notes);
             const scope = parseBisProjectLicenseScopeNotes(data?.notes ?? row.notes);
+            setItems(
+              parsed.items.map((it) => {
+                const rowItem = it as Record<string, unknown>;
+                return {
+                  id: rowItem.id as string,
+                  description: (rowItem.description as string) ?? "",
+                  particular: (rowItem.particular as string) ?? "",
+                  content: (rowItem.content as string) ?? "",
+                  done: Boolean(rowItem.done),
+                };
+              }),
+            );
             setLicenseScope(
               scope.scopeType === "plain" ? scope.plainText || parsed.licenseScope : parsed.licenseScope,
             );
@@ -991,7 +1283,45 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
             setTopManagement(parsed.topManagement);
             setTechnicalStaff(parsed.technicalStaff);
             setFactoryTestReports(parsed.factoryTestReports);
-            setApplicationMeta(parsed.meta);
+            setSubcontractedTests(parsed.subcontractedTests);
+            setSubcontractedTestsDocument(parsed.subcontractedTestsDocument);
+            setCmpf305Machinery(parsed.cmpf305Machinery);
+            setRawMaterialDetails(parsed.rawMaterialDetails);
+            setCertifiedReferenceMaterials(parsed.certifiedReferenceMaterials);
+            setCmpf306(parsed.cmpf306);
+            setCmpf307(parsed.cmpf307);
+            setCmpf310(parsed.cmpf310);
+            setCmpf311(parsed.cmpf311);
+            setUndertakingOption2(parsed.undertakingOption2);
+            setUndertakingGeneralIss(parsed.undertakingGeneralIss);
+            setAuthorizationLetter(parsed.authorizationLetter);
+            setUndertakingLongDurationTest(parsed.undertakingLongDurationTest);
+            setUndertakingMinimumMarkingFee(parsed.undertakingMinimumMarkingFee);
+            setLocationMap(parsed.locationMap);
+            setPlantLayout(parsed.plantLayout);
+            setProcessFlowChart(parsed.processFlowChart);
+            setProcessDescription(parsed.processDescription);
+            setUpdatedSchemeOfInspection(parsed.updatedSchemeOfInspection);
+            setSelfEvaluationForm(parsed.selfEvaluationForm);
+            setLegalDocumentRows(editorRowsFromStored(parsed.legalDocuments));
+            setApplicationMeta(() => {
+              const meta = parsed.meta;
+              const scaleFromClient = clientRef.current?.company_scale?.trim() ?? "";
+              if (!meta.firm_scale.trim() && scaleFromClient) {
+                return { ...meta, firm_scale: scaleFromClient };
+              }
+              return meta;
+            });
+            notesHydratedRef.current = true;
+            setNotesReady(true);
+            // Flush any saves that were queued before notes finished loading.
+            if (Object.keys(pendingNotesSaveRef.current).length > 0) {
+              if (saveNotesTimerRef.current) clearTimeout(saveNotesTimerRef.current);
+              saveNotesTimerRef.current = setTimeout(() => {
+                saveNotesTimerRef.current = null;
+                flushNotesSaveRef.current();
+              }, 0);
+            }
           }),
       );
 
@@ -1003,7 +1333,18 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
             .eq("id", row.client_id)
             .single()
             .then(({ data }) => {
-              if (!cancelled) setClient(data as ClientDetail | null);
+              if (!cancelled) {
+                const detail = data as ClientDetail | null;
+                setClient(detail);
+                const scale = detail?.company_scale?.trim() ?? "";
+                if (scale) {
+                  setApplicationMeta((prev) =>
+                    prev.firm_scale.trim()
+                      ? prev
+                      : { ...prev, firm_scale: scale },
+                  );
+                }
+              }
             }),
         );
       }
@@ -1030,7 +1371,8 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     return () => {
       cancelled = true;
     };
-  }, [row.client_id, row.is_code_id, row.id, row.notes]);
+    // Keep this dependency list fixed-length (client, is-code, project, source).
+  }, [row.client_id, row.is_code_id, row.id, row.source]);
 
   const done = items.filter((item) => item.done).length;
   const total = items.length;
@@ -1071,18 +1413,14 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
 
   useEffect(() => {
     productManualPrefilledRef.current = false;
-    firmScalePrefilledRef.current = false;
   }, [row.id]);
 
+  // Auto-pick Firm Scale from Client Master whenever application value is empty.
+  // Do not use a one-shot ref — notes reload can wipe meta after client loads.
   useEffect(() => {
-    if (firmScalePrefilledRef.current) return;
     const fromClient = client?.company_scale?.trim() ?? "";
-    if (applicationMeta.firm_scale.trim()) {
-      firmScalePrefilledRef.current = true;
-      return;
-    }
     if (!fromClient) return;
-    firmScalePrefilledRef.current = true;
+    if (applicationMeta.firm_scale.trim()) return;
     const next = { ...applicationMeta, firm_scale: fromClient };
     setApplicationMeta(next);
     saveNotesToDb({ meta: next });
@@ -1305,6 +1643,49 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       bisBranchCountry: client?.country ?? "India",
       inspectionDate: row.target_date ?? "",
       applicationNumber: applicationMeta.application_number,
+    };
+  }
+
+  function buildChecklistBulkPrintContext() {
+    return {
+      letterData: buildDeclarationData(),
+      topManagement,
+      technicalStaff,
+      factoryTestReports,
+      oslSampleRequirements,
+      piSampleRequirements,
+      licenseScope,
+      licenseScopeFormat,
+      licenseScopeRows,
+      cmpf305Machinery,
+      cmpf306,
+      cmpf307,
+      cmpf310,
+      cmpf311,
+      rawMaterialDetails,
+      certifiedReferenceMaterials,
+      undertakingOption2,
+      undertakingGeneralIss,
+      authorizationLetter,
+      undertakingLongDurationTest,
+      undertakingMinimumMarkingFee,
+      locationMap,
+      plantLayout,
+      processFlowChart,
+      processDescription,
+      updatedSchemeOfInspection,
+      selfEvaluationForm,
+      applicationNumber: applicationMeta.application_number,
+      dateOfApplication: applicationMeta.date_of_application,
+      dateOfInspection: applicationMeta.date_of_inspection,
+      markingClause: applicationMeta.marking_clause,
+      packagingClause: applicationMeta.packaging_clause,
+      weeklyOff: applicationMeta.weekly_off,
+      inspectionOfficerName: applicationMeta.inspection_officer_name,
+      inspectionOfficerDesignation: applicationMeta.inspection_officer_designation,
+      licenceNumber: row.cm_l_digits
+        ? formatCmDisplay(row.project_kind, row.cm_l_digits)
+        : "",
     };
   }
 
@@ -1567,6 +1948,11 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           </div>
         </div>
 
+        {!notesReady ? (
+          <div className="flex flex-1 items-center justify-center text-sm text-zinc-500 dark:text-zinc-400">
+            Loading application data…
+          </div>
+        ) : (
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {/* Application documents */}
         <div className="border-b border-zinc-200 bg-zinc-50 px-3 py-3 sm:px-5 sm:py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
@@ -1728,10 +2114,18 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         )}
 
         </div>
+        )}
 
         {/* Footer */}
         <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-200 bg-zinc-50 px-3 py-3 sm:px-5 dark:border-zinc-800 dark:bg-zinc-900">
-          <div className="flex min-w-0 flex-1 items-center gap-3">
+          <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => setShowChecklistBulkPrint(true)}
+              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+            >
+              Print / Download PDF
+            </button>
             {total > 0 && (
               <p className="hidden text-xs text-zinc-400 sm:inline">
                 {done === total ? "✓ All items completed" : "Fill particulars and mark items as done"}
@@ -1755,6 +2149,13 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           </button>
         </div>
       </div>
+
+      {showChecklistBulkPrint && (
+        <ApplicationChecklistBulkPrintModal
+          ctx={buildChecklistBulkPrintContext()}
+          onClose={() => setShowChecklistBulkPrint(false)}
+        />
+      )}
 
       {/* Document Template Modal */}
       {docTemplateItem && (

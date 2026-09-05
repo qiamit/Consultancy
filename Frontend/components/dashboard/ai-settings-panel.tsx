@@ -15,6 +15,7 @@ const PRESET_PROVIDERS = [
   "Anthropic",
   "OpenAI",
   "Google",
+  "DeepSeek",
   "Mistral",
   "Meta (Llama)",
   "Cohere",
@@ -36,6 +37,12 @@ const PRESET_MODELS: Record<string, { id: string; name: string }[]> = {
     { id: "gemini-2.0-flash", name: "Gemini 2.0 Flash" },
     { id: "gemini-1.5-pro", name: "Gemini 1.5 Pro" },
     { id: "gemini-1.5-flash", name: "Gemini 1.5 Flash" },
+  ],
+  DeepSeek: [
+    { id: "deepseek-v4-flash", name: "DeepSeek V4 Flash" },
+    { id: "deepseek-v4-pro", name: "DeepSeek V4 Pro" },
+    { id: "deepseek-chat", name: "DeepSeek Chat (legacy)" },
+    { id: "deepseek-reasoner", name: "DeepSeek Reasoner (legacy)" },
   ],
   Mistral: [
     { id: "mistral-large-latest", name: "Mistral Large" },

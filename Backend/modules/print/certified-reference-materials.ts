@@ -231,29 +231,60 @@ function buildFormBody(data: CertifiedReferenceMaterialsLetterData, settings: Pr
     .join("");
 }
 
+export type CertifiedReferenceMaterialsPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildCertifiedReferenceMaterialsCompany(
   data: CertifiedReferenceMaterialsLetterData,
+  assets?: CertifiedReferenceMaterialsPrintAssets,
 ): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultCertifiedReferenceMaterialsPrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
     orientation: "portrait",
-    margin_top: 8,
+    letterhead_layout: "logo-na",
     font_family: "Times New Roman",
     font_size: 9,
     show_page_numbers: false,
     show_footer_line: false,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for CRM preview / Word (same as Top Management). */
+export function certifiedReferenceMaterialsLetterheadSettings(
+  settings: PrintSettings,
+): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildCertifiedReferenceMaterialsHtml(
   data: CertifiedReferenceMaterialsLetterData,
   settings: PrintSettings,
+  assets?: CertifiedReferenceMaterialsPrintAssets,
 ): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const letterheadSettings = certifiedReferenceMaterialsLetterheadSettings(settings);
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .crm-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -374,10 +405,10 @@ export function buildCertifiedReferenceMaterialsHtml(
 
   return buildPrintDocument({
     title: "List of Certified Reference Material",
-    bodyHtml: buildFormBody(data, settings),
+    bodyHtml: buildFormBody(data, letterheadSettings),
     extraStyles: styles,
-    settings,
-    company: buildCertifiedReferenceMaterialsCompany(data),
+    settings: letterheadSettings,
+    company: buildCertifiedReferenceMaterialsCompany(data, assets),
   });
 }
 

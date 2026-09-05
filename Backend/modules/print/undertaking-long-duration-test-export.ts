@@ -8,8 +8,19 @@ import {
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import { LONG_DURATION_TEST_ROW_COUNT } from "@backend/modules/bis/undertaking-long-duration-test";
-import type { UndertakingLongDurationTestLetterData } from "@backend/modules/print/undertaking-long-duration-test";
+import {
+  buildUndertakingLongDurationTestCompany,
+  undertakingLongDurationTestLetterheadSettings,
+  type UndertakingLongDurationTestLetterData,
+  type UndertakingLongDurationTestPrintAssets,
+} from "@backend/modules/print/undertaking-long-duration-test";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -57,7 +68,11 @@ function plainParagraph(text: string): Paragraph {
 
 async function buildUndertakingLongDurationTestDocx(
   data: UndertakingLongDurationTestLetterData,
+  settings: PrintSettings,
+  assets?: UndertakingLongDurationTestPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = undertakingLongDurationTestLetterheadSettings(settings);
+  const company = buildUndertakingLongDurationTestCompany(data, assets);
   const doc = data.document;
   const declarant = doc.declarant_name || data.contactPerson || data.companyName || "—";
   const product = doc.product_for_mark || "—";
@@ -71,6 +86,7 @@ async function buildUndertakingLongDurationTestDocx(
         : "—";
 
   const children: Paragraph[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -104,16 +120,30 @@ async function buildUndertakingLongDurationTestDocx(
     plainParagraph(
       `Place: ${data.city || "—"}\nDate: ${formatMetaDate(data.dateOfInspection)}\nName: ${doc.signatory_name || declarant}\nDesignation: ${doc.signatory_designation || "—"}`,
     ),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   );
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadUndertakingLongDurationTestWord(
   data: UndertakingLongDurationTestLetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: UndertakingLongDurationTestPrintAssets,
 ): Promise<void> {
-  const docx = await buildUndertakingLongDurationTestDocx(data);
+  const docx = await buildUndertakingLongDurationTestDocx(data, settings, assets);
   const blob = await Packer.toBlob(docx);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

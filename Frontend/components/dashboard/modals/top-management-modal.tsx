@@ -6,6 +6,13 @@ import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import { TopManagementTableEditor } from "@/components/dashboard/top-management-table-editor";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import {
   buildTopManagementHtml,
@@ -13,11 +20,13 @@ import {
   DEFAULT_TOP_MANAGEMENT_TABLE_COLUMNS,
   iframeSizeForTopManagementPrintSettings,
   type TopManagementLetterData,
+  type TopManagementPrintAssets,
   type TopManagementTableColumnKey,
 } from "@backend/modules/print/top-management";
 import {
   downloadTopManagementWord,
 } from "@backend/modules/print/top-management-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
   editorRowsFromStored,
@@ -66,6 +75,7 @@ export function TopManagementModal({
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultTopManagementPrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<TopManagementPrintAssets>({});
   const [tableColumns, setTableColumns] = useState<TopManagementTableColumnKey[]>(
     () => [...DEFAULT_TOP_MANAGEMENT_TABLE_COLUMNS],
   );
@@ -74,11 +84,68 @@ export function TopManagementModal({
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
-
   const isFullNumber = letterData.isNumber?.trim() || "—";
-  const isTitle = letterData.isTitle ?? "";
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultTopManagementPrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep Top Management margin defaults in sync (overrides company 12mm).
+  useEffect(() => {
+    const defaults = defaultTopManagementPrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      letterhead_layout: "logo-na",
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      }));
+  }, []);
 
   const previewData = useMemo((): TopManagementLetterData => {
     const stored = storedFromEditor(rows);
@@ -92,13 +159,20 @@ export function TopManagementModal({
   }, [letterData, rows]);
 
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
-    const html = buildTopManagementHtml(previewData, printSettings, tableColumns);
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
+    const html = buildTopManagementHtml(
+      previewData,
+      printSettings,
+      tableColumns,
+      printAssets,
+    );
     doc.open();
     doc.write(html);
     doc.close();
-  }, [previewData, printSettings, tableColumns]);
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+  }, [previewData, printSettings, tableColumns, printAssets]);
 
   useEffect(() => {
     refreshPreview();
@@ -113,7 +187,12 @@ export function TopManagementModal({
   const iframeSize = iframeSizeForTopManagementPrintSettings(printSettings);
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      // Keep letterhead logo-free even if Print Settings changes layout.
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function handleSave() {
@@ -131,9 +210,34 @@ export function TopManagementModal({
   }
 
   function handleDownloadWord() {
-    void downloadTopManagementWord(previewData, printSettings, tableColumns).catch(() =>
-      window.alert("Unable to download Word file."),
+    void downloadTopManagementWord(
+      previewData,
+      printSettings,
+      tableColumns,
+      printAssets,
+    ).catch(() => window.alert("Unable to download Word file."));
+  }
+
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildTopManagementHtml(
+      previewData,
+      printSettings,
+      tableColumns,
+      printAssets,
     );
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `Top_Management_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
+    }
   }
 
   function toggleSettingsPanel(panel: "page" | "print") {
@@ -191,6 +295,14 @@ export function TopManagementModal({
             </button>
             <button
               type="button"
+              onClick={() => void handleDownloadPdf()}
+              disabled={pdfDownloading}
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+            >
+              {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
+            </button>
+            <button
+              type="button"
               onClick={() => toggleSettingsPanel("print")}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                 settingsPanel === "print"
@@ -218,6 +330,18 @@ export function TopManagementModal({
             >
               QE Assistant
             </button>
+            {isCodeId ? (
+              <button
+                type="button"
+                onClick={() => setShowIsCodeView(true)}
+                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                View IS Files
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={onClose}
@@ -238,30 +362,6 @@ export function TopManagementModal({
                 settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
               }`}
             >
-              <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-zinc-200">Top Management Details</p>
-                    <p className="mt-0.5 text-xs font-semibold text-teal-300">{isFullNumber}</p>
-                    {isTitle ? (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{isTitle}</p>
-                    ) : null}
-                  </div>
-                  {isCodeId ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowIsCodeView(true)}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      View IS Files
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
                 <TopManagementTableEditor theme="dark" rows={rows} onChange={setRows} />
               </div>
@@ -284,10 +384,8 @@ export function TopManagementModal({
                   ref={iframeRef}
                   title="Top Management print preview"
                   className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  style={{
-                    width: `min(100%, ${iframeSize.widthMm}mm)`,
-                    minHeight: `${iframeSize.heightMm}mm`,
-                  }}
+                  scrolling="no"
+                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
                 />
               </div>
             </div>
@@ -303,6 +401,7 @@ export function TopManagementModal({
                 onTopMgmtTableColumnsChange={
                   settingsPanel === "print" ? setTableColumns : undefined
                 }
+                hideLetterheadLogo
               />
             </div>
           )}

@@ -9,6 +9,13 @@ import {
 } from "@backend/modules/storage/technical-staff-documents";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
 import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
+import {
   SplitModalPaneTabs,
   type SplitModalPane,
 } from "@/components/dashboard/modals/split-modal-pane-tabs";
@@ -25,11 +32,12 @@ import {
   defaultAppointmentLetterPrintSettings,
   iframeSizeForPrintSettings,
   type AppointmentLetterData,
+  type AppointmentLetterPrintAssets,
 } from "@backend/modules/print/appointment-letter";
 import {
-  downloadAppointmentLetterExcel,
   downloadAppointmentLetterWord,
 } from "@backend/modules/print/appointment-letter-export";
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
   resolvePrimaryTopManagementPerson,
@@ -89,10 +97,12 @@ export function AppointmentLetterCreatorModal({
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultAppointmentLetterPrintSettings(),
   );
+  const [printAssets, setPrintAssets] = useState<AppointmentLetterPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [mobilePane, setMobilePane] = useState<SplitModalPane>("editor");
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
+  const [pdfDownloading, setPdfDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -110,6 +120,64 @@ export function AppointmentLetterCreatorModal({
       experience_years: person.experience_years,
     }));
   }
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultAppointmentLetterPrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst:
+          companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep Appointment Letter margin defaults in sync (matches Top Management / Plant & Machinery).
+  useEffect(() => {
+    const defaults = defaultAppointmentLetterPrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+      }));
+  }, []);
 
   const previewData = useMemo((): AppointmentLetterData => {
     const primary = resolvePrimaryTopManagementPerson(topManagement);
@@ -129,16 +197,18 @@ export function AppointmentLetterCreatorModal({
   }, [draft, topManagement, letterData.contactPerson]);
 
   const previewHtml = useMemo(
-    () => buildAppointmentLetterHtml(previewData, printSettings),
-    [previewData, printSettings],
+    () => buildAppointmentLetterHtml(previewData, printSettings, printAssets),
+    [previewData, printSettings, printAssets],
   );
 
   const refreshPreview = useCallback(() => {
-    const doc = iframeRef.current?.contentDocument;
-    if (!doc) return;
+    const iframe = iframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
     doc.open();
     doc.write(previewHtml);
     doc.close();
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
   }, [previewHtml]);
 
   useEffect(() => {
@@ -152,7 +222,11 @@ export function AppointmentLetterCreatorModal({
   }
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      letterhead_layout: "logo-na",
+    }));
   }
 
   function handlePrint() {
@@ -161,15 +235,26 @@ export function AppointmentLetterCreatorModal({
   }
 
   function handleDownloadWord() {
-    void downloadAppointmentLetterWord(previewData, printSettings).catch(() =>
+    void downloadAppointmentLetterWord(previewData, printSettings, printAssets).catch(() =>
       window.alert("Unable to download Word file."),
     );
   }
 
-  function handleDownloadExcel() {
-    void downloadAppointmentLetterExcel(previewData).catch(() =>
-      window.alert("Unable to download Excel file."),
-    );
+  async function handleDownloadPdf() {
+    if (pdfDownloading) return;
+    setPdfDownloading(true);
+    try {
+      const html = buildAppointmentLetterHtml(previewData, printSettings, printAssets);
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `Appointment_Letter_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: printSettings,
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+    } finally {
+      setPdfDownloading(false);
+    }
   }
 
   function toggleSettingsPanel(panel: "page" | "print") {
@@ -252,10 +337,11 @@ export function AppointmentLetterCreatorModal({
         </button>
         <button
           type="button"
-          onClick={handleDownloadExcel}
-          className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          onClick={() => void handleDownloadPdf()}
+          disabled={pdfDownloading}
+          className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
         >
-          Download Excel File
+          {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
         </button>
         <button
           type="button"
@@ -412,10 +498,8 @@ export function AppointmentLetterCreatorModal({
               ref={iframeRef}
               title="Appointment letter print preview"
               className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-              style={{
-                width: `min(100%, ${iframeSize.widthMm}mm)`,
-                minHeight: `${iframeSize.heightMm}mm`,
-              }}
+              scrolling="no"
+              style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
             />
           </div>
         </div>
@@ -426,6 +510,7 @@ export function AppointmentLetterCreatorModal({
               mode={settingsPanel}
               settings={printSettings}
               onChange={patchPrintSettings}
+              hideLetterheadLogo
             />
           </div>
         )}

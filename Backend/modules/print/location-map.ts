@@ -6,7 +6,12 @@ import {
   type ManufacturingScopeDeclarationData,
 } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
+  buildGoogleMapsEmbedUrl,
+  computeFitZoom,
+  isMapZoomFit,
   locationMapHasValidRoute,
+  MAP_ZOOM_FIT,
+  normalizeMapZoom,
   parseCoordinate,
   resolveMapZoom,
   type LocationMapStored,
@@ -28,6 +33,13 @@ export type LocationMapLetterData = Omit<
   firmRepName: string;
   firmRepDesignation: string;
 };
+
+export type LocationMapPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
 
 function esc(s: string): string {
   return String(s ?? "")
@@ -103,7 +115,11 @@ function buildStaticMapImageUrl(doc: LocationMapStored): string | null {
 
   const origin = `${fromLat},${fromLng}`;
   const destination = `${toLat},${toLng}`;
-  const zoom = String(resolveMapZoom(doc.map_zoom));
+  const zoom = String(
+    isMapZoomFit(doc.map_zoom) || normalizeMapZoom(doc.map_zoom) === MAP_ZOOM_FIT
+      ? computeFitZoom(fromLat, fromLng, toLat, toLng)
+      : resolveMapZoom(doc.map_zoom),
+  );
   const params = new URLSearchParams({
     size: "720x420",
     maptype: "roadmap",
@@ -155,6 +171,11 @@ function buildCoordinatesTableHtml(doc: LocationMapStored): string {
 
 function buildMapVisualHtml(data: LocationMapLetterData): string {
   const staticMapUrl = buildStaticMapImageUrl(data.document);
+  const embed =
+    data.embedUrl ||
+    (locationMapHasValidRoute(data.document)
+      ? buildGoogleMapsEmbedUrl(data.document)
+      : null);
 
   if (staticMapUrl) {
     return `
@@ -163,16 +184,27 @@ function buildMapVisualHtml(data: LocationMapLetterData): string {
 </div>`;
   }
 
-  if (data.embedUrl) {
+  if (embed) {
+    const linkHtml = data.directionsUrl
+      ? `<p class="loc-map-link" style="margin:8px 0 0;font-size:10px;">
+  <a href="${esc(data.directionsUrl)}" style="color:#1d4ed8;">Open route in Google Maps</a>
+</p>`
+      : "";
+
     return `
 <div class="loc-map-visual">
-  <iframe
-    title="Location map route"
-    src="${esc(data.embedUrl)}"
-    style="width:100%;height:420px;border:1px solid #cbd5e1;display:block;"
-    loading="lazy"
-    referrerpolicy="no-referrer-when-downgrade"
-  ></iframe>
+  <div class="loc-gmap-wrap" style="position:relative;width:100%;height:125mm;border:1px solid #cbd5e1;background:#e2e8f0;">
+    <iframe
+      class="loc-gmap-frame"
+      title="Location map route"
+      src="${esc(embed)}"
+      style="position:absolute;inset:0;width:100%;height:100%;border:0;display:block;"
+      loading="eager"
+      referrerpolicy="no-referrer-when-downgrade"
+      allowfullscreen
+    ></iframe>
+  </div>
+  ${linkHtml}
 </div>`;
   }
 
@@ -217,8 +249,16 @@ ${buildMapVisualHtml(data)}
 ${buildSignatoryBlockHtml(data)}`;
 }
 
-export function buildLocationMapCompany(data: LocationMapLetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+export function buildLocationMapCompany(
+  data: LocationMapLetterData,
+  assets?: LocationMapPrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Location Map letterhead matches Top Management — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultLocationMapPrintSettings(): PrintSettings {
@@ -226,97 +266,149 @@ export function defaultLocationMapPrintSettings(): PrintSettings {
     ...defaultDeclarationPrintSettings(),
     orientation: "portrait",
     show_letterhead: true,
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 11,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Location Map preview / Word. */
+export function locationMapLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildLocationMapHtml(
   data: LocationMapLetterData,
   settings: PrintSettings,
+  assets?: LocationMapPrintAssets,
 ): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const pageSize = iframeSizeForPrintSettings(settings);
+  const contentHeightMm = Math.max(
+    80,
+    pageSize.heightMm - settings.margin_top - settings.margin_bottom,
+  );
   const styles = `
+    html, body {
+      overflow: hidden !important;
+      height: ${pageSize.heightMm}mm;
+      max-height: ${pageSize.heightMm}mm;
+    }
+    .doc-page {
+      height: ${pageSize.heightMm}mm;
+      max-height: ${pageSize.heightMm}mm;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
     .loc-sheet {
       font-family: "Times New Roman", Times, serif;
       color: #111;
       font-size: 10px;
       position: relative;
-      min-height: ${sheetMinHeight};
+      height: ${contentHeightMm}mm;
+      max-height: ${contentHeightMm}mm;
+      overflow: hidden;
       box-sizing: border-box;
-      padding-bottom: 4mm;
+      padding-bottom: 2mm;
     }
     .loc-page-indicator {
       position: absolute;
       right: 0;
       bottom: 0;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 600;
       text-align: right;
     }
     .loc-title {
       text-align: center;
-      font-size: 16px;
+      font-size: 14px;
       font-weight: 700;
       text-decoration: underline;
-      margin: 0 0 16px;
-      line-height: 1.35;
+      margin: 0 0 8px;
+      line-height: 1.3;
     }
     .loc-to-row {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 16px;
-      margin: 0 0 12px;
+      gap: 12px;
+      margin: 0 0 6px;
     }
     .loc-to-block {
       flex: 1;
       min-width: 0;
-      font-size: 11px;
-      line-height: 1.55;
+      font-size: 10px;
+      line-height: 1.4;
     }
     .loc-date-block {
       flex-shrink: 0;
       text-align: right;
       white-space: nowrap;
-      font-size: 11px;
-      line-height: 1.55;
+      font-size: 10px;
+      line-height: 1.4;
     }
     .loc-salutation,
     .loc-declaration,
     .loc-truth-declaration {
-      margin: 0 0 10px;
+      margin: 0 0 6px;
       font-size: 10px;
-      line-height: 1.55;
+      line-height: 1.4;
       text-align: justify;
     }
     .loc-truth-declaration {
-      margin-top: 14px;
+      margin-top: 8px;
     }
     .loc-map-visual {
-      margin: 0 0 12px;
+      margin: 0 0 6px;
+      width: 100%;
+    }
+    .loc-gmap-wrap {
+      page-break-inside: avoid;
+      width: 100% !important;
+      height: 125mm !important;
+      max-height: 125mm;
+    }
+    .loc-map-link {
+      margin: 4px 0 0 !important;
+      font-size: 9px !important;
     }
     .loc-map-placeholder {
       border: 1px dashed #94a3b8;
-      min-height: 180px;
+      width: 100%;
+      height: 125mm;
+      max-height: 125mm;
       display: flex;
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 16px;
-      font-size: 11px;
+      padding: 12px;
+      font-size: 10px;
       color: #64748b;
-      margin-bottom: 12px;
+      margin-bottom: 6px;
+    }
+    .loc-sheet table {
+      margin: 6px 0 8px !important;
+    }
+    .loc-sheet table td {
+      padding: 4px 6px !important;
+      font-size: 9px !important;
     }
     .loc-signatory-block {
-      margin-top: 28px;
+      margin-top: 12px;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
       font-size: 10px;
-      line-height: 1.6;
+      line-height: 1.45;
       text-align: right;
     }
     .loc-signatory-for {
@@ -324,8 +416,8 @@ export function buildLocationMapHtml(
       text-align: right;
     }
     .loc-signatory-sig {
-      margin-top: 32px;
-      min-width: 200px;
+      margin-top: 18px;
+      min-width: 180px;
       text-align: right;
     }
     .loc-signatory-line {
@@ -341,8 +433,8 @@ export function buildLocationMapHtml(
     title: "Location Map",
     bodyHtml: `<div class="loc-sheet">${buildBodyHtml(data)}${buildPageIndicatorHtml()}</div>`,
     extraStyles: styles,
-    settings: { ...settings, show_page_numbers: false },
-    company: buildLocationMapCompany(data),
+    settings: locationMapLetterheadSettings(settings),
+    company: buildLocationMapCompany(data, assets),
   });
 }
 

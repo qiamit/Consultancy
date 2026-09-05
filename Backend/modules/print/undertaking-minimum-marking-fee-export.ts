@@ -7,8 +7,19 @@ import {
   TextRun,
 } from "docx";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
-import type { UndertakingMinimumMarkingFeeLetterData } from "@backend/modules/print/undertaking-minimum-marking-fee";
+import {
+  buildUndertakingMinimumMarkingFeeCompany,
+  undertakingMinimumMarkingFeeLetterheadSettings,
+  type UndertakingMinimumMarkingFeeLetterData,
+  type UndertakingMinimumMarkingFeePrintAssets,
+} from "@backend/modules/print/undertaking-minimum-marking-fee";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -56,12 +67,17 @@ function plainParagraph(text: string): Paragraph {
 
 async function buildUndertakingMinimumMarkingFeeDocx(
   data: UndertakingMinimumMarkingFeeLetterData,
+  settings: PrintSettings,
+  assets?: UndertakingMinimumMarkingFeePrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = undertakingMinimumMarkingFeeLetterheadSettings(settings);
+  const company = buildUndertakingMinimumMarkingFeeCompany(data, assets);
   const doc = data.document;
   const sigName = data.firmRepName || data.contactPerson || "—";
   const sigDesig = data.firmRepDesignation || "—";
 
   const children: Paragraph[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -101,16 +117,30 @@ async function buildUndertakingMinimumMarkingFeeDocx(
       spacing: { before: 40, after: 0 },
       children: [bodyRun(`Designation: ${sigDesig}`)],
     }),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadUndertakingMinimumMarkingFeeWord(
   data: UndertakingMinimumMarkingFeeLetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: UndertakingMinimumMarkingFeePrintAssets,
 ): Promise<void> {
-  const docx = await buildUndertakingMinimumMarkingFeeDocx(data);
+  const docx = await buildUndertakingMinimumMarkingFeeDocx(data, settings, assets);
   const blob = await Packer.toBlob(docx);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

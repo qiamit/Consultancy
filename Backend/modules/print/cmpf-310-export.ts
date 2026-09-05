@@ -13,9 +13,20 @@ import {
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import { formatCmpf310RupeeDisplay } from "@backend/modules/bis/cmpf-310";
-import type { Cmpf310LetterData } from "@backend/modules/print/cmpf-310";
+import {
+  buildCmpf310Company,
+  cmpf310LetterheadSettings,
+  type Cmpf310LetterData,
+  type Cmpf310PrintAssets,
+} from "@backend/modules/print/cmpf-310";
 import { formatCmpf305ApplicantAddress } from "@backend/modules/print/cmpf-305";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -61,7 +72,13 @@ function plainParagraph(text: string): Paragraph {
   });
 }
 
-async function buildCmpf310Docx(data: Cmpf310LetterData): Promise<Document> {
+async function buildCmpf310Docx(
+  data: Cmpf310LetterData,
+  settings: PrintSettings,
+  assets?: Cmpf310PrintAssets,
+): Promise<Document> {
+  const letterheadSettings = cmpf310LetterheadSettings(settings);
+  const company = buildCmpf310Company(data, assets);
   const doc = data.document;
   const sigName = doc.signatory_name || data.contactPerson || "—";
   const sigDesig = doc.signatory_designation || "—";
@@ -104,6 +121,7 @@ async function buildCmpf310Docx(data: Cmpf310LetterData): Promise<Document> {
   });
 
   const children: (Paragraph | Table)[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       children: [bodyRun("CMPF - 310", true)],
@@ -150,16 +168,30 @@ async function buildCmpf310Docx(data: Cmpf310LetterData): Promise<Document> {
       spacing: { before: 40, after: 0 },
       children: [bodyRun(`Designation: ${sigDesig}`)],
     }),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadCmpf310Word(
   data: Cmpf310LetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: Cmpf310PrintAssets,
 ): Promise<void> {
-  const doc = await buildCmpf310Docx(data);
+  const doc = await buildCmpf310Docx(data, settings, assets);
   const blob = await Packer.toBlob(doc);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

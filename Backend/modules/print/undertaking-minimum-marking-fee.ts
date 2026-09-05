@@ -163,10 +163,23 @@ function buildFormBody(data: UndertakingMinimumMarkingFeeLetterData): string {
 </div>`;
 }
 
+export type UndertakingMinimumMarkingFeePrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildUndertakingMinimumMarkingFeeCompany(
   data: UndertakingMinimumMarkingFeeLetterData,
+  assets?: UndertakingMinimumMarkingFeePrintAssets,
 ): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultUndertakingMinimumMarkingFeePrintSettings(): PrintSettings {
@@ -174,17 +187,35 @@ export function defaultUndertakingMinimumMarkingFeePrintSettings(): PrintSetting
     ...defaultDeclarationPrintSettings(),
     orientation: "portrait",
     show_letterhead: true,
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 11,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Minimum Marking Fee preview / Word (same as Top Management). */
+export function undertakingMinimumMarkingFeeLetterheadSettings(
+  settings: PrintSettings,
+): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildUndertakingMinimumMarkingFeeHtml(
   data: UndertakingMinimumMarkingFeeLetterData,
   settings: PrintSettings,
+  assets?: UndertakingMinimumMarkingFeePrintAssets,
 ): string {
+  const letterheadSettings = undertakingMinimumMarkingFeeLetterheadSettings(settings);
   const styles = `
     .mmf-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -265,8 +296,8 @@ export function buildUndertakingMinimumMarkingFeeHtml(
     title: "Undertaking for Minimum Marking Fee",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings,
-    company: buildUndertakingMinimumMarkingFeeCompany(data),
+    settings: letterheadSettings,
+    company: buildUndertakingMinimumMarkingFeeCompany(data, assets),
   });
 }
 

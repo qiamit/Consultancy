@@ -14,6 +14,12 @@ import { formatApplicationNumberDisplay } from "@backend/modules/bis/application
 import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { buildClassSignatoryBlockHtml } from "@backend/modules/print/signatory-signature";
+import {
+  iframeSizeForPagedPrintSettings,
+  pagedPrintSheetStyles,
+  printPageGapHtml,
+  printPageIndicatorHtml,
+} from "@backend/modules/print/paged-preview";
 
 export type Cmpf310LetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -51,14 +57,10 @@ function formatBisBranchLine(branchName: string, state: string): string {
   return `${esc(branch)}, ${esc(st)}, INDIA`;
 }
 
-function buildFormHeaderHtml(): string {
+function buildFormHeaderHtml(continued = false): string {
   return `
 <div class="cmpf-form-id">CMPF - 310</div>
-<h1 class="cmpf-title">Acceptance of Rate of Marking Fee</h1>`;
-}
-
-function buildPageIndicatorHtml(): string {
-  return `<div class="cmpf-page-indicator">Page 01 of 01</div>`;
+<h1 class="cmpf-title">Acceptance of Rate of Marking Fee${continued ? " (Continued)" : ""}</h1>`;
 }
 
 function buildLetterIntroHtml(data: Cmpf310LetterData): string {
@@ -108,17 +110,44 @@ function buildRateTableHtml(doc: Cmpf310Stored): string {
 </table>`;
 }
 
-function buildPaymentTermsHtml(markingFeeInline: string): string {
-  return `
-<p class="cmpf-section-heading"><strong>2. The marking fee shall be payable as under:</strong></p>
-<div class="cmpf-terms">
-  <p><strong>A)</strong> The marking fee indicated above is ${esc(markingFeeInline)}, which shall constitute the minimum marking fee payable in advance for the validity period of the licence.</p>
-  <p><strong>B)</strong> During the first year of operation, the actual marking fee shall be calculated by multiplying the unit rate stated above by the quantity of production marked with the Standard Mark during the first nine months of operation.</p>
-  <p><strong>C)</strong> For subsequent years, the actual marking fee shall be calculated by multiplying the unit rate by the quantity of production marked with the Standard Mark during the full year of operation.</p>
-  <p><strong>D)</strong> In case the actual marking fee calculated under clauses (B) and (C) above exceeds the advance minimum marking fee paid, we shall pay the difference to BIS within one month of submission of the marking fee return.</p>
-  <p><strong>E)</strong> We shall accept any variation in the rate of marking fee as may be specified under the revised regulations of the Government, and the same shall be borne by us.</p>
-  <p><strong>F)</strong> We shall not claim any refund in case the actual marking fee calculated under clauses (B) and (C) above is less than the tentative marking fee indicated above.</p>
-</div>`;
+function buildPaymentTermsHtml(
+  markingFeeInline: string,
+  range: "all" | "first" | "rest" = "all",
+): string {
+  const all: { key: string; html: string }[] = [
+    {
+      key: "A",
+      html: `<p><strong>A)</strong> The marking fee indicated above is ${esc(markingFeeInline)}, which shall constitute the minimum marking fee payable in advance for the validity period of the licence.</p>`,
+    },
+    {
+      key: "B",
+      html: `<p><strong>B)</strong> During the first year of operation, the actual marking fee shall be calculated by multiplying the unit rate stated above by the quantity of production marked with the Standard Mark during the first nine months of operation.</p>`,
+    },
+    {
+      key: "C",
+      html: `<p><strong>C)</strong> For subsequent years, the actual marking fee shall be calculated by multiplying the unit rate by the quantity of production marked with the Standard Mark during the full year of operation.</p>`,
+    },
+    {
+      key: "D",
+      html: `<p><strong>D)</strong> In case the actual marking fee calculated under clauses (B) and (C) above exceeds the advance minimum marking fee paid, we shall pay the difference to BIS within one month of submission of the marking fee return.</p>`,
+    },
+    {
+      key: "E",
+      html: `<p><strong>E)</strong> We shall accept any variation in the rate of marking fee as may be specified under the revised regulations of the Government, and the same shall be borne by us.</p>`,
+    },
+    {
+      key: "F",
+      html: `<p><strong>F)</strong> We shall not claim any refund in case the actual marking fee calculated under clauses (B) and (C) above is less than the tentative marking fee indicated above.</p>`,
+    },
+  ];
+  const items =
+    range === "first" ? all.slice(0, 3) : range === "rest" ? all.slice(3) : all;
+  const heading =
+    range === "rest"
+      ? `<p class="cmpf-section-heading"><strong>2. The marking fee shall be payable as under (Continued):</strong></p>`
+      : `<p class="cmpf-section-heading"><strong>2. The marking fee shall be payable as under:</strong></p>`;
+
+  return `${heading}<div class="cmpf-terms">${items.map((i) => i.html).join("")}</div>`;
 }
 
 function buildSignatoryBlockHtml(data: Cmpf310LetterData): string {
@@ -137,64 +166,132 @@ function buildSignatoryBlockHtml(data: Cmpf310LetterData): string {
   });
 }
 
-function buildBodyHtml(data: Cmpf310LetterData): string {
+/** True when letterhead + body is unlikely to fit on one selected paper page. */
+export function cmpf310NeedsSecondPage(settings: PrintSettings): boolean {
+  const { heightMm } = iframeSizeForPrintSettings(settings);
+  const letterheadMm = settings.show_letterhead ? 55 : 0;
+  // Full document height inside @page: margins + letterhead + letter body.
+  const bodyMm = 210;
+  return (
+    settings.margin_top + settings.margin_bottom + letterheadMm + bodyMm >
+    heightMm - 2
+  );
+}
+
+export function cmpf310PrintPageCount(settings: PrintSettings): number {
+  return cmpf310NeedsSecondPage(settings) ? 2 : 1;
+}
+
+function buildFormBody(data: Cmpf310LetterData, settings: PrintSettings): string {
   const doc = data.document;
   const refNo = esc(doc.reference_letter_no) || "________________";
   const refDate = doc.reference_letter_date.trim()
     ? esc(formatMetaDate(doc.reference_letter_date))
     : "________________";
   const markingFeeInline = formatCmpf310RupeeInline(doc.marking_fee_rs);
+  const twoPages = cmpf310NeedsSecondPage(settings);
+
+  const refAndIntro = `
+    <p class="cmpf-ref-line">
+      This has reference to your letter No. <strong>${refNo}</strong> dated <strong>${refDate}</strong>.
+    </p>
+    <p class="cmpf-intro">
+      I/We hereby agree to pay the tentative marking fee to the Bureau of Indian Standards at the rate indicated below, in accordance with Scheme-I of Schedule-II of the BIS (Conformity Assessment) Regulations, 2018.
+    </p>`;
+
+  if (!twoPages) {
+    return `
+<div class="print-sheet cmpf-sheet">
+  <div class="print-sheet-body">
+    ${buildFormHeaderHtml()}
+    ${buildLetterIntroHtml(data)}
+    ${refAndIntro}
+    ${buildRateTableHtml(doc)}
+    ${buildPaymentTermsHtml(markingFeeInline, "all")}
+    ${buildSignatoryBlockHtml(data)}
+  </div>
+  ${printPageIndicatorHtml(1, 1)}
+</div>`;
+  }
 
   return `
-<p class="cmpf-ref-line">
-  This has reference to your letter No. <strong>${refNo}</strong> dated <strong>${refDate}</strong>.
-</p>
-
-<p class="cmpf-intro">
-  I/We hereby agree to pay the tentative marking fee to the Bureau of Indian Standards at the rate indicated below, in accordance with Scheme-I of Schedule-II of the BIS (Conformity Assessment) Regulations, 2018.
-</p>
-
-${buildRateTableHtml(doc)}
-${buildPaymentTermsHtml(markingFeeInline)}
-${buildSignatoryBlockHtml(data)}`;
-}
-
-function buildFormBody(data: Cmpf310LetterData): string {
-  return `
-<div class="cmpf-sheet">
-  ${buildFormHeaderHtml()}
-  ${buildLetterIntroHtml(data)}
-  ${buildBodyHtml(data)}
-  ${buildPageIndicatorHtml()}
+<div class="print-sheet cmpf-sheet">
+  <div class="print-sheet-body">
+    ${buildFormHeaderHtml()}
+    ${buildLetterIntroHtml(data)}
+    ${refAndIntro}
+    ${buildRateTableHtml(doc)}
+    ${buildPaymentTermsHtml(markingFeeInline, "first")}
+  </div>
+  ${printPageIndicatorHtml(1, 2)}
+</div>
+${printPageGapHtml(2, 2)}
+<div class="print-sheet cmpf-sheet print-sheet-page-break">
+  <div class="print-sheet-body">
+    ${buildFormHeaderHtml(true)}
+    ${buildPaymentTermsHtml(markingFeeInline, "rest")}
+    ${buildSignatoryBlockHtml(data)}
+  </div>
+  ${printPageIndicatorHtml(2, 2)}
 </div>`;
 }
 
-export function buildCmpf310Company(data: Cmpf310LetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+export type Cmpf310PrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildCmpf310Company(
+  data: Cmpf310LetterData,
+  assets?: Cmpf310PrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultCmpf310PrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
-    show_letterhead: true,
+    orientation: "portrait",
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 11,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
   };
 }
 
-export function buildCmpf310Html(data: Cmpf310LetterData, settings: PrintSettings): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+/** Force no-logo letterhead for CMPF 310 preview / Word (same as Top Management). */
+export function cmpf310LetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+  };
+}
+
+export function buildCmpf310Html(
+  data: Cmpf310LetterData,
+  settings: PrintSettings,
+  assets?: Cmpf310PrintAssets,
+): string {
+  const letterheadSettings = cmpf310LetterheadSettings(settings);
   const styles = `
+    ${pagedPrintSheetStyles(letterheadSettings)}
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
       color: #111;
       font-size: 10px;
-      position: relative;
-      min-height: ${sheetMinHeight};
-      box-sizing: border-box;
-      padding-bottom: 4mm;
     }
     .cmpf-form-id {
       text-align: right;
@@ -208,14 +305,6 @@ export function buildCmpf310Html(data: Cmpf310LetterData, settings: PrintSetting
       font-weight: 700;
       text-decoration: underline;
       margin: 0 0 12px;
-    }
-    .cmpf-page-indicator {
-      position: absolute;
-      right: 0;
-      bottom: 0;
-      font-size: 10px;
-      font-weight: 600;
-      text-align: right;
     }
     .cmpf-to-row {
       display: flex;
@@ -289,16 +378,19 @@ export function buildCmpf310Html(data: Cmpf310LetterData, settings: PrintSetting
 
   return buildPrintDocument({
     title: "CMPF 310 — Acceptance of Rate of Marking Fee",
-    bodyHtml: buildFormBody(data),
+    bodyHtml: buildFormBody(data, letterheadSettings),
     extraStyles: styles,
-    settings,
-    company: buildCmpf310Company(data),
+    settings: letterheadSettings,
+    company: buildCmpf310Company(data, assets),
   });
 }
 
-export function iframeSizeForCmpf310PrintSettings(settings: PrintSettings): {
+export function iframeSizeForCmpf310PrintSettings(
+  settings: PrintSettings,
+  pageCount = 1,
+): {
   widthMm: number;
   heightMm: number;
 } {
-  return iframeSizeForPrintSettings(settings);
+  return iframeSizeForPagedPrintSettings(settings, pageCount);
 }

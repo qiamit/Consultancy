@@ -41,7 +41,7 @@ export default async function DashboardHomePage() {
     // Pending renewals: License (not application) with validity today → today+90
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
       .not("project_kind", "in", applicationKindFilter)
       .gte("license_validity_date", today)
@@ -51,7 +51,7 @@ export default async function DashboardHomePage() {
     // Pending applications: Application type only, not yet converted to a license
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, created_at, target_date, client_id, cm_l_digits, license_validity_date, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, created_at, target_date, client_id, cm_l_digits, license_validity_date, is_code_id, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .in("project_kind", applicationKinds)
       .is("license_validity_date", null)
       .or("status.is.null,status.eq.in_progress")
@@ -59,7 +59,7 @@ export default async function DashboardHomePage() {
     // Deferred: License (not application), validity crossed but within 90 days grace
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
       .not("project_kind", "in", applicationKindFilter)
       .lt("license_validity_date", today)
@@ -69,7 +69,7 @@ export default async function DashboardHomePage() {
     // Stop Marking (non-compliance)
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .eq("status", "stop_marking")
       .order("license_validity_date", { ascending: true }),
     // Cancelled
@@ -81,7 +81,7 @@ export default async function DashboardHomePage() {
     // Expired: validity > 90 days past, only normal/auto status
     supabase
       .from("bis_projects")
-      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, notes, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
+      .select("id, title, status, project_kind, cm_l_digits, license_number, license_validity_date, target_date, client_id, is_code_id, clients(name, company_name, email), is_codes(is_number, revision_year, is_code_title)")
       .not("license_validity_date", "is", null)
       .not("project_kind", "in", applicationKindFilter)
       .lt("license_validity_date", before90Days)
@@ -128,7 +128,8 @@ export default async function DashboardHomePage() {
       is_revision_year: ic?.revision_year ?? null,
       is_code_title: ic?.is_code_title ?? null,
       is_code_id: (r.is_code_id as string | null) ?? null,
-      notes: r.notes as string | null,
+      // List queries omit notes (large JSON); Apply modal refetches notes on open.
+      notes: null,
     };
   }
 

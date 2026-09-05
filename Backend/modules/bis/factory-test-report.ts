@@ -11,6 +11,7 @@ export type FtrTestRowStored = {
   test_name: string;
   unit: string;
   clause_no: string;
+  test_method: string;
   is_reference: string;
   specified_requirements: string;
   observed_value: string;
@@ -100,6 +101,7 @@ export function defaultFtrTestRow(type: FtrTestRowStored["row_type"] = "test"): 
       test_name: "",
       unit: "",
       clause_no: "",
+      test_method: "",
       is_reference: "",
       specified_requirements: "",
       observed_value: "",
@@ -114,6 +116,7 @@ export function defaultFtrTestRow(type: FtrTestRowStored["row_type"] = "test"): 
     test_name: "",
     unit: "",
     clause_no: "",
+    test_method: "",
     is_reference: "",
     specified_requirements: "",
     observed_value: "",
@@ -136,6 +139,7 @@ export function ftrTestRowFromParameter(
         ? p.clause_no.trim()
         : `Cl ${p.clause_no.trim()}`
       : "",
+    test_method: p.test_method.trim(),
     is_reference: isReference,
     specified_requirements: p.specified_value,
     remark: FTR_REMARK_DEFAULT,
@@ -307,6 +311,7 @@ export function parseFactoryTestReports(raw: unknown): FactoryTestReportStored[]
             test_name: String(t.test_name ?? "").trim(),
             unit: String(t.unit ?? "").trim(),
             clause_no: String(t.clause_no ?? "").trim(),
+            test_method: String(t.test_method ?? "").trim(),
             is_reference: String(t.is_reference ?? "").trim(),
             specified_requirements: String(t.specified_requirements ?? "").trim(),
             observed_value: String(t.observed_value ?? "").trim(),
@@ -444,7 +449,7 @@ function signaturesOverheadMm(options: FtrPrintPaginationOptions): number {
 }
 
 function firstPageOverheadMm(options: FtrPrintPaginationOptions): number {
-  let overhead = 7 + 48 + 11 + 4 + signaturesOverheadMm(options);
+  let overhead = 7 + 40 + 11 + 4 + signaturesOverheadMm(options);
   if (options.showLetterhead) overhead += 30;
   return overhead;
 }
@@ -456,18 +461,22 @@ function continuationPageOverheadMm(options: FtrPrintPaginationOptions): number 
 }
 
 function estimateRowHeightMm(row: FtrTestRowStored): number {
-  const lineMm = 3.6;
-  const paddingMm = 2.2;
+  const lineMm = 3.4;
+  const paddingMm = 2;
   let lines = 1;
 
-  if (row.unit?.trim()) lines = Math.max(lines, 2);
-  if (row.clause_no?.trim()) lines = Math.max(lines, 2);
-
+  // Merged first column: Test Name + Clause No · IS Reference
   const testName = row.test_name ?? "";
-  lines = Math.max(lines, Math.ceil(testName.length / 28));
+  lines = Math.max(lines, Math.ceil(testName.length / 32));
+
+  const meta = [row.clause_no, row.is_reference]
+    .map((s) => (s ?? "").trim())
+    .filter(Boolean)
+    .join(" · ");
+  if (meta) lines = Math.max(lines, 2);
 
   const spec = row.specified_requirements ?? "";
-  lines = Math.max(lines, Math.ceil(spec.length / 45));
+  lines = Math.max(lines, Math.ceil(spec.length / 40));
 
   return paddingMm + lines * lineMm;
 }

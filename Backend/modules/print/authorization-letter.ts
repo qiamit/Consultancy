@@ -318,13 +318,39 @@ function buildFormBody(data: AuthorizationLetterLetterData): string {
 
 
 
+export type AuthorizationLetterPrintAssets = Partial<
+
+  Pick<
+
+    PrintCompanyInfo,
+
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+
+  >
+
+>;
+
+
+
 export function buildAuthorizationLetterCompany(
 
   data: AuthorizationLetterLetterData,
 
+  assets?: AuthorizationLetterPrintAssets,
+
 ): PrintCompanyInfo {
 
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  return {
+
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+
+    ...assets,
+
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+
+    logo_url: null,
+
+  };
 
 }
 
@@ -338,6 +364,8 @@ export function defaultAuthorizationLetterPrintSettings(): PrintSettings {
 
     show_letterhead: true,
 
+    letterhead_layout: "logo-na",
+
     show_page_numbers: false,
 
     show_footer_line: false,
@@ -345,6 +373,32 @@ export function defaultAuthorizationLetterPrintSettings(): PrintSettings {
     font_family: "Times New Roman",
 
     font_size: 11,
+
+    margin_top: 5,
+
+    margin_bottom: 5,
+
+    margin_left: 15,
+
+    margin_right: 10,
+
+  };
+
+}
+
+
+
+/** Force no-logo letterhead for Authorization Letter preview / Word (same as Top Management). */
+
+export function authorizationLetterLetterheadSettings(settings: PrintSettings): PrintSettings {
+
+  return {
+
+    ...settings,
+
+    letterhead_layout: "logo-na",
+
+    show_page_numbers: false,
 
   };
 
@@ -358,9 +412,15 @@ export function buildAuthorizationLetterHtml(
 
   settings: PrintSettings,
 
+  assets?: AuthorizationLetterPrintAssets,
+
 ): string {
 
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const letterheadSettings = authorizationLetterLetterheadSettings(settings);
+
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
 
   const styles = `
 
@@ -560,9 +620,9 @@ export function buildAuthorizationLetterHtml(
 
     extraStyles: styles,
 
-    settings: { ...settings, show_page_numbers: false },
+    settings: letterheadSettings,
 
-    company: buildAuthorizationLetterCompany(data),
+    company: buildAuthorizationLetterCompany(data, assets),
 
   });
 

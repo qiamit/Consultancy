@@ -9,10 +9,19 @@ import {
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import {
+  buildUndertakingGeneralIssCompany,
   resolveUndertakingGeneralIssPoints,
+  undertakingGeneralIssLetterheadSettings,
   type UndertakingGeneralIssLetterData,
+  type UndertakingGeneralIssPrintAssets,
 } from "@backend/modules/print/undertaking-general-iss";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -60,13 +69,18 @@ function plainParagraph(text: string): Paragraph {
 
 async function buildUndertakingGeneralIssDocx(
   data: UndertakingGeneralIssLetterData,
+  settings: PrintSettings,
+  assets?: UndertakingGeneralIssPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = undertakingGeneralIssLetterheadSettings(settings);
+  const company = buildUndertakingGeneralIssCompany(data, assets);
   const bisBranch = [data.bisBranchName, data.bisBranchState, data.bisBranchCountry]
     .filter((p) => p.trim())
     .join(", ") || "—";
   const points = resolveUndertakingGeneralIssPoints(data);
 
   const children: Paragraph[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -109,16 +123,30 @@ async function buildUndertakingGeneralIssDocx(
         bodyRun(`Designation: ${data.document.signatory_designation || "—"}`),
       ],
     }),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadUndertakingGeneralIssWord(
   data: UndertakingGeneralIssLetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: UndertakingGeneralIssPrintAssets,
 ): Promise<void> {
-  const doc = await buildUndertakingGeneralIssDocx(data);
+  const doc = await buildUndertakingGeneralIssDocx(data, settings, assets);
   const buffer = await Packer.toBlob(doc);
   triggerBlobDownload(buffer, `${exportFilenameBase(data)}.docx`);
 }

@@ -5,6 +5,7 @@ import {
   PROCESS_FLOW_ARROW_ROUTINGS,
   PROCESS_FLOW_HIERARCHY_LAYOUTS,
   PROCESS_FLOW_LEVEL_LABELS,
+  PROCESS_FLOW_PRINT_CHART_SIZES,
   type ProcessFlowChartSettings,
 } from "@backend/modules/bis/process-flow-chart-settings";
 
@@ -29,6 +30,11 @@ const ARROW_HEAD_LABELS: Record<(typeof PROCESS_FLOW_ARROW_HEADS)[number], strin
   none: "Line only",
 };
 
+const PRINT_CHART_SIZE_LABELS: Record<(typeof PROCESS_FLOW_PRINT_CHART_SIZES)[number], string> = {
+  fit_page: "Fit one page — chart stays on a single page",
+  full: "Full size — readable (may use multiple pages)",
+};
+
 export function ProcessFlowChartSettingsPanel({
   settings,
   onChange,
@@ -41,6 +47,29 @@ export function ProcessFlowChartSettingsPanel({
       <h3 className="mb-4 text-sm font-semibold text-white">Chart Settings</h3>
 
       <section className="mb-5 space-y-3">
+        <p className={labelClass}>Print chart size</p>
+        <select
+          value={settings.print_chart_size}
+          onChange={(e) =>
+            onChange({
+              print_chart_size: e.target.value as ProcessFlowChartSettings["print_chart_size"],
+            })
+          }
+          className={fieldClass}
+        >
+          {PROCESS_FLOW_PRINT_CHART_SIZES.map((value) => (
+            <option key={value} value={value}>
+              {PRINT_CHART_SIZE_LABELS[value]}
+            </option>
+          ))}
+        </select>
+        <p className="text-[11px] leading-relaxed text-zinc-500">
+          Default keeps the whole letter + chart on one A4 page. Use Full size only if you want a
+          taller chart across multiple pages.
+        </p>
+      </section>
+
+      <section className="mb-5 space-y-3 border-t border-zinc-800 pt-4">
         <p className={labelClass}>Hierarchy layout</p>
         <select
           value={settings.hierarchy_layout}

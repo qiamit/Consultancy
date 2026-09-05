@@ -10,8 +10,19 @@ import {
   WidthType,
 } from "docx";
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
-import type { UpdatedSchemeOfInspectionLetterData } from "@backend/modules/print/updated-scheme-of-inspection";
+import {
+  buildUpdatedSchemeOfInspectionCompany,
+  updatedSchemeOfInspectionLetterheadSettings,
+  type UpdatedSchemeOfInspectionLetterData,
+  type UpdatedSchemeOfInspectionPrintAssets,
+} from "@backend/modules/print/updated-scheme-of-inspection";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import type { SitTestRow } from "@backend/modules/bis/updated-scheme-of-inspection";
 
 const DOCX_FONT = "Times New Roman";
@@ -95,9 +106,14 @@ function sitRowToCells(row: SitTestRow): TableRow {
 
 async function buildUpdatedSitDocx(
   data: UpdatedSchemeOfInspectionLetterData,
+  settings: PrintSettings,
+  assets?: UpdatedSchemeOfInspectionPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = updatedSchemeOfInspectionLetterheadSettings(settings);
+  const company = buildUpdatedSchemeOfInspectionCompany(data, assets);
   const doc = data.document;
   const children: (Paragraph | Table)[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     plainParagraph(doc.pm_reference, true),
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -137,16 +153,30 @@ async function buildUpdatedSitDocx(
     plainParagraph(doc.note_1),
     plainParagraph(doc.note_2),
     plainParagraph(doc.note_3),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadUpdatedSchemeOfInspectionWord(
   data: UpdatedSchemeOfInspectionLetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: UpdatedSchemeOfInspectionPrintAssets,
 ): Promise<void> {
-  const docx = await buildUpdatedSitDocx(data);
+  const docx = await buildUpdatedSitDocx(data, settings, assets);
   const blob = await Packer.toBlob(docx);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

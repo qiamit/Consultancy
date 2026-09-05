@@ -4,6 +4,7 @@ const btn =
   "inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700";
 
 export function TestParameterMasterFooterBar({
+  colSpan = 7,
   matchedCount,
   grandCount,
   searchActive,
@@ -13,6 +14,7 @@ export function TestParameterMasterFooterBar({
   onDelete,
   deleteDisabled,
 }: {
+  colSpan?: number;
   matchedCount: number;
   grandCount: number;
   searchActive: boolean;
@@ -30,7 +32,7 @@ export function TestParameterMasterFooterBar({
   return (
     <tfoot className="border-t border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200">
       <tr>
-        <td colSpan={8} className="px-3 py-2 align-middle">
+        <td colSpan={colSpan} className="px-3 py-2 align-middle">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
             <div className="min-w-0 shrink-0">
               <span>Total Entries: {matchedCount}</span>
@@ -62,10 +64,8 @@ export function TestParameterMasterFooterBar({
                 disabled={deleteDisabled}
                 title={
                   deleteDisabled
-                    ? "Select one or more rows, or open a record with Edit, then use Delete"
-                    : selectedCount > 0
-                      ? `Delete ${selectedCount} selected record${selectedCount === 1 ? "" : "s"}`
-                      : "Delete the test parameter currently open for edit"
+                    ? "Select one or more saved rows, then use Delete"
+                    : `Delete ${selectedCount} selected record${selectedCount === 1 ? "" : "s"}`
                 }
                 onClick={onDelete}
               >

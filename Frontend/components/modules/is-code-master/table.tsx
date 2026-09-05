@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { bisStandardsWebsiteSearchUrl } from "@backend/modules/bis/bis-standards-portal";
 import type { IsCodeFileRow, IsCodeMasterRow } from "@backend/shared/types/is-code-master";
@@ -59,7 +60,7 @@ function StackLine({
 }
 
 const chk =
-  "h-4 w-4 appearance-none rounded-none border border-zinc-300 bg-white text-sky-600 accent-sky-600 focus:ring-0 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500";
+  "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500";
 
 function PageSelectAllCheckbox({
   pageRowIds,
@@ -292,6 +293,13 @@ export function IsCodeMasterTable({
                       role="group"
                       aria-label="Row actions"
                     >
+                      <Link
+                        href={`/dashboard/test-parameters?is_code_id=${encodeURIComponent(c.id)}`}
+                        className="text-sm font-medium text-violet-600 hover:underline dark:text-violet-400"
+                        title={`Tests for ${c.is_number}: ${c.revision_year}`}
+                      >
+                        Test
+                      </Link>
                       <button
                         type="button"
                         onClick={() => onEditRow(c)}

@@ -1,13 +1,12 @@
 "use client";
 
 import { useState, useEffect, useRef, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { createClient } from "@backend/db/client/client";
 import Link from "next/link";
 import { FinanceManagementCard } from "@/components/dashboard/finance-management-card";
-import { PendingRenewalsSection } from "@/components/dashboard/pending-renewals-section";
-import { PendingApplicationsSection } from "@/components/dashboard/pending-applications-section";
-import { SurveillanceSection, type SurveillanceRow } from "@/components/dashboard/surveillance-section";
+import type { SurveillanceRow } from "@/components/dashboard/surveillance-section";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import {
@@ -15,6 +14,36 @@ import {
   type SyncStopMarkingResult,
 } from "@backend/actions/stop-marking-sync";
 import { MANAK_STOP_MARKING_REPORT_URL } from "@backend/modules/bis/manak-online-portal";
+
+const tabSectionLoading = (
+  <div className="flex items-center justify-center py-16 text-sm text-zinc-500 dark:text-zinc-400">
+    Loading…
+  </div>
+);
+
+const PendingRenewalsSection = dynamic(
+  () =>
+    import("@/components/dashboard/pending-renewals-section").then((m) => ({
+      default: m.PendingRenewalsSection,
+    })),
+  { ssr: false, loading: () => tabSectionLoading },
+);
+
+const PendingApplicationsSection = dynamic(
+  () =>
+    import("@/components/dashboard/pending-applications-section").then((m) => ({
+      default: m.PendingApplicationsSection,
+    })),
+  { ssr: false, loading: () => tabSectionLoading },
+);
+
+const SurveillanceSection = dynamic(
+  () =>
+    import("@/components/dashboard/surveillance-section").then((m) => ({
+      default: m.SurveillanceSection,
+    })),
+  { ssr: false, loading: () => tabSectionLoading },
+);
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type FinanceModule = {

@@ -128,28 +128,58 @@ function buildFormBody(data: UpdatedSchemeOfInspectionLetterData): string {
 </div>`;
 }
 
+export type UpdatedSchemeOfInspectionPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildUpdatedSchemeOfInspectionCompany(
   data: UpdatedSchemeOfInspectionLetterData,
+  assets?: UpdatedSchemeOfInspectionPrintAssets,
 ): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultUpdatedSchemeOfInspectionPrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
-    show_letterhead: false,
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 10,
     orientation: "landscape",
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Updated SIT preview / Word (same as Top Management). */
+export function updatedSchemeOfInspectionLetterheadSettings(
+  settings: PrintSettings,
+): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildUpdatedSchemeOfInspectionHtml(
   data: UpdatedSchemeOfInspectionLetterData,
   settings: PrintSettings,
+  assets?: UpdatedSchemeOfInspectionPrintAssets,
 ): string {
+  const letterheadSettings = updatedSchemeOfInspectionLetterheadSettings(settings);
   const styles = `
     .usit-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -193,8 +223,8 @@ export function buildUpdatedSchemeOfInspectionHtml(
     title: "Updated Scheme of Inspection & Testing",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings,
-    company: buildUpdatedSchemeOfInspectionCompany(data),
+    settings: letterheadSettings,
+    company: buildUpdatedSchemeOfInspectionCompany(data, assets),
   });
 }
 

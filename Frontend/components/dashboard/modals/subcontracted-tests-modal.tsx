@@ -13,6 +13,13 @@ import { SubcontractedTestsQeAssistantModal } from "@/components/dashboard/modal
 import { SubcontractedTestsTableEditor } from "@/components/dashboard/subcontracted-tests-table-editor";
 
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
+import {
+  printPreviewIframeStyle,
+  syncPrintPreviewIframe,
+} from "@/components/dashboard/print/sync-print-preview-iframe";
+
+import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+
 
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 
@@ -32,9 +39,13 @@ import {
 
   type SubcontractedTestsLetterData,
 
+  type SubcontractedTestsPrintAssets,
+
 } from "@backend/modules/print/subcontracted-tests";
 
 import { downloadSubcontractedTestsWord } from "@backend/modules/print/subcontracted-tests-export";
+
+import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 
 import type { PrintSettings } from "@backend/modules/print/types";
 
@@ -156,6 +167,8 @@ export function SubcontractedTestsModal({
 
   );
 
+  const [printAssets, setPrintAssets] = useState<SubcontractedTestsPrintAssets>({});
+
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
 
   const [showPrintPreview, setShowPrintPreview] = useState(false);
@@ -167,6 +180,8 @@ export function SubcontractedTestsModal({
   const [addClientForRowId, setAddClientForRowId] = useState<string | null>(null);
 
   const [savedFlash, setSavedFlash] = useState(false);
+
+  const [pdfDownloading, setPdfDownloading] = useState(false);
 
   const [saving, startSave] = useTransition();
 
@@ -185,6 +200,65 @@ export function SubcontractedTestsModal({
     return () => {
       cancelled = true;
     };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
+      if (cancelled) return;
+      const {
+        margin_top: _mt,
+        margin_bottom: _mb,
+        margin_left: _ml,
+        margin_right: _mr,
+        letterhead_layout: _layout,
+        ...companySettings
+      } = fromDb;
+      const defaults = defaultSubcontractedTestsPrintSettings();
+      setPrintSettings((prev) => ({
+        ...prev,
+        ...companySettings,
+        font_family: defaults.font_family,
+        show_letterhead: true,
+        letterhead_layout: "logo-na",
+        margin_top: defaults.margin_top,
+        margin_bottom: defaults.margin_bottom,
+        margin_left: defaults.margin_left,
+        margin_right: defaults.margin_right,
+        letterhead_show_address:
+          companySettings.letterhead_show_address ?? prev.letterhead_show_address,
+        letterhead_show_contact:
+          companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_gst: companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
+        primary_color: companySettings.primary_color || prev.primary_color,
+        show_page_numbers: false,
+        show_footer_line: false,
+      }));
+      setPrintAssets({
+        letterhead_upper_url: assetUrls.letterhead_upper_url,
+        letterhead_lower_url: assetUrls.letterhead_lower_url,
+        seal_sign_url: assetUrls.seal_sign_url,
+        logo_url: null,
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // Keep Subcontracted Tests margin defaults in sync (matches Top Management / Plant & Machinery).
+  useEffect(() => {
+    const defaults = defaultSubcontractedTestsPrintSettings();
+    setPrintSettings((prev) => ({
+      ...prev,
+      font_family: defaults.font_family,
+      show_letterhead: true,
+      margin_top: defaults.margin_top,
+      margin_bottom: defaults.margin_bottom,
+      margin_left: defaults.margin_left,
+      margin_right: defaults.margin_right,
+      letterhead_layout: "logo-na",
+    }));
   }, []);
 
   const reloadClients = useCallback(async () => {
@@ -244,11 +318,13 @@ export function SubcontractedTestsModal({
 
   const refreshPreview = useCallback(() => {
 
-    const doc = iframeRef.current?.contentDocument;
+    const iframe = iframeRef.current;
 
-    if (!doc) return;
+    const doc = iframe?.contentDocument;
 
-    const html = buildSubcontractedTestsHtml(previewData, printSettings);
+    if (!iframe || !doc) return;
+
+    const html = buildSubcontractedTestsHtml(previewData, printSettings, printAssets);
 
     doc.open();
 
@@ -256,7 +332,9 @@ export function SubcontractedTestsModal({
 
     doc.close();
 
-  }, [previewData, printSettings]);
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+
+  }, [previewData, printSettings, printAssets]);
 
 
 
@@ -286,7 +364,12 @@ export function SubcontractedTestsModal({
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
 
-    setPrintSettings((prev) => ({ ...prev, ...patch }));
+    setPrintSettings((prev) => ({
+      ...prev,
+      ...patch,
+      // Keep letterhead logo-free even if Print Settings changes layout.
+      letterhead_layout: "logo-na",
+    }));
 
   }
 
@@ -354,11 +437,45 @@ export function SubcontractedTestsModal({
 
   function handleDownloadWord() {
 
-    void downloadSubcontractedTestsWord(previewData, printSettings).catch(
+    void downloadSubcontractedTestsWord(previewData, printSettings, printAssets).catch(
 
       () => window.alert("Unable to download Word file."),
 
     );
+
+  }
+
+
+
+  async function handleDownloadPdf() {
+
+    if (pdfDownloading) return;
+
+    setPdfDownloading(true);
+
+    try {
+
+      const html = buildSubcontractedTestsHtml(previewData, printSettings, printAssets);
+
+      await downloadPrintHtmlAsPdf({
+
+        html,
+
+        filename: `Subcontracted_Tests_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+
+        settings: printSettings,
+
+      });
+
+    } catch (err) {
+
+      window.alert(err instanceof Error ? err.message : "Unable to download PDF.");
+
+    } finally {
+
+      setPdfDownloading(false);
+
+    }
 
   }
 
@@ -467,6 +584,22 @@ export function SubcontractedTestsModal({
             >
 
               Download Word File
+
+            </button>
+
+            <button
+
+              type="button"
+
+              onClick={() => void handleDownloadPdf()}
+
+              disabled={pdfDownloading}
+
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
+
+            >
+
+              {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
 
             </button>
 
@@ -692,13 +825,9 @@ export function SubcontractedTestsModal({
 
                   className="mx-auto max-w-full border-0 bg-white shadow-2xl"
 
-                  style={{
+                  scrolling="no"
 
-                    width: `min(100%, ${iframeSize.widthMm}mm)`,
-
-                    minHeight: `${iframeSize.heightMm}mm`,
-
-                  }}
+                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
 
                 />
 
@@ -721,6 +850,8 @@ export function SubcontractedTestsModal({
                 settings={printSettings}
 
                 onChange={patchPrintSettings}
+
+                hideLetterheadLogo
 
               />
 

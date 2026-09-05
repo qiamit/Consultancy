@@ -1,4 +1,6 @@
-export const CMPF305_ROWS_PER_PAGE = 9;
+export const CMPF305_ROWS_PER_PAGE = 12;
+/** Continuation pages (no signature footer) can hold more rows. */
+export const CMPF305_ROWS_CONTINUATION_PAGE = 16;
 
 export type Cmpf305MachineryStored = {
   machinery_name: string;
@@ -91,9 +93,27 @@ export function paginateMachineryRows(
     return [[]];
   }
 
+  // Single page: keep everything together with the signature footer.
+  if (visible.length <= rowsPerPage) {
+    return [visible];
+  }
+
   const pages: Cmpf305MachineryStored[][] = [];
-  for (let i = 0; i < visible.length; i += rowsPerPage) {
-    pages.push(visible.slice(i, i + rowsPerPage));
+  // First / middle pages without footer use denser row count.
+  let index = 0;
+  while (index < visible.length) {
+    const remaining = visible.length - index;
+    const isLastChunk = remaining <= rowsPerPage;
+    const take = isLastChunk
+      ? remaining
+      : Math.min(CMPF305_ROWS_CONTINUATION_PAGE, remaining - 1);
+    // Keep at least one row for the last (footer) page when splitting.
+    const chunkSize =
+      !isLastChunk && remaining - take < 1
+        ? Math.max(1, remaining - 1)
+        : take;
+    pages.push(visible.slice(index, index + chunkSize));
+    index += chunkSize;
   }
   return pages;
 }

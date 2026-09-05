@@ -35,7 +35,23 @@ export function UpdatedSitTableEditor({
   }
 
   function removeRow(index: number) {
-    onChange(rows.filter((_, i) => i !== index));
+    const next = rows.filter((_, i) => i !== index);
+    onChange(
+      next.length > 0
+        ? next
+        : [
+            {
+              row_kind: "data",
+              clause_no: "",
+              requirement: "",
+              test_methods_ref: "",
+              equipment_req: "",
+              sample_count: "",
+              frequency: "",
+              remarks: "",
+            },
+          ],
+    );
   }
 
   return (

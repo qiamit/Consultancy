@@ -123,8 +123,23 @@ ${buildDrawingHtml(data)}
 ${buildSignatoryBlockHtml(data)}`;
 }
 
-export function buildPlantLayoutCompany(data: PlantLayoutLetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+export type PlantLayoutPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildPlantLayoutCompany(
+  data: PlantLayoutLetterData,
+  assets?: PlantLayoutPrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Plant Layout letterhead matches Top Management — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultPlantLayoutPrintSettings(): PrintSettings {
@@ -132,15 +147,34 @@ export function defaultPlantLayoutPrintSettings(): PrintSettings {
     ...defaultDeclarationPrintSettings(),
     orientation: "portrait",
     show_letterhead: true,
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 11,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
   };
 }
 
-export function buildPlantLayoutHtml(data: PlantLayoutLetterData, settings: PrintSettings): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+/** Force no-logo letterhead for Plant Layout preview / Word. */
+export function plantLayoutLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+  };
+}
+
+export function buildPlantLayoutHtml(
+  data: PlantLayoutLetterData,
+  settings: PrintSettings,
+  assets?: PlantLayoutPrintAssets,
+): string {
+  const letterheadSettings = plantLayoutLetterheadSettings(settings);
+  const sheetMinHeight = `calc(297mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .pl-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -253,8 +287,8 @@ export function buildPlantLayoutHtml(data: PlantLayoutLetterData, settings: Prin
     title: "Plant Layout",
     bodyHtml: `<div class="pl-sheet">${buildBodyHtml(data)}${buildPageIndicatorHtml()}</div>`,
     extraStyles: styles,
-    settings: { ...settings, show_page_numbers: false },
-    company: buildPlantLayoutCompany(data),
+    settings: letterheadSettings,
+    company: buildPlantLayoutCompany(data, assets),
   });
 }
 

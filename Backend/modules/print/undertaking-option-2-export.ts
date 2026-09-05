@@ -7,8 +7,19 @@ import {
 } from "docx";
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
-import type { UndertakingOption2LetterData } from "@backend/modules/print/undertaking-option-2";
+import {
+  buildUndertakingOption2Company,
+  undertakingOption2LetterheadSettings,
+  type UndertakingOption2LetterData,
+  type UndertakingOption2PrintAssets,
+} from "@backend/modules/print/undertaking-option-2";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -54,7 +65,13 @@ function plainParagraph(text: string): Paragraph {
   });
 }
 
-async function buildUndertakingOption2Docx(data: UndertakingOption2LetterData): Promise<Document> {
+async function buildUndertakingOption2Docx(
+  data: UndertakingOption2LetterData,
+  settings: PrintSettings,
+  assets?: UndertakingOption2PrintAssets,
+): Promise<Document> {
+  const letterheadSettings = undertakingOption2LetterheadSettings(settings);
+  const company = buildUndertakingOption2Company(data, assets);
   const doc = data.document;
   const declarant = doc.declarant_name || data.contactPerson || data.companyName || "—";
   const product = doc.product_for_mark || "—";
@@ -68,6 +85,7 @@ async function buildUndertakingOption2Docx(data: UndertakingOption2LetterData): 
         : "—";
 
   const children: Paragraph[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -99,16 +117,30 @@ async function buildUndertakingOption2Docx(data: UndertakingOption2LetterData): 
     plainParagraph(`For ${data.companyName || "—"}`),
     plainParagraph(`Name: ${doc.signatory_name || declarant}`),
     plainParagraph(`Designation: ${doc.signatory_designation || "—"}`),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadUndertakingOption2Word(
   data: UndertakingOption2LetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: UndertakingOption2PrintAssets,
 ): Promise<void> {
-  const doc = await buildUndertakingOption2Docx(data);
+  const doc = await buildUndertakingOption2Docx(data, settings, assets);
   const blob = await Packer.toBlob(doc);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

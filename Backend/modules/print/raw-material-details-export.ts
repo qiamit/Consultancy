@@ -13,8 +13,19 @@ import {
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import { rowHasContent, type RawMaterialStored } from "@backend/modules/bis/raw-material-details";
-import type { RawMaterialDetailsLetterData } from "@backend/modules/print/raw-material-details";
+import {
+  buildRawMaterialDetailsCompany,
+  rawMaterialDetailsLetterheadSettings,
+  type RawMaterialDetailsLetterData,
+  type RawMaterialDetailsPrintAssets,
+} from "@backend/modules/print/raw-material-details";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -150,7 +161,11 @@ function materialTableSection(rows: RawMaterialStored[]): (Paragraph | Table)[] 
 
 async function buildRawMaterialDetailsDocx(
   data: RawMaterialDetailsLetterData,
+  settings: PrintSettings,
+  assets?: RawMaterialDetailsPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = rawMaterialDetailsLetterheadSettings(settings);
+  const company = buildRawMaterialDetailsCompany(data, assets);
   const bisBranch = formatBisBranchLine(
     data.bisBranchName,
     data.bisBranchState,
@@ -159,6 +174,7 @@ async function buildRawMaterialDetailsDocx(
   const isStdRef = formatIsStandardRef(data.isNumber, data.isTitle ?? "");
 
   const children: (Paragraph | Table)[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -197,16 +213,30 @@ async function buildRawMaterialDetailsDocx(
       spacing: { before: 40, after: 0 },
       children: [bodyRun(`Designation: ${data.firmRepDesignation || "—"}`)],
     }),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadRawMaterialDetailsWord(
   data: RawMaterialDetailsLetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: RawMaterialDetailsPrintAssets,
 ): Promise<void> {
-  const doc = await buildRawMaterialDetailsDocx(data);
+  const doc = await buildRawMaterialDetailsDocx(data, settings, assets);
   const buffer = await Packer.toBlob(doc);
   triggerBlobDownload(buffer, `${exportFilenameBase(data)}.docx`);
 }

@@ -214,27 +214,58 @@ function buildFormBody(data: UndertakingLongDurationTestLetterData): string {
 </div>`;
 }
 
+export type UndertakingLongDurationTestPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildUndertakingLongDurationTestCompany(
   data: UndertakingLongDurationTestLetterData,
+  assets?: UndertakingLongDurationTestPrintAssets,
 ): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultUndertakingLongDurationTestPrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
-    show_letterhead: false,
+    show_letterhead: true,
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 11,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Long Duration Test preview / Word (same as Top Management). */
+export function undertakingLongDurationTestLetterheadSettings(
+  settings: PrintSettings,
+): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildUndertakingLongDurationTestHtml(
   data: UndertakingLongDurationTestLetterData,
   settings: PrintSettings,
+  assets?: UndertakingLongDurationTestPrintAssets,
 ): string {
+  const letterheadSettings = undertakingLongDurationTestLetterheadSettings(settings);
   const styles = `
     .ldt-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -279,8 +310,8 @@ export function buildUndertakingLongDurationTestHtml(
     title: "Undertaking for Long Duration Test",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings,
-    company: buildUndertakingLongDurationTestCompany(data),
+    settings: letterheadSettings,
+    company: buildUndertakingLongDurationTestCompany(data, assets),
   });
 }
 

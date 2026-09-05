@@ -119,25 +119,56 @@ function buildFormBody(data: ProcessDescriptionLetterData): string {
 </div>`;
 }
 
-export function buildProcessDescriptionCompany(data: ProcessDescriptionLetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+export type ProcessDescriptionPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildProcessDescriptionCompany(
+  data: ProcessDescriptionLetterData,
+  assets?: ProcessDescriptionPrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Process Description letterhead matches Top Management — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultProcessDescriptionPrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 10,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Process Description preview / Word. */
+export function processDescriptionLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildProcessDescriptionHtml(
   data: ProcessDescriptionLetterData,
   settings: PrintSettings,
+  assets?: ProcessDescriptionPrintAssets,
 ): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const letterheadSettings = processDescriptionLetterheadSettings(settings);
+  const sheetMinHeight = `calc(297mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .pd-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -232,8 +263,8 @@ export function buildProcessDescriptionHtml(
     title: "Process Description",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings: { ...settings, show_page_numbers: false },
-    company: buildProcessDescriptionCompany(data),
+    settings: letterheadSettings,
+    company: buildProcessDescriptionCompany(data, assets),
   });
 }
 

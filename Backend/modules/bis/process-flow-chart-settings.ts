@@ -7,6 +7,10 @@ export type ProcessFlowArrowRouting = (typeof PROCESS_FLOW_ARROW_ROUTINGS)[numbe
 export const PROCESS_FLOW_ARROW_HEADS = ["filled", "open", "none"] as const;
 export type ProcessFlowArrowHead = (typeof PROCESS_FLOW_ARROW_HEADS)[number];
 
+/** How the chart image is sized in Print Preview / Print / Word. */
+export const PROCESS_FLOW_PRINT_CHART_SIZES = ["fit_page", "full"] as const;
+export type ProcessFlowPrintChartSize = (typeof PROCESS_FLOW_PRINT_CHART_SIZES)[number];
+
 export const PROCESS_FLOW_LEVEL_LABELS = [
   "Level 1 - Main Process",
   "Level 2 - Sub Process",
@@ -30,6 +34,8 @@ export type ProcessFlowChartSettings = {
   col_gap: number;
   box_height: number;
   min_box_width: number;
+  /** full = readable multi-page; fit_page = shrink to one page */
+  print_chart_size: ProcessFlowPrintChartSize;
 };
 
 export const DEFAULT_PROCESS_FLOW_CHART_SETTINGS: ProcessFlowChartSettings = {
@@ -45,6 +51,7 @@ export const DEFAULT_PROCESS_FLOW_CHART_SETTINGS: ProcessFlowChartSettings = {
   col_gap: 16,
   box_height: 54,
   min_box_width: 130,
+  print_chart_size: "fit_page",
 };
 
 export function parseProcessFlowChartSettings(raw: unknown): ProcessFlowChartSettings {
@@ -53,6 +60,7 @@ export function parseProcessFlowChartSettings(raw: unknown): ProcessFlowChartSet
   const layout = String(r.hierarchy_layout ?? "");
   const routing = String(r.arrow_routing ?? "");
   const head = String(r.arrow_head ?? "");
+  const printSize = String(r.print_chart_size ?? "");
   const arrowWidth = Number(r.arrow_width);
   const boxStrokeWidth = Number(r.box_stroke_width);
   const rowGap = Number(r.row_gap);
@@ -97,5 +105,8 @@ export function parseProcessFlowChartSettings(raw: unknown): ProcessFlowChartSet
       Number.isFinite(minBoxWidth) && minBoxWidth >= 80
         ? minBoxWidth
         : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.min_box_width,
+    print_chart_size: PROCESS_FLOW_PRINT_CHART_SIZES.includes(printSize as ProcessFlowPrintChartSize)
+      ? (printSize as ProcessFlowPrintChartSize)
+      : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.print_chart_size,
   };
 }

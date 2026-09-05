@@ -116,27 +116,57 @@ function buildFormBody(data: UndertakingGeneralIssLetterData): string {
 </div>`;
 }
 
+export type UndertakingGeneralIssPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildUndertakingGeneralIssCompany(
   data: UndertakingGeneralIssLetterData,
+  assets?: UndertakingGeneralIssPrintAssets,
 ): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultUndertakingGeneralIssPrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 10,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Undertaking General & ISS preview / Word (same as Top Management). */
+export function undertakingGeneralIssLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildUndertakingGeneralIssHtml(
   data: UndertakingGeneralIssLetterData,
   settings: PrintSettings,
+  assets?: UndertakingGeneralIssPrintAssets,
 ): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const letterheadSettings = undertakingGeneralIssLetterheadSettings(settings);
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .ugi-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -225,8 +255,8 @@ export function buildUndertakingGeneralIssHtml(
     title: "Undertaking for General & ISS",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings: { ...settings, show_page_numbers: false },
-    company: buildUndertakingGeneralIssCompany(data),
+    settings: letterheadSettings,
+    company: buildUndertakingGeneralIssCompany(data, assets),
   });
 }
 

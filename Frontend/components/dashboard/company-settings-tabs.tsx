@@ -469,10 +469,10 @@ export function CompanySettingsTabs({
                 {/* Hidden fields to keep other tabs' values */}
                 <input type="hidden" name="print_paper_size"           defaultValue={str(r?.print_paper_size) || "A4"} />
                 <input type="hidden" name="print_orientation"          defaultValue={str(r?.print_orientation) || "portrait"} />
-                <input type="hidden" name="print_margin_top"           defaultValue={str(r?.print_margin_top) || "12"} />
-                <input type="hidden" name="print_margin_bottom"        defaultValue={str(r?.print_margin_bottom) || "12"} />
-                <input type="hidden" name="print_margin_left"          defaultValue={str(r?.print_margin_left) || "12"} />
-                <input type="hidden" name="print_margin_right"         defaultValue={str(r?.print_margin_right) || "12"} />
+                <input type="hidden" name="print_margin_top"           defaultValue={str(r?.print_margin_top) || "10"} />
+                <input type="hidden" name="print_margin_bottom"        defaultValue={str(r?.print_margin_bottom) || "10"} />
+                <input type="hidden" name="print_margin_left"          defaultValue={str(r?.print_margin_left) || "10"} />
+                <input type="hidden" name="print_margin_right"         defaultValue={str(r?.print_margin_right) || "10"} />
                 <input type="hidden" name="print_font_family"          defaultValue={str(r?.print_font_family) || "Arial"} />
                 <input type="hidden" name="print_primary_color"        defaultValue={str(r?.print_primary_color) || "#1e3a8a"} />
                 <input type="hidden" name="print_show_letterhead"      defaultValue={String(r?.print_show_letterhead ?? "true")} />
@@ -537,7 +537,7 @@ export function CompanySettingsTabs({
                     {(["top","bottom","left","right"] as const).map((side) => (
                       <div key={side} className="space-y-2">
                         <label className="text-sm font-medium capitalize text-zinc-700 dark:text-zinc-300">{side}</label>
-                        <input type="number" name={`print_margin_${side}`} defaultValue={str(r?.[`print_margin_${side}`]) || "12"} min={0} max={50} className={inp} />
+                        <input type="number" name={`print_margin_${side}`} defaultValue={str(r?.[`print_margin_${side}`]) || "10"} min={0} max={50} className={inp} />
                       </div>
                     ))}
                   </div>

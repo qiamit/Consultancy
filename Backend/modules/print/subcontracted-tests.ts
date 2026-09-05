@@ -53,10 +53,8 @@ function formatBisBranchLine(
   return parts.map(esc).join(", ");
 }
 
-function formatLetterDate(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "_______________________";
-  return esc(formatDisplayDate(raw, "_______________________"));
+function formatLetterDate(dateStr: string | Date | null | undefined): string {
+  return esc(formatDisplayDate(dateStr, "_______________________"));
 }
 
 function formatApplicationNo(raw: string | undefined): string {
@@ -180,28 +178,60 @@ function buildLetterBody(data: SubcontractedTestsLetterData): string {
 </div>`;
 }
 
+export type SubcontractedTestsPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildSubcontractedTestsCompany(
   data: SubcontractedTestsLetterData,
+  assets?: SubcontractedTestsPrintAssets,
 ): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({
-    ...data,
-    licenseScope: "",
-  });
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultSubcontractedTestsPrintSettings(): PrintSettings {
-  return defaultDeclarationPrintSettings();
+  return {
+    ...defaultDeclarationPrintSettings(),
+    orientation: "portrait",
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+    show_footer_line: false,
+    font_family: "Times New Roman",
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Subcontracted Tests preview / Word (same as Top Management). */
+export function subcontractedTestsLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+  };
 }
 
 export function buildSubcontractedTestsHtml(
   data: SubcontractedTestsLetterData,
   settings: PrintSettings,
+  assets?: SubcontractedTestsPrintAssets,
 ): string {
+  const letterheadSettings = subcontractedTestsLetterheadSettings(settings);
   return buildPrintDocument({
     title: "Declaration Regarding Test Parameters Subcontracted",
     bodyHtml: buildLetterBody(data),
-    settings,
-    company: buildSubcontractedTestsCompany(data),
+    settings: letterheadSettings,
+    company: buildSubcontractedTestsCompany(data, assets),
   });
 }
 

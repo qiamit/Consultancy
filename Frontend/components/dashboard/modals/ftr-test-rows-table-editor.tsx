@@ -263,10 +263,11 @@ export function FtrTestRowsTableEditor({
     return testRows.filter((row) => {
       const haystack = [
         row.test_name,
+        row.clause_no,
+        row.test_method ?? "",
         row.specified_requirements,
         row.observed_value,
         normalizeFtrRemark(row.remark),
-        row.clause_no,
       ]
         .join(" ")
         .toLowerCase();
@@ -368,7 +369,18 @@ export function FtrTestRowsTableEditor({
                   aria-label={`Select ${row.test_name}`}
                 />
               </td>
-              <td className="px-3 py-2 align-top text-zinc-200">{row.test_name || "—"}</td>
+              <td className="px-3 py-2 align-top text-zinc-200">
+                <div className="space-y-0.5">
+                  <div className="font-medium leading-snug">{row.test_name || "—"}</div>
+                  {((row.clause_no ?? "").trim() || (row.test_method ?? "").trim()) && (
+                    <div className="text-[10px] leading-snug text-zinc-400">
+                      {[(row.clause_no ?? "").trim(), (row.test_method ?? "").trim()]
+                        .filter(Boolean)
+                        .join(" | ")}
+                    </div>
+                  )}
+                </div>
+              </td>
               <td className="px-3 py-2 align-top">
                 <SpecifiedRequirementsCell
                   row={row}

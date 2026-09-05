@@ -229,28 +229,58 @@ function buildFormBody(data: RawMaterialDetailsLetterData, settings: PrintSettin
     .join("");
 }
 
+export type RawMaterialDetailsPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
 export function buildRawMaterialDetailsCompany(
   data: RawMaterialDetailsLetterData,
+  assets?: RawMaterialDetailsPrintAssets,
 ): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultRawMaterialDetailsPrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
     orientation: "portrait",
+    letterhead_layout: "logo-na",
     font_family: "Times New Roman",
     font_size: 9,
     show_page_numbers: false,
     show_footer_line: false,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Raw Material Details preview / Word (same as Top Management). */
+export function rawMaterialDetailsLetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
   };
 }
 
 export function buildRawMaterialDetailsHtml(
   data: RawMaterialDetailsLetterData,
   settings: PrintSettings,
+  assets?: RawMaterialDetailsPrintAssets,
 ): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const letterheadSettings = rawMaterialDetailsLetterheadSettings(settings);
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .rmd-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -371,10 +401,10 @@ export function buildRawMaterialDetailsHtml(
 
   return buildPrintDocument({
     title: "Raw Material Details",
-    bodyHtml: buildFormBody(data, settings),
+    bodyHtml: buildFormBody(data, letterheadSettings),
     extraStyles: styles,
-    settings,
-    company: buildRawMaterialDetailsCompany(data),
+    settings: letterheadSettings,
+    company: buildRawMaterialDetailsCompany(data, assets),
   });
 }
 

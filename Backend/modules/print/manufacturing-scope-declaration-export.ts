@@ -2,34 +2,85 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
+  ImageRun,
   Packer,
   Paragraph,
+  ShadingType,
   Table,
   TableCell,
   TableRow,
   TextRun,
+  VerticalAlign,
   WidthType,
 } from "docx";
 import { buildWorkbookBuffer, triggerBlobDownload } from "@backend/shared/spreadsheet/excel";
 import {
   buildManufacturingScopeCompany,
+  manufacturingScopeLetterheadSettings,
   type ManufacturingScopeDeclarationData,
+  type ManufacturingScopePrintAssets,
 } from "@backend/modules/print/manufacturing-scope-declaration";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  contentWidthTwip,
+  loadImageFromUrl,
+  pageMarginsFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 24; // half-points → 12pt
+const DOCX_TABLE_SIZE = 20; // 10pt
+const DOCX_TABLE_BODY_SIZE = 22; // 11pt
+
+const BOX_BORDER = {
+  style: BorderStyle.SINGLE,
+  size: 8,
+  color: "CBD5E1",
+} as const;
+
+const BOX_BORDERS = {
+  top: BOX_BORDER,
+  bottom: BOX_BORDER,
+  left: BOX_BORDER,
+  right: BOX_BORDER,
+};
+
+const THIN_BORDER = {
+  style: BorderStyle.SINGLE,
+  size: 4,
+  color: "CBD5E1",
+} as const;
+
+const CELL_BORDERS = {
+  top: THIN_BORDER,
+  bottom: THIN_BORDER,
+  left: THIN_BORDER,
+  right: THIN_BORDER,
+};
+
+const NO_BORDER = {
+  style: BorderStyle.NONE,
+  size: 0,
+  color: "FFFFFF",
+} as const;
+
+const NO_BORDERS = {
+  top: NO_BORDER,
+  bottom: NO_BORDER,
+  left: NO_BORDER,
+  right: NO_BORDER,
+};
 
 function safeFilePart(value: string): string {
   return value.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 60);
 }
 
-function formatInspectionDate(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "";
-  return formatDisplayDate(raw, "");
+function formatInspectionDate(dateStr: string | Date | null | undefined): string {
+  return formatDisplayDate(dateStr, "");
 }
 
 function formatApplicationNo(raw: string | undefined): string {
@@ -81,124 +132,307 @@ function bodyParagraph(
   });
 }
 
-function plainParagraph(text: string, bold = false): Paragraph {
-  return bodyParagraph([bodyRun(text, bold)]);
+function plainParagraph(
+  text: string,
+  bold = false,
+  opts?: { before?: number; after?: number; align?: (typeof AlignmentType)[keyof typeof AlignmentType] },
+): Paragraph {
+  return new Paragraph({
+    alignment: opts?.align ?? AlignmentType.JUSTIFIED,
+    spacing: { before: opts?.before ?? 0, after: opts?.after ?? 200, line: 360 },
+    children: [bodyRun(text, bold)],
+  });
+}
+
+function smallLabelRun(text: string): TextRun {
+  return new TextRun({
+    text,
+    bold: true,
+    font: DOCX_FONT,
+    size: DOCX_TABLE_SIZE,
+    color: "64748B",
+    allCaps: true,
+  });
+}
+
+function tableCellParagraph(
+  text: string,
+  opts?: { bold?: boolean; center?: boolean; size?: number },
+): Paragraph {
+  return new Paragraph({
+    alignment: opts?.center ? AlignmentType.CENTER : AlignmentType.LEFT,
+    spacing: { after: 0, line: 276 },
+    children: [
+      new TextRun({
+        text,
+        bold: opts?.bold ?? false,
+        font: DOCX_FONT,
+        size: opts?.size ?? DOCX_TABLE_BODY_SIZE,
+      }),
+    ],
+  });
 }
 
 function multilineParagraphs(text: string): Paragraph[] {
   const lines = (text ?? "").split(/\r?\n/);
   if (lines.length === 0 || (lines.length === 1 && !lines[0]?.trim())) {
-    return [plainParagraph("—")];
+    return [plainParagraph("—", false, { after: 0 })];
   }
-  return lines.map((line) => plainParagraph(line.trim() === "" ? " " : line));
+  return lines.map((line, i) =>
+    plainParagraph(line.trim() === "" ? " " : line, false, {
+      after: i === lines.length - 1 ? 0 : 80,
+    }),
+  );
 }
 
-function buildLicenseScopeTable(
+/** Matches Print Preview: Sr No | Component | Value with slate borders. */
+function buildLicenseScopeInnerTable(
   rows: { component: string; value: string }[],
+  widthTwip: number,
 ): Table {
+  const srW = Math.round(widthTwip * 0.12);
+  const rem = widthTwip - srW;
+  const compW = Math.round(rem / 2);
+  const valW = rem - compW;
+  const widths = [srW, compW, valW];
+
   const header = new TableRow({
     tableHeader: true,
-    children: ["Component", "Value"].map(
-      (label) =>
+    children: ["Sr No", "Component", "Value"].map(
+      (label, i) =>
         new TableCell({
-          width: { size: 50, type: WidthType.PERCENTAGE },
+          width: { size: widths[i]!, type: WidthType.DXA },
+          borders: CELL_BORDERS,
+          verticalAlign: VerticalAlign.CENTER,
+          shading: { type: ShadingType.CLEAR, fill: "E2E8F0" },
           children: [
-            new Paragraph({
-              children: [bodyRun(label, true)],
+            tableCellParagraph(label, {
+              bold: true,
+              center: i === 0,
+              size: DOCX_TABLE_SIZE,
             }),
           ],
         }),
     ),
   });
 
-  const bodyRows = rows
-    .filter((r) => r.component.trim() || r.value.trim())
-    .map(
-      (r) =>
-        new TableRow({
-          children: [r.component, r.value].map(
-            (cell) =>
-              new TableCell({
-                width: { size: 50, type: WidthType.PERCENTAGE },
-                children: [plainParagraph(cell || "—")],
-              }),
-          ),
-        }),
-    );
+  const filled = rows.filter((r) => r.component.trim() || r.value.trim());
+  const bodyRows =
+    filled.length === 0
+      ? [
+          new TableRow({
+            children: widths.map(
+              (w, i) =>
+                new TableCell({
+                  width: { size: w, type: WidthType.DXA },
+                  borders: CELL_BORDERS,
+                  children: [
+                    tableCellParagraph("—", { center: i === 0 }),
+                  ],
+                }),
+            ),
+          }),
+        ]
+      : filled.map(
+          (r, idx) =>
+            new TableRow({
+              children: [
+                new TableCell({
+                  width: { size: srW, type: WidthType.DXA },
+                  borders: CELL_BORDERS,
+                  verticalAlign: VerticalAlign.CENTER,
+                  children: [tableCellParagraph(String(idx + 1), { center: true })],
+                }),
+                new TableCell({
+                  width: { size: compW, type: WidthType.DXA },
+                  borders: CELL_BORDERS,
+                  children: [tableCellParagraph(r.component.trim() || "—")],
+                }),
+                new TableCell({
+                  width: { size: valW, type: WidthType.DXA },
+                  borders: CELL_BORDERS,
+                  children: [tableCellParagraph(r.value.trim() || "—")],
+                }),
+              ],
+            }),
+        );
 
   return new Table({
-    width: { size: 100, type: WidthType.PERCENTAGE },
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: widths,
     rows: [header, ...bodyRows],
   });
 }
 
-function buildLetterheadParagraphs(
+/** Outer slate box around License Scope — same look as Print Preview. */
+function buildLicenseScopeBox(
+  data: ManufacturingScopeDeclarationData,
+  widthTwip: number,
+): Table {
+  const boxPad = 100;
+  const innerWidth = Math.max(1200, widthTwip - boxPad * 2);
+  const useTable =
+    data.licenseScopeFormat === "table" && (data.licenseScopeRows?.length ?? 0) > 0;
+
+  const innerChildren: (Paragraph | Table)[] = [
+    new Paragraph({
+      spacing: { after: 80 },
+      children: [smallLabelRun("License Scope")],
+    }),
+    ...(useTable
+      ? [buildLicenseScopeInnerTable(data.licenseScopeRows ?? [], innerWidth)]
+      : multilineParagraphs(data.licenseScope.trim() || "—")),
+  ];
+
+  return new Table({
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: [widthTwip],
+    rows: [
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: widthTwip, type: WidthType.DXA },
+            borders: BOX_BORDERS,
+            shading: { type: ShadingType.CLEAR, fill: "F8FAFC" },
+            margins: {
+              top: boxPad,
+              bottom: boxPad,
+              left: boxPad,
+              right: boxPad,
+            },
+            children: innerChildren,
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+async function buildSignatoryBlock(
   data: ManufacturingScopeDeclarationData,
   settings: PrintSettings,
-): Paragraph[] {
-  if (!settings.show_letterhead) return [];
+): Promise<(Paragraph | Table)[]> {
+  const sigName = data.signatoryName?.trim() || data.contactPerson.trim() || "—";
+  const sigDesig = data.signatoryDesignation?.trim() || "—";
+  const totalWidth = contentWidthTwip(settings);
+  const sigWidth = Math.min(3600, Math.round(totalWidth * 0.42));
+  const spacerWidth = totalWidth - sigWidth;
 
-  const company = buildManufacturingScopeCompany(data);
-  const out: Paragraph[] = [
+  const sigChildren: Paragraph[] = [
     new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 120 },
-      children: [
-        new TextRun({
-          text: company.name,
-          bold: true,
-          font: DOCX_FONT,
-          size: 32,
-          color: settings.primary_color.replace("#", ""),
-        }),
-      ],
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 0 },
+      children: [bodyRun(`For ${data.companyName}`, true)],
     }),
   ];
 
-  if (settings.letterhead_show_address && company.address.trim()) {
-    out.push(
+  const sigImg = await loadImageFromUrl(data.signatureImageUrl?.trim() || null);
+  if (sigImg) {
+    sigChildren.push(
       new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 240 },
-        children: [bodyRun(company.address, false)],
+        alignment: AlignmentType.RIGHT,
+        spacing: { before: 120, after: 0 },
+        children: [
+          new ImageRun({
+            type: sigImg.type,
+            data: sigImg.data,
+            transformation: { width: 120, height: 48 },
+            altText: {
+              title: "Signature",
+              description: "Signatory signature",
+              name: "signature",
+            },
+          }),
+        ],
       }),
     );
   } else {
-    out.push(
+    sigChildren.push(
       new Paragraph({
-        spacing: { after: 240 },
+        spacing: { before: 280, after: 0 },
         children: [],
       }),
     );
   }
 
-  return out;
+  sigChildren.push(
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 80, after: 0 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
+      },
+      children: [
+        new TextRun({
+          text: "Name: ",
+          bold: true,
+          font: DOCX_FONT,
+          size: 22,
+        }),
+        new TextRun({ text: sigName, font: DOCX_FONT, size: 22 }),
+      ],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 40, after: 0 },
+      children: [
+        new TextRun({
+          text: "Designation: ",
+          bold: true,
+          font: DOCX_FONT,
+          size: 22,
+        }),
+        new TextRun({ text: sigDesig, font: DOCX_FONT, size: 22 }),
+      ],
+    }),
+  );
+
+  return [
+    new Paragraph({ spacing: { before: 360, after: 0 }, children: [] }),
+    new Table({
+      width: { size: totalWidth, type: WidthType.DXA },
+      columnWidths: [spacerWidth, sigWidth],
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              width: { size: spacerWidth, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              children: [new Paragraph({ children: [] })],
+            }),
+            new TableCell({
+              width: { size: sigWidth, type: WidthType.DXA },
+              borders: NO_BORDERS,
+              children: sigChildren,
+            }),
+          ],
+        }),
+      ],
+    }),
+  ];
 }
 
 async function buildManufacturingScopeDocx(
   data: ManufacturingScopeDeclarationData,
   settings: PrintSettings,
+  assets?: ManufacturingScopePrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = manufacturingScopeLetterheadSettings(settings);
+  const company = buildManufacturingScopeCompany(data, assets);
+  const widthTwip = contentWidthTwip(letterheadSettings);
   const isRef = isStandardRef(data);
   const bisBranch = bisBranchLine(data);
   const inspectionDate = formatInspectionDate(data.inspectionDate);
   const dateLabel = inspectionDate || "_______________________";
   const applicationNo = formatApplicationNo(data.applicationNumber);
-  const sigName = data.signatoryName?.trim() || data.contactPerson.trim() || "—";
-  const sigDesig = data.signatoryDesignation?.trim() || "—";
-
-  const scopeBlocks: (Paragraph | Table)[] = [
-    plainParagraph("LICENSE SCOPE", true),
-    ...(data.licenseScopeFormat === "table" && data.licenseScopeRows?.length
-      ? [buildLicenseScopeTable(data.licenseScopeRows)]
-      : multilineParagraphs(data.licenseScope.trim() || "—")),
-  ];
+  const leftCol = Math.round(widthTwip * 0.62);
+  const rightCol = widthTwip - leftCol;
 
   const children: (Paragraph | Table)[] = [
-    ...buildLetterheadParagraphs(data, settings),
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
-      spacing: { after: 280 },
+      spacing: { after: 240 },
       children: [
         new TextRun({
           text: "DECLARATION REGARDING MANUFACTURING SCOPE",
@@ -210,17 +444,51 @@ async function buildManufacturingScopeDocx(
         }),
       ],
     }),
+    new Table({
+      width: { size: widthTwip, type: WidthType.DXA },
+      columnWidths: [leftCol, rightCol],
+      rows: [
+        new TableRow({
+          children: [
+            new TableCell({
+              borders: NO_BORDERS,
+              width: { size: leftCol, type: WidthType.DXA },
+              children: [
+                plainParagraph("To", false, { after: 40 }),
+                plainParagraph("The Director & Head", false, { after: 20 }),
+                plainParagraph("Bureau of Indian Standards", false, { after: 20 }),
+                plainParagraph(bisBranch, false, { after: 0 }),
+              ],
+            }),
+            new TableCell({
+              borders: NO_BORDERS,
+              width: { size: rightCol, type: WidthType.DXA },
+              children: [
+                new Paragraph({
+                  alignment: AlignmentType.RIGHT,
+                  spacing: { after: 40 },
+                  children: [
+                    bodyRun("Date: ", true),
+                    bodyRun(dateLabel),
+                  ],
+                }),
+                new Paragraph({
+                  alignment: AlignmentType.RIGHT,
+                  spacing: { after: 0 },
+                  children: [
+                    bodyRun("Application No.: ", true),
+                    bodyRun(applicationNo),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    }),
     bodyParagraph([
-      bodyRun("To\nThe Director & Head\nBureau of Indian Standards\n"),
-      bodyRun(bisBranch, true),
-      bodyRun("\t\t\t\tDate: "),
-      bodyRun(dateLabel, true),
-      bodyRun("\n\t\t\t\tApplication No.: "),
-      bodyRun(applicationNo, true),
-    ]),
-    bodyParagraph([
-      bodyRun("Sub: "),
-      bodyRun("Declaration regarding manufacturing scope", true),
+      bodyRun("Sub: ", true),
+      bodyRun("Declaration regarding manufacturing scope"),
       ...(isRef
         ? [bodyRun(" under Indian Standard "), bodyRun(isRef, true), bodyRun(".")]
         : [bodyRun(".")]),
@@ -230,7 +498,7 @@ async function buildManufacturingScopeDocx(
       bodyRun(`M/s. ${data.companyName}`, true),
       ...(data.address.trim()
         ? [
-            bodyRun(" having our factory at "),
+            bodyRun(", having our factory at "),
             bodyRun(data.address, true),
             bodyRun(","),
           ]
@@ -239,33 +507,25 @@ async function buildManufacturingScopeDocx(
       ...(isRef ? [bodyRun(" under "), bodyRun(isRef, true)] : []),
       bodyRun(" is as follows:"),
     ]),
-    ...scopeBlocks,
+    new Paragraph({ spacing: { before: 80, after: 0 }, children: [] }),
+    buildLicenseScopeBox(data, widthTwip),
     plainParagraph(
       "We further declare that the above information is true and correct to the best of our knowledge and belief. We undertake to inform BIS of any change in the manufacturing scope covered under the licence.",
+      false,
+      { before: 200, after: 120 },
     ),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 480, after: 120 },
-      children: [bodyRun(`For ${data.companyName}`, true)],
-    }),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      spacing: { before: 720, after: 80 },
-      border: {
-        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-      },
-      children: [bodyRun(`Name: ${sigName}`)],
-    }),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
-      children: [bodyRun(`Designation: ${sigDesig}`)],
-    }),
+    ...(await buildSignatoryBlock(data, letterheadSettings)),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
   return new Document({
     sections: [
       {
-        properties: {},
+        properties: {
+          page: {
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
         children,
       },
     ],
@@ -276,8 +536,9 @@ async function buildManufacturingScopeDocx(
 export async function downloadManufacturingScopeDeclarationWord(
   data: ManufacturingScopeDeclarationData,
   settings: PrintSettings,
+  assets?: ManufacturingScopePrintAssets,
 ): Promise<void> {
-  const doc = await buildManufacturingScopeDocx(data, settings);
+  const doc = await buildManufacturingScopeDocx(data, settings, assets);
   const blob = await Packer.toBlob(doc);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

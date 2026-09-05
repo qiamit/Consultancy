@@ -7,9 +7,20 @@ import {
   TextRun,
 } from "docx";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
-import type { Cmpf311LetterData } from "@backend/modules/print/cmpf-311";
-import { cmpf311DeclarationPlainText } from "@backend/modules/print/cmpf-311";
+import {
+  buildCmpf311Company,
+  cmpf311DeclarationPlainText,
+  cmpf311LetterheadSettings,
+  type Cmpf311LetterData,
+  type Cmpf311PrintAssets,
+} from "@backend/modules/print/cmpf-311";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -56,14 +67,22 @@ function plainParagraph(text: string, centered = false): Paragraph {
   });
 }
 
-async function buildCmpf311Docx(data: Cmpf311LetterData): Promise<Document> {
+async function buildCmpf311Docx(
+  data: Cmpf311LetterData,
+  settings: PrintSettings,
+  assets?: Cmpf311PrintAssets,
+): Promise<Document> {
+  const letterheadSettings = cmpf311LetterheadSettings(settings);
+  const company = buildCmpf311Company(data, assets);
   const doc = data.document;
   const licenceFor = doc.licence_for_standard || data.isNumber || "—";
   const productManualNo = doc.sit_document_ref || "—";
   const sigName = data.firmRepName || data.contactPerson || "—";
   const sigDesig = data.firmRepDesignation || "—";
+  const bisLine = `${data.bisBranchName.trim() || "________________"}, ${data.bisBranchState.trim() || "________________"}, INDIA`;
 
   const children: Paragraph[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       children: [bodyRun("CMPF - 311", true)],
@@ -75,24 +94,22 @@ async function buildCmpf311Docx(data: Cmpf311LetterData): Promise<Document> {
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      children: [bodyRun("Page 01 of 01", true)],
-    }),
-    new Paragraph({
-      alignment: AlignmentType.RIGHT,
       spacing: { after: 40 },
-      children: [bodyRun(`Date: ${formatMetaDate(data.dateOfApplication)}`)],
+      children: [bodyRun(`Date: ${formatMetaDate(data.dateOfInspection)}`)],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       spacing: { after: 120 },
       children: [bodyRun(`Application No.: ${formatApplicationNo(data.applicationNumber)}`)],
     }),
+    plainParagraph("To"),
+    plainParagraph("The Director & Head"),
+    plainParagraph("Bureau of Indian Standards"),
+    plainParagraph(bisLine),
     plainParagraph(
-      `Reference Letter No.: ${doc.reference_letter_no || "—"}  Dated: ${formatMetaDate(doc.reference_letter_date)}`,
+      `This has reference to your letter No. ${doc.reference_letter_no || "________________"} dated ${formatMetaDate(doc.reference_letter_date) || "________________"}.`,
     ),
-    plainParagraph(
-      cmpf311DeclarationPlainText(licenceFor, productManualNo),
-    ),
+    plainParagraph(cmpf311DeclarationPlainText(licenceFor, productManualNo)),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       spacing: { before: 360, after: 0 },
@@ -111,16 +128,30 @@ async function buildCmpf311Docx(data: Cmpf311LetterData): Promise<Document> {
       spacing: { before: 40, after: 0 },
       children: [bodyRun(`Designation: ${sigDesig}`)],
     }),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadCmpf311Word(
   data: Cmpf311LetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: Cmpf311PrintAssets,
 ): Promise<void> {
-  const docx = await buildCmpf311Docx(data);
+  const docx = await buildCmpf311Docx(data, settings, assets);
   const blob = await Packer.toBlob(docx);
   triggerBlobDownload(blob, `${exportFilenameBase(data)}.docx`);
 }

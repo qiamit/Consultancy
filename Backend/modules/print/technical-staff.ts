@@ -45,10 +45,8 @@ function formatBisBranchLine(branchName: string, state: string, country: string)
   return parts.join(", ");
 }
 
-function formatInspectionDateDisplay(dateStr: string): string {
-  const raw = (dateStr ?? "").trim();
-  if (!raw) return "N/A";
-  return formatDisplayDate(raw, "N/A");
+function formatInspectionDateDisplay(dateStr: string | Date | null | undefined): string {
+  return formatDisplayDate(dateStr, "N/A");
 }
 
 function formatApplicationNo(raw: string | undefined): string {
@@ -240,26 +238,59 @@ function buildLetterBody(data: TechnicalStaffLetterData): string {
 </div>`;
 }
 
-export function buildTechnicalStaffCompany(data: TechnicalStaffLetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({
-    ...data,
-    licenseScope: "",
-  });
+export type TechnicalStaffPrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildTechnicalStaffCompany(
+  data: TechnicalStaffLetterData,
+  assets?: TechnicalStaffPrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({
+      ...data,
+      licenseScope: "",
+    }),
+    ...assets,
+    // Text letterhead only — never show company logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultTechnicalStaffPrintSettings(): PrintSettings {
-  return defaultDeclarationPrintSettings();
+  return {
+    ...defaultDeclarationPrintSettings(),
+    letterhead_layout: "logo-na",
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
+  };
+}
+
+/** Force no-logo letterhead for Technical Staff preview / Word. */
+export function technicalStaffLetterheadSettings(
+  settings: PrintSettings,
+): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+  };
 }
 
 export function buildTechnicalStaffHtml(
   data: TechnicalStaffLetterData,
   settings: PrintSettings,
+  assets?: TechnicalStaffPrintAssets,
 ): string {
   return buildPrintDocument({
     title: "Technical Staff Details",
     bodyHtml: buildLetterBody(data),
-    settings,
-    company: buildTechnicalStaffCompany(data),
+    settings: technicalStaffLetterheadSettings(settings),
+    company: buildTechnicalStaffCompany(data, assets),
   });
 }
 

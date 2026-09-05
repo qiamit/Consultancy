@@ -13,8 +13,19 @@ import {
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import { rowHasContent, type CertifiedReferenceMaterialStored } from "@backend/modules/bis/certified-reference-materials";
-import type { CertifiedReferenceMaterialsLetterData } from "@backend/modules/print/certified-reference-materials";
+import {
+  buildCertifiedReferenceMaterialsCompany,
+  certifiedReferenceMaterialsLetterheadSettings,
+  type CertifiedReferenceMaterialsLetterData,
+  type CertifiedReferenceMaterialsPrintAssets,
+} from "@backend/modules/print/certified-reference-materials";
 import type { PrintSettings } from "@backend/modules/print/types";
+import {
+  buildLetterheadLowerParagraphs,
+  buildNoLogoLetterheadBlocks,
+  pageMarginsFromSettings,
+  pageSizeTwipFromSettings,
+} from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
@@ -150,7 +161,11 @@ function materialTableSection(rows: CertifiedReferenceMaterialStored[]): (Paragr
 
 async function buildCertifiedReferenceMaterialsDocx(
   data: CertifiedReferenceMaterialsLetterData,
+  settings: PrintSettings,
+  assets?: CertifiedReferenceMaterialsPrintAssets,
 ): Promise<Document> {
+  const letterheadSettings = certifiedReferenceMaterialsLetterheadSettings(settings);
+  const company = buildCertifiedReferenceMaterialsCompany(data, assets);
   const bisBranch = formatBisBranchLine(
     data.bisBranchName,
     data.bisBranchState,
@@ -159,6 +174,7 @@ async function buildCertifiedReferenceMaterialsDocx(
   const isStdRef = formatIsStandardRef(data.isNumber, data.isTitle ?? "");
 
   const children: (Paragraph | Table)[] = [
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 200 },
@@ -197,16 +213,30 @@ async function buildCertifiedReferenceMaterialsDocx(
       spacing: { before: 40, after: 0 },
       children: [bodyRun(`Designation: ${data.firmRepDesignation || "—"}`)],
     }),
+    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
-  return new Document({ sections: [{ properties: {}, children }] });
+  return new Document({
+    sections: [
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: pageMarginsFromSettings(letterheadSettings),
+          },
+        },
+        children,
+      },
+    ],
+  });
 }
 
 export async function downloadCertifiedReferenceMaterialsWord(
   data: CertifiedReferenceMaterialsLetterData,
-  _settings: PrintSettings,
+  settings: PrintSettings,
+  assets?: CertifiedReferenceMaterialsPrintAssets,
 ): Promise<void> {
-  const doc = await buildCertifiedReferenceMaterialsDocx(data);
+  const doc = await buildCertifiedReferenceMaterialsDocx(data, settings, assets);
   const buffer = await Packer.toBlob(doc);
   triggerBlobDownload(buffer, `${exportFilenameBase(data)}.docx`);
 }

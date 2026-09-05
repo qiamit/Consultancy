@@ -51,7 +51,7 @@ function formatBisBranchLine(branchName: string, state: string): string {
 
 function buildFormHeaderHtml(data: Cmpf311LetterData): string {
   const appNo = formatApplicationNo(data.applicationNumber);
-  const letterDate = formatMetaDate(data.dateOfApplication);
+  const letterDate = formatMetaDate(data.dateOfInspection);
 
   return `
 <div class="cmpf-form-id">CMPF - 311</div>
@@ -126,24 +126,58 @@ function buildFormBody(data: Cmpf311LetterData): string {
 </div>`;
 }
 
-export function buildCmpf311Company(data: Cmpf311LetterData): PrintCompanyInfo {
-  return buildManufacturingScopeCompany({ ...data, licenseScope: "" });
+export type Cmpf311PrintAssets = Partial<
+  Pick<
+    PrintCompanyInfo,
+    "logo_url" | "letterhead_upper_url" | "letterhead_lower_url" | "seal_sign_url"
+  >
+>;
+
+export function buildCmpf311Company(
+  data: Cmpf311LetterData,
+  assets?: Cmpf311PrintAssets,
+): PrintCompanyInfo {
+  return {
+    ...buildManufacturingScopeCompany({ ...data, licenseScope: "" }),
+    ...assets,
+    // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
+    logo_url: null,
+  };
 }
 
 export function defaultCmpf311PrintSettings(): PrintSettings {
   return {
     ...defaultDeclarationPrintSettings(),
     orientation: "portrait",
-    show_letterhead: true,
+    letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Times New Roman",
     font_size: 11,
+    margin_top: 5,
+    margin_bottom: 5,
+    margin_left: 15,
+    margin_right: 10,
   };
 }
 
-export function buildCmpf311Html(data: Cmpf311LetterData, settings: PrintSettings): string {
-  const sheetMinHeight = `calc(297mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+/** Force no-logo letterhead for CMPF 311 preview / Word (same as Top Management). */
+export function cmpf311LetterheadSettings(settings: PrintSettings): PrintSettings {
+  return {
+    ...settings,
+    letterhead_layout: "logo-na",
+    show_page_numbers: false,
+  };
+}
+
+export function buildCmpf311Html(
+  data: Cmpf311LetterData,
+  settings: PrintSettings,
+  assets?: Cmpf311PrintAssets,
+): string {
+  const letterheadSettings = cmpf311LetterheadSettings(settings);
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -231,8 +265,8 @@ export function buildCmpf311Html(data: Cmpf311LetterData, settings: PrintSetting
     title: "CMPF 311 — Acceptance of Scheme of Inspection & Testing",
     bodyHtml: buildFormBody(data),
     extraStyles: styles,
-    settings,
-    company: buildCmpf311Company(data),
+    settings: letterheadSettings,
+    company: buildCmpf311Company(data, assets),
   });
 }
 

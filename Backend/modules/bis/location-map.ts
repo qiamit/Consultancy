@@ -8,9 +8,13 @@ export type LocationMapStored = {
   map_zoom: string;
 };
 
-export const DEFAULT_MAP_ZOOM = 12;
+export const MAP_ZOOM_FIT = "fit";
+/** Legacy numeric default — treated as fit-to-route when loading older documents. */
+export const LEGACY_DEFAULT_MAP_ZOOM = 12;
 export const MIN_MAP_ZOOM = 1;
 export const MAX_MAP_ZOOM = 21;
+/** @deprecated Use MAP_ZOOM_FIT — kept for older imports / footer copy. */
+export const DEFAULT_MAP_ZOOM = MAP_ZOOM_FIT;
 
 export function defaultLocationMapDocument(): LocationMapStored {
   return {
@@ -20,22 +24,71 @@ export function defaultLocationMapDocument(): LocationMapStored {
     to_location_name: "",
     to_latitude: "",
     to_longitude: "",
-    map_zoom: String(DEFAULT_MAP_ZOOM),
+    map_zoom: MAP_ZOOM_FIT,
   };
 }
 
 export function parseCoordinate(raw: string): number | null {
-  const value = raw.trim();
+  const value = raw.trim().replace(/\s+/g, "").replace(",", ".");
   if (!value) return null;
   const num = Number(value);
   if (!Number.isFinite(num)) return null;
   return num;
 }
 
-export function resolveMapZoom(raw: string): number {
+/** Keep only characters valid while typing a decimal coordinate. */
+export function sanitizeCoordinateInput(raw: string): string {
+  let cleaned = raw.replace(/,/g, ".").replace(/[^\d.\-]/g, "");
+  const negative = cleaned.startsWith("-");
+  cleaned = cleaned.replace(/-/g, "");
+  const parts = cleaned.split(".");
+  if (parts.length > 2) {
+    cleaned = `${parts[0]}.${parts.slice(1).join("")}`;
+  }
+  return negative ? `-${cleaned}` : cleaned;
+}
+
+export function isMapZoomFit(raw: string): boolean {
+  const v = raw.trim().toLowerCase();
+  return !v || v === "fit" || v === "auto";
+}
+
+/** Normalize stored zoom: empty / legacy default 12 → fit-to-route. */
+export function normalizeMapZoom(raw: string): string {
+  const v = raw.trim().toLowerCase();
+  if (!v || v === "fit" || v === "auto") return MAP_ZOOM_FIT;
+  if (v === String(LEGACY_DEFAULT_MAP_ZOOM)) return MAP_ZOOM_FIT;
   const parsed = parseCoordinate(raw);
-  if (parsed === null) return DEFAULT_MAP_ZOOM;
+  if (parsed === null) return MAP_ZOOM_FIT;
+  return String(Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, Math.round(parsed))));
+}
+
+export function resolveMapZoom(raw: string): number {
+  if (isMapZoomFit(raw) || normalizeMapZoom(raw) === MAP_ZOOM_FIT) {
+    return LEGACY_DEFAULT_MAP_ZOOM;
+  }
+  const parsed = parseCoordinate(raw);
+  if (parsed === null) return LEGACY_DEFAULT_MAP_ZOOM;
   return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, Math.round(parsed)));
+}
+
+/** Approximate zoom that fits both points in a typical embed viewport. */
+export function computeFitZoom(
+  fromLat: number,
+  fromLng: number,
+  toLat: number,
+  toLng: number,
+  mapWidthPx = 640,
+  mapHeightPx = 520,
+): number {
+  const latSpan = Math.max(Math.abs(fromLat - toLat) * 1.45, 0.015);
+  const lngSpan = Math.max(Math.abs(fromLng - toLng) * 1.45, 0.015);
+  const zoomLng = Math.log2((360 * mapWidthPx) / (lngSpan * 256));
+  const midLatRad = (((fromLat + toLat) / 2) * Math.PI) / 180;
+  const latWorld = (latSpan * 256) / Math.max(0.2, Math.cos(midLatRad));
+  const zoomLat = Math.log2((180 * mapHeightPx) / latWorld);
+  const zoom = Math.floor(Math.min(zoomLng, zoomLat));
+  return Math.min(MAX_MAP_ZOOM, Math.max(MIN_MAP_ZOOM, zoom));
 }
 
 export function isValidLatitude(value: number): boolean {
@@ -83,7 +136,7 @@ export function parseLocationMap(raw: unknown): LocationMapStored {
     to_location_name: String(r.to_location_name ?? "").trim(),
     to_latitude: String(r.to_latitude ?? "").trim(),
     to_longitude: String(r.to_longitude ?? "").trim(),
-    map_zoom: String(r.map_zoom ?? DEFAULT_MAP_ZOOM).trim() || String(DEFAULT_MAP_ZOOM),
+    map_zoom: normalizeMapZoom(String(r.map_zoom ?? MAP_ZOOM_FIT)),
   };
 }
 
@@ -115,12 +168,15 @@ export function mergeLocationMapWithDefaults(
     to_location_name: stored.to_location_name || defaults.to_location_name || "",
     to_latitude: stored.to_latitude || defaults.to_latitude || "",
     to_longitude: stored.to_longitude || defaults.to_longitude || "",
-    map_zoom: stored.map_zoom || defaults.map_zoom || String(DEFAULT_MAP_ZOOM),
+    map_zoom: normalizeMapZoom(
+      stored.map_zoom || defaults.map_zoom || MAP_ZOOM_FIT,
+    ),
   };
 }
 
 function formatCoord(value: number): string {
-  return String(value);
+  // 6 dp is enough for maps and avoids iframe remount thrash from float noise.
+  return String(Number(value.toFixed(6)));
 }
 
 export function buildGoogleMapsDirectionsUrl(doc: LocationMapStored): string | null {
@@ -160,14 +216,38 @@ export function buildGoogleMapsEmbedUrl(doc: LocationMapStored): string | null {
 
   const origin = `${formatCoord(fromLat)},${formatCoord(fromLng)}`;
   const destination = `${formatCoord(toLat)},${formatCoord(toLng)}`;
-  const zoom = String(resolveMapZoom(doc.map_zoom));
+  const zoomMode = normalizeMapZoom(doc.map_zoom);
+  const fit = zoomMode === MAP_ZOOM_FIT;
+  const zoom = fit
+    ? computeFitZoom(fromLat, fromLng, toLat, toLng)
+    : resolveMapZoom(zoomMode);
+  const apiKey =
+    typeof process !== "undefined"
+      ? process.env.NEXT_PUBLIC_GOOGLE_MAPS_EMBED_API_KEY?.trim()
+      : undefined;
 
+  if (apiKey) {
+    const params = new URLSearchParams({
+      key: apiKey,
+      origin,
+      destination,
+      mode: "driving",
+      maptype: "roadmap",
+    });
+    // Embed API directions auto-frames the route when zoom is omitted.
+    if (!fit) params.set("zoom", String(zoom));
+    return `https://www.google.com/maps/embed/v1/directions?${params.toString()}`;
+  }
+
+  // Directions embed — Google builds a valid pb internally.
+  // Fit mode: omit z so the full From→To route is framed.
+  // Manual zoom: pass z explicitly.
   const params = new URLSearchParams({
     saddr: origin,
     daddr: destination,
     hl: "en",
-    z: zoom,
     output: "embed",
   });
+  if (!fit) params.set("z", String(zoom));
   return `https://maps.google.com/maps?${params.toString()}`;
 }

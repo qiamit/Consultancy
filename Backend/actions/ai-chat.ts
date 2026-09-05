@@ -115,10 +115,13 @@ export async function sendAiMessage(
       return { ok: true, reply };
     }
 
-    // ── Mistral / OpenAI-compatible ───────────────────────────────────────────
-    const baseUrl = provider.toLowerCase().includes("mistral")
+    // ── Mistral / DeepSeek / OpenAI-compatible ────────────────────────────────
+    const providerLower = provider.toLowerCase();
+    const baseUrl = providerLower.includes("mistral")
       ? "https://api.mistral.ai/v1"
-      : "https://api.openai.com/v1";
+      : providerLower.includes("deepseek")
+        ? "https://api.deepseek.com/v1"
+        : "https://api.openai.com/v1";
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",
@@ -136,7 +139,13 @@ export async function sendAiMessage(
       }),
     });
     if (!res.ok) {
-      return { ok: false, error: `API error ${res.status}` };
+      const err = await res.json().catch(() => ({}));
+      return {
+        ok: false,
+        error:
+          (err as { error?: { message?: string } }).error?.message ??
+          `API error ${res.status}`,
+      };
     }
     const data = await res.json() as { choices?: { message?: { content?: string } }[] };
     const reply = data.choices?.[0]?.message?.content ?? "";

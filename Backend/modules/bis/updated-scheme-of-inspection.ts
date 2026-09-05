@@ -32,269 +32,26 @@ function sitDataRow(
   return { row_kind: partial.row_kind ?? "data", ...partial };
 }
 
+/** One blank data row — default table seed for Updated Scheme of Inspection. */
+export function emptySitTestRow(): SitTestRow {
+  return sitDataRow({
+    clause_no: "",
+    requirement: "",
+    test_methods_ref: "",
+    equipment_req: "",
+    sample_count: "",
+    frequency: "",
+    remarks: "",
+  });
+}
+
+export function defaultSitTestRows(): SitTestRow[] {
+  return [emptySitTestRow()];
+}
+
+/** @deprecated Use defaultSitTestRows() — sample IS 17631 seed removed. */
 export function defaultSitTestRowsIs17631(): SitTestRow[] {
-  return [
-    sitDataRow({
-      clause_no: "4",
-      requirement: "Design and workmanship",
-      test_methods_ref: "4\nIS 17631",
-      equipment_req: "R",
-      sample_count: "Each work chair",
-      frequency: "-",
-      remarks: "-",
-    }),
-    sitDataRow({
-      clause_no: "5",
-      requirement: "Dimensions",
-      test_methods_ref: "-\nIS 3663",
-      equipment_req: "R",
-      sample_count: "Five Percent",
-      frequency: "Each Control Unit",
-      remarks:
-        "Samples shall be selected at random to cover entire production evenly as far as possible. In case failure of sample in this requirement, double the initial sample shall be selected and tested, control unit shall be rejected in case of failure of retested samples.",
-    }),
-    sitDataRow({
-      row_kind: "group",
-      clause_no: "6",
-      requirement: "Surface performance (of materials)",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "",
-      requirement: "Rigid Surfaces",
-      test_methods_ref: "-\nIS 17637",
-      equipment_req: "S",
-      sample_count: "One",
-      frequency: "Once in Every Month",
-      remarks:
-        "The test samples for surface performance are to be tested on materials only, after their surface treatment and not on assembled chair",
-    }),
-    sitDataRow({
-      clause_no: "",
-      requirement: "Fabric and Synthetic Leather",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "8",
-      requirement: "Natural Leather",
-      test_methods_ref: "7",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      row_kind: "section",
-      clause_no: "7",
-      requirement: "SAFETY REQUIREMENTS",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      row_kind: "group",
-      clause_no: "7.3",
-      requirement: "Stability Test",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.3.1",
-      requirement: "Front Edge Overturning",
-      test_methods_ref: "IS 17631",
-      equipment_req: "S",
-      sample_count: "One",
-      frequency: "Once in Three Month",
-      remarks: "-",
-    }),
-    sitDataRow({
-      clause_no: "7.3.2",
-      requirement: "Forwards Overturning",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.3.3",
-      requirement: "Forwards Overturning for Chairs with Foot Rest",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.3.4",
-      requirement: "Sideways Overturning for Chairs Without Arm Rests",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.3.5",
-      requirement: "Sideways Overturning for Chairs With Arm Rests",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.3.6",
-      requirement: "Rearwards Overturning for Chairs Without Back Rest Inclination",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.3.7",
-      requirement: "Rearwards Overturning for Chairs with Backrest Inclination",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      row_kind: "group",
-      clause_no: "7.4",
-      requirement: "Static-Load Tests",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.4.1",
-      requirement: "Seat Front Edge Static Load Test",
-      test_methods_ref: "IS 17631",
-      equipment_req: "S",
-      sample_count: "One",
-      frequency: "Once in Three Month",
-      remarks: "-",
-    }),
-    sitDataRow({
-      clause_no: "7.4.2",
-      requirement: "Combined Seat and Back Static Load Test",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.4.3",
-      requirement: "Arm Rest Downward Static Load Test — Central",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.4.4",
-      requirement: "Arm Rest Downward Static Load Test — Front",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.4.5",
-      requirement: "Arm Rest Sideways Static Load Test",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.4.6",
-      requirement: "Foot Rest Static Load Test",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      row_kind: "group",
-      clause_no: "7.5",
-      requirement: "Durability Tests",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.5.1",
-      requirement: "Seat and Back Durability",
-      test_methods_ref: "IS 17631",
-      equipment_req: "S",
-      sample_count: "One",
-      frequency: "Once in Three Months",
-      remarks:
-        "Each design/model shall be tested in rotation so that all the designs/models are tested in a period of two years",
-    }),
-    sitDataRow({
-      clause_no: "7.5.2",
-      requirement: "Arm Rest Durability",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.5.3",
-      requirement: "Swivel Test",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.5.4",
-      requirement: "Foot-rest Durability",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-    sitDataRow({
-      clause_no: "7.5.5",
-      requirement: "Castor and Chair-Base Durability",
-      test_methods_ref: "",
-      equipment_req: "",
-      sample_count: "",
-      frequency: "",
-      remarks: "",
-    }),
-  ];
+  return defaultSitTestRows();
 }
 
 export function defaultUpdatedSchemeOfInspectionDocument(): UpdatedSchemeOfInspectionStored {
@@ -310,7 +67,7 @@ export function defaultUpdatedSchemeOfInspectionDocument(): UpdatedSchemeOfInspe
     note_1: "",
     note_2: "",
     note_3: "",
-    test_rows: [],
+    test_rows: defaultSitTestRows(),
   };
 }
 
@@ -435,7 +192,7 @@ export function resolveUpdatedSchemeOfInspectionDefaults(input: {
       "Note-2: Sub-contracting is permitted to a laboratory recognized by the Bureau or Government laboratories empanelled by the Bureau.",
     note_3:
       "Note-3: Levels of control given in column 3 are only recommendatory in nature. The manufacturer may define the control unit/batch/lot and submit his own levels of control in column 3 with proper justification for approval by BO Head.",
-    test_rows: defaultSitTestRowsIs17631(),
+    test_rows: defaultSitTestRows(),
   };
 }
 
@@ -458,7 +215,7 @@ export function mergeUpdatedSchemeOfInspectionWithDefaults(
     test_rows:
       stored.test_rows.length > 0 && stored.test_rows.some(sitRowHasContent)
         ? stored.test_rows
-        : defaults.test_rows,
+        : defaultSitTestRows(),
   };
 }
 
