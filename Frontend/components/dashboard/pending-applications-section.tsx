@@ -2,17 +2,30 @@
 
 import React from "react";
 import { useMemo, useState, useEffect, useTransition, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
+import {
+  isPreparationDocKey,
+  PREPARATION_DOC_QUERY,
+  PREPARATION_QUERY,
+} from "@/components/dashboard/preparation-url-state";
 import { createClient } from "@backend/db/client/client";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
 import { uploadTechnicalStaffDocument } from "@backend/modules/storage/technical-staff-documents";
-import { updateBisProjectTargetDate, updateBisProjectNotes, convertLicenseToApplication } from "@backend/actions/bis-projects";
+import { updateBisProjectTargetDate, updateBisProjectNotes, updateBisProjectApplicationStage, convertLicenseToApplication, deletePendingApplicationsAsAdmin } from "@backend/actions/bis-projects";
 import {
   updateBisNewApplicationNotes,
   updateBisNewApplicationTargetDate,
 } from "@backend/actions/bis-new-applications";
-import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
+import { useGoPageDraft } from "@/components/modules/finance/use-finance-master-state";
+import { CLIENT_FIELD_LABEL_CLASS, INDIA_STATES } from "@/components/modules/client-master/constants";
+import { openManakEbisAssist } from "@/components/modules/bis-projects/manak-ebis-assist";
+import {
+  manakRenewalLinkAriaLabel,
+  manakRenewalLinkNativeTitle,
+} from "@backend/modules/bis/manak-online-portal";
 
 const ClientSnapshotModal = dynamic(
   () =>
@@ -32,6 +45,13 @@ const ConvertToLicenseModal = dynamic(
   () =>
     import("@/components/dashboard/modals/convert-to-license-modal").then((m) => ({
       default: m.ConvertToLicenseModal,
+    })),
+  { ssr: false },
+);
+const AddNewApplicationModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/add-new-application-modal").then((m) => ({
+      default: m.AddNewApplicationModal,
     })),
   { ssr: false },
 );
@@ -243,6 +263,12 @@ import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample
 import type { TopManagementStored } from "@backend/modules/bis/top-management";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
 import { isApplicationProjectKind, isPendingApplicationRow, type BisApplicationSource } from "@backend/modules/bis/bis-project-kind";
+import {
+  BIS_APPLICATION_STAGES,
+  isBisApplicationStage,
+  normalizeBisApplicationStage,
+  type BisApplicationStage,
+} from "@backend/modules/bis/application-stage";
 import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff";
 import type { FactoryTestReportStored, FtrSampleSource } from "@backend/modules/bis/factory-test-report";
 import type { SubcontractedTestStored, SubcontractedTestsDocumentStored } from "@backend/modules/bis/subcontracted-tests";
@@ -278,24 +304,7 @@ import type { ClientDetail as SavedClientDetail } from "@backend/actions/renewal
 import { AppDropdownCombobox } from "@/components/modules/client-master/app-dropdown-combobox";
 import { type AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 
-const APP_SYSTEM_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
-You help with:
-- New BIS license applications and procedures
-- Application status tracking and follow-ups
-- Documents required for fresh applications
-- MANAK Online portal filing procedures
-- IS code selection and product inclusion
-- Application timelines and BIS inspection process
-
-Be concise, practical, and use Indian BIS/ISI certification context.`;
-
-const APP_STARTERS = [
-  "How do I apply for a new BIS license?",
-  "What documents are needed for a fresh application?",
-  "How long does BIS approval take?",
-  "What is product inclusion in BIS?",
-];
-
+const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 type ClientDetail = {
   name: string | null;
   company_name: string | null;
@@ -346,10 +355,14 @@ type ApplicationRow = {
   cm_l_digits: string | null;
   license_validity_date: string | null;
   client_name: string;
+  client_state?: string | null;
   is_number: string | null;
   is_revision_year: number | null;
   is_code_title: string | null;
   is_code_id: string | null;
+  portal_user_id?: string | null;
+  portal_password?: string | null;
+  application_stage?: string | null;
   notes: string | null;
   source?: BisApplicationSource;
 };
@@ -596,18 +609,14 @@ function DocumentTemplateModal({
   );
 }
 
-const APP_DOC_TABLE_BTN_BASE =
-  "inline-flex items-center gap-0.5 rounded-md border px-2 py-0.5 text-[11px] font-semibold leading-none shadow-sm transition";
+const APP_DOC_TILE_BASE =
+  "inline-flex min-h-[3.25rem] w-full items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-xs font-semibold leading-snug shadow-sm transition active:scale-[0.99]";
 
-const APP_DOC_TABLE_CELL = "px-2.5 py-0.5";
+const APP_DOC_TILE_TEAL =
+  `${APP_DOC_TILE_BASE} border-teal-200 bg-teal-50 text-teal-800 hover:border-teal-300 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:border-teal-600 dark:hover:bg-teal-950/60`;
 
-const APP_DOC_TABLE_ROWS_PER_SECTION = 15;
-
-const APP_DOC_TABLE_BTN_TEAL =
-  `${APP_DOC_TABLE_BTN_BASE} border-teal-200 bg-teal-50 text-teal-700 hover:border-teal-300 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300 dark:hover:border-teal-600`;
-
-const APP_DOC_TABLE_BTN_VIOLET =
-  `${APP_DOC_TABLE_BTN_BASE} border-violet-200 bg-violet-50 text-violet-700 hover:border-violet-300 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:border-violet-600`;
+const APP_DOC_TILE_VIOLET =
+  `${APP_DOC_TILE_BASE} border-violet-200 bg-violet-50 text-violet-800 hover:border-violet-300 hover:bg-violet-100 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-200 dark:hover:border-violet-600 dark:hover:bg-violet-950/60`;
 
 type AppDocShortcutAccent = "teal" | "violet";
 
@@ -619,7 +628,7 @@ type AppDocShortcutRow = {
 };
 
 function AppDocShortcutIcon({ kind }: { kind: string }) {
-  const cls = "h-3 w-3 shrink-0";
+  const cls = "h-4 w-4 shrink-0";
   switch (kind) {
     case "details":
       return (
@@ -733,86 +742,41 @@ function AppDocShortcutIcon({ kind }: { kind: string }) {
   }
 }
 
-function ApplicationDocumentShortcutsTable({
-  rows,
-  startIndex = 1,
-  className = "",
-}: {
-  rows: AppDocShortcutRow[];
-  startIndex?: number;
-  className?: string;
-}) {
+function ApplicationDocumentShortcutsTables({ rows }: { rows: AppDocShortcutRow[] }) {
   if (rows.length === 0) return null;
 
   return (
-    <div
-      className={`overflow-x-auto rounded-lg border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900 ${className}`}
-    >
-      <table className="w-full border-collapse text-xs table-auto">
-        <colgroup>
-          <col className="w-0" />
-          <col />
-          <col className="w-0" />
-        </colgroup>
-        <thead>
-          <tr className="border-b border-zinc-200 bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-800/60">
-            <th className={`whitespace-nowrap ${APP_DOC_TABLE_CELL} text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300`}>
-              Sr. No.
-            </th>
-            <th className={`${APP_DOC_TABLE_CELL} text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300`}>
-              Description of Document / Information
-            </th>
-            <th className={`whitespace-nowrap ${APP_DOC_TABLE_CELL} text-left text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:text-zinc-300`}>
-              Documents
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, index) => (
-            <tr
-              key={row.description}
-              className="border-b border-zinc-100 last:border-b-0 dark:border-zinc-800"
-            >
-              <td className={`whitespace-nowrap ${APP_DOC_TABLE_CELL} text-center text-xs font-medium leading-none text-zinc-700 dark:text-zinc-200`}>
-                {startIndex + index}
-              </td>
-              <td className={`${APP_DOC_TABLE_CELL} text-xs leading-snug text-zinc-800 dark:text-zinc-100`}>
-                {row.description}
-              </td>
-              <td className={`whitespace-nowrap ${APP_DOC_TABLE_CELL}`}>
-                <button
-                  type="button"
-                  onClick={row.onOpen}
-                  className={row.accent === "violet" ? APP_DOC_TABLE_BTN_VIOLET : APP_DOC_TABLE_BTN_TEAL}
-                >
-                  {row.icon}
-                  Open
-                </button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      {rows.map((row) => (
+        <button
+          key={row.description}
+          type="button"
+          onClick={row.onOpen}
+          className={row.accent === "violet" ? APP_DOC_TILE_VIOLET : APP_DOC_TILE_TEAL}
+        >
+          <span className="shrink-0" aria-hidden>
+            {row.icon}
+          </span>
+          <span className="min-w-0 flex-1">{row.description}</span>
+        </button>
+      ))}
     </div>
   );
 }
 
-function ApplicationDocumentShortcutsTables({ rows }: { rows: AppDocShortcutRow[] }) {
-  const firstTableRows = rows.slice(0, APP_DOC_TABLE_ROWS_PER_SECTION);
-  const secondTableRows = rows.slice(APP_DOC_TABLE_ROWS_PER_SECTION, APP_DOC_TABLE_ROWS_PER_SECTION * 2);
-
-  return (
-    <div className="grid grid-cols-1 gap-3 xl:grid-cols-2 xl:gap-4">
-      <ApplicationDocumentShortcutsTable rows={firstTableRows} startIndex={1} />
-      <ApplicationDocumentShortcutsTable
-        rows={secondTableRows}
-        startIndex={APP_DOC_TABLE_ROWS_PER_SECTION + 1}
-      />
-    </div>
-  );
-}
-
-function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: () => void }) {
+function ApplicationFormModal({
+  row,
+  onClose,
+  initialDoc = null,
+  onDocChange,
+}: {
+  row: ApplicationRow;
+  onClose: () => void;
+  initialDoc?: string | null;
+  onDocChange?: (doc: string | null) => void;
+}) {
+  const { open: sidebarOpen } = useSidebarLayout();
+  const [portalReady, setPortalReady] = useState(false);
   const initialNotes = parseApplicationChecklistNotes(row.notes);
   const initialScope = parseBisProjectLicenseScopeNotes(row.notes);
   const [descOptions, setDescOptions] = useState<AppDropdownOptionRow[]>([]);
@@ -874,6 +838,60 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   const [sampleOfferLetterFocusIndex, setSampleOfferLetterFocusIndex] = useState<number | null>(
     null,
   );
+
+  const applyDocKey = useCallback((doc: string | null) => {
+    const key = isPreparationDocKey(doc) ? doc : null;
+    setShowLicenseScopeEditor(key === "license-scope");
+    setShowOslSampleRequirements(key === "osl-sample");
+    setShowPiSampleRequirements(key === "pi-sample");
+    setShowApplicationDetails(key === "application-details");
+    setShowTopManagement(key === "top-management");
+    setShowTechnicalStaff(key === "technical-staff");
+    setShowFactoryTestReport(key === "factory-test-report");
+    setShowSubcontractedTests(key === "subcontracted-tests");
+    setShowCmpf305(key === "cmpf-305");
+    setShowCmpf306(key === "cmpf-306");
+    setShowRawMaterialDetails(key === "raw-material");
+    setShowCertifiedReferenceMaterials(key === "certified-reference-materials");
+    setShowCmpf307(key === "cmpf-307");
+    setShowCmpf310(key === "cmpf-310");
+    setShowCmpf311(key === "cmpf-311");
+    setShowUndertakingOption2(key === "undertaking-option-2");
+    setShowUndertakingLongDurationTest(key === "undertaking-long-duration");
+    setShowUndertakingMinimumMarkingFee(key === "undertaking-mmf");
+    setShowAuthorizationLetter(key === "authorization-letter");
+    setShowLocationMap(key === "location-map");
+    setShowPlantLayout(key === "plant-layout");
+    setShowProcessFlowChart(key === "process-flow-chart");
+    setShowProcessDescription(key === "process-description");
+    setShowUpdatedSchemeOfInspection(key === "updated-sit");
+    setShowSelfEvaluationForm(key === "self-evaluation");
+    setShowUndertakingGeneralIss(key === "undertaking-general-iss");
+    setShowClientEdit(key === "client-edit");
+    setShowIsCodeEdit(key === "is-code-edit");
+    setShowChecklistBulkPrint(key === "bulk-print");
+  }, []);
+
+  const openDoc = useCallback(
+    (doc: string) => {
+      applyDocKey(doc);
+      onDocChange?.(doc);
+    },
+    [applyDocKey, onDocChange],
+  );
+
+  const clearDoc = useCallback(() => {
+    applyDocKey(null);
+    onDocChange?.(null);
+  }, [applyDocKey, onDocChange]);
+
+  useEffect(() => {
+    applyDocKey(isPreparationDocKey(initialDoc) ? initialDoc : null);
+  }, [initialDoc, applyDocKey]);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
   const [licenseScope, setLicenseScope] = useState(() =>
     initialScope.scopeType === "plain"
       ? initialScope.plainText || initialNotes.licenseScope
@@ -1598,26 +1616,27 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
   function handleEditSampleFromFtr(source: FtrSampleSource, sampleIndex: number) {
     setSampleOfferLetterFocusIndex(sampleIndex);
     setReopenFtrAfterSampleEdit(true);
-    setShowFactoryTestReport(false);
-    if (source === "osl") setShowOslSampleRequirements(true);
-    else setShowPiSampleRequirements(true);
+    if (source === "osl") openDoc("osl-sample");
+    else openDoc("pi-sample");
   }
 
   function closeOslSampleRequirementsModal() {
-    setShowOslSampleRequirements(false);
     setSampleOfferLetterFocusIndex(null);
     if (reopenFtrAfterSampleEdit) {
       setReopenFtrAfterSampleEdit(false);
-      setShowFactoryTestReport(true);
+      openDoc("factory-test-report");
+    } else {
+      clearDoc();
     }
   }
 
   function closePiSampleRequirementsModal() {
-    setShowPiSampleRequirements(false);
     setSampleOfferLetterFocusIndex(null);
     if (reopenFtrAfterSampleEdit) {
       setReopenFtrAfterSampleEdit(false);
-      setShowFactoryTestReport(true);
+      openDoc("factory-test-report");
+    } else {
+      clearDoc();
     }
   }
 
@@ -1691,156 +1710,156 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
 
   const applicationDocShortcuts = useMemo((): AppDocShortcutRow[] => [
     {
-      description: "Application Details",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="details" />,
-      onOpen: () => setShowApplicationDetails(true),
-    },
-    {
-      description: "Top Management Details",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="people" />,
-      onOpen: () => setShowTopManagement(true),
-    },
-    {
-      description: "Technical Staff Details",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="staff" />,
-      onOpen: () => setShowTechnicalStaff(true),
-    },
-    {
-      description: "Location Map",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="map" />,
-      onOpen: () => setShowLocationMap(true),
-    },
-    {
-      description: "Plant Layout",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="layout" />,
-      onOpen: () => setShowPlantLayout(true),
-    },
-    {
-      description: "Process Flow Chart",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="document" />,
-      onOpen: () => setShowProcessFlowChart(true),
-    },
-    {
-      description: "Process Description",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="document" />,
-      onOpen: () => setShowProcessDescription(true),
-    },
-    {
-      description: "Undertaking for License Scope",
+      description: "License Scope",
       accent: "violet",
       icon: <AppDocShortcutIcon kind="license-scope" />,
-      onOpen: () => setShowLicenseScopeEditor(true),
+      onOpen: () => openDoc("license-scope"),
     },
     {
       description: "Sample for Out Side Lab",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="sample" />,
-      onOpen: () => setShowOslSampleRequirements(true),
+      onOpen: () => openDoc("osl-sample"),
     },
     {
-      description: "List of Plant & Machinery - CMPF 305",
+      description: "Application Details",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="details" />,
+      onOpen: () => openDoc("application-details"),
+    },
+    {
+      description: "Top Management Details",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="people" />,
+      onOpen: () => openDoc("top-management"),
+    },
+    {
+      description: "Technical Staff Details",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="staff" />,
+      onOpen: () => openDoc("technical-staff"),
+    },
+    {
+      description: "Location Map",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="map" />,
+      onOpen: () => openDoc("location-map"),
+    },
+    {
+      description: "Plant Layout",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="layout" />,
+      onOpen: () => openDoc("plant-layout"),
+    },
+    {
+      description: "Process Flow Chart",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="document" />,
+      onOpen: () => openDoc("process-flow-chart"),
+    },
+    {
+      description: "Process Description",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="document" />,
+      onOpen: () => openDoc("process-description"),
+    },
+    {
+      description: "List of Plant & Machinery",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="machinery" />,
-      onOpen: () => setShowCmpf305(true),
+      onOpen: () => openDoc("cmpf-305"),
     },
     {
-      description: "List of Testing Equipments - CMPF - 306",
+      description: "List of Testing Equipments",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="equipment" />,
-      onOpen: () => setShowCmpf306(true),
+      onOpen: () => openDoc("cmpf-306"),
     },
     {
-      description: "Brand Name Declaration - CMPF 307",
+      description: "Brand Name Declaration",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="brand" />,
-      onOpen: () => setShowCmpf307(true),
+      onOpen: () => openDoc("cmpf-307"),
     },
     {
-      description: "Acceptance of Marking Fee - CMPF 310",
+      description: "Acceptance of Marking Fee",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="fee" />,
-      onOpen: () => setShowCmpf310(true),
+      onOpen: () => openDoc("cmpf-310"),
     },
     {
-      description: "Acceptance of Scheme of Inspection & Testing CMPF 311",
+      description: "Acceptance of SIT",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="shield" />,
-      onOpen: () => setShowCmpf311(true),
+      onOpen: () => openDoc("cmpf-311"),
     },
     {
       description: "Undertaking For Raw Material",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="package" />,
-      onOpen: () => setShowRawMaterialDetails(true),
+      onOpen: () => openDoc("raw-material"),
     },
     {
       description: "List of Certified Reference Material",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="equipment" />,
-      onOpen: () => setShowCertifiedReferenceMaterials(true),
+      onOpen: () => openDoc("certified-reference-materials"),
     },
     {
       description: "Undertaking for Simplified Procedure",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="document" />,
-      onOpen: () => setShowUndertakingOption2(true),
+      onOpen: () => openDoc("undertaking-option-2"),
     },
     {
       description: "Undertaking for General ISS",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="document" />,
-      onOpen: () => setShowUndertakingGeneralIss(true),
+      onOpen: () => openDoc("undertaking-general-iss"),
     },
     {
       description: "Self Evaluation Form",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="evaluation" />,
-      onOpen: () => setShowSelfEvaluationForm(true),
+      onOpen: () => openDoc("self-evaluation"),
     },
     {
       description: "Authorization Letter",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="document" />,
-      onOpen: () => setShowAuthorizationLetter(true),
+      onOpen: () => openDoc("authorization-letter"),
     },
     {
       description: "Sample Offer for Inspection",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="sample" />,
-      onOpen: () => setShowPiSampleRequirements(true),
+      onOpen: () => openDoc("pi-sample"),
     },
     {
       description: "Factory Test Reports",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="chart" />,
-      onOpen: () => setShowFactoryTestReport(true),
+      onOpen: () => openDoc("factory-test-report"),
     },
     {
-      description: "Updated Scheme of Inspection & Testing",
+      description: "Own Updated SIT",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="shield" />,
-      onOpen: () => setShowUpdatedSchemeOfInspection(true),
+      onOpen: () => openDoc("updated-sit"),
     },
     {
       description: "Undertaking for Long Duration Test",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="document" />,
-      onOpen: () => setShowUndertakingLongDurationTest(true),
+      onOpen: () => openDoc("undertaking-long-duration"),
     },
     {
-      description: "Undertaking for Minimum Marking Fee",
+      description: "Undertaking for MMF of AIF",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="fee" />,
-      onOpen: () => setShowUndertakingMinimumMarkingFee(true),
+      onOpen: () => openDoc("undertaking-mmf"),
     },
-  ], []);
+  ], [openDoc]);
 
   function syncClientFromSaved(updated: SavedClientDetail) {
     setClient({
@@ -1885,8 +1904,14 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
     }));
   }
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm">
+  if (!portalReady) return null;
+
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm ${
+        sidebarOpen ? "lg:left-64" : "lg:left-0"
+      }`}
+    >
       <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-zinc-900">
         {/* Header */}
         <div className="shrink-0 bg-gradient-to-r from-sky-600 to-indigo-600 px-3 py-3 sm:px-5 sm:py-4">
@@ -1908,16 +1933,20 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
               </svg>
             </button>
           </div>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        </div>
+
+        {/* Client + IS bar */}
+        <div className="shrink-0 border-b border-zinc-200 bg-white px-3 py-2.5 sm:px-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
             <div className="flex min-w-0 items-center gap-2">
-              <p className="min-w-0 text-sm font-extrabold text-white sm:text-lg">
+              <p className="min-w-0 text-sm font-extrabold text-zinc-900 sm:text-base dark:text-zinc-50">
                 {client?.company_name ?? row.client_name}
               </p>
               {row.client_id && (
                 <button
                   type="button"
-                  onClick={() => setShowClientEdit(true)}
-                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                  onClick={() => openDoc("client-edit")}
+                  className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -1928,14 +1957,14 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
             </div>
             {isFullNumber !== "—" && (
               <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-                <p className="text-sm font-extrabold text-white sm:text-lg">
+                <p className="text-sm font-extrabold text-zinc-900 sm:text-base dark:text-zinc-50">
                   {isFullNumber}
                 </p>
                 {row.is_code_id && (
                   <button
                     type="button"
-                    onClick={() => setShowIsCodeEdit(true)}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-xs font-semibold text-white hover:bg-white/20"
+                    onClick={() => openDoc("is-code-edit")}
+                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-zinc-300 bg-zinc-50 px-2.5 py-1 text-xs font-semibold text-zinc-700 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                   >
                     <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -2121,7 +2150,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
             <button
               type="button"
-              onClick={() => setShowChecklistBulkPrint(true)}
+              onClick={() => openDoc("bulk-print")}
               className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-xs font-semibold text-zinc-800 hover:bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
             >
               Print / Download PDF
@@ -2153,7 +2182,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
       {showChecklistBulkPrint && (
         <ApplicationChecklistBulkPrintModal
           ctx={buildChecklistBulkPrintContext()}
-          onClose={() => setShowChecklistBulkPrint(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2171,7 +2200,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         <ClientEditModal
           clientId={row.client_id}
           onUpdated={syncClientFromSaved}
-          onClose={() => setShowClientEdit(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2179,7 +2208,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
         <IsCodeEditModal
           isCodeId={row.is_code_id}
           onUpdated={syncIsCodeFromSaved}
-          onClose={() => setShowIsCodeEdit(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2194,7 +2223,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           isNumber={isCode?.is_number ?? row.is_number}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           onSave={saveLicenseScope}
-          onClose={() => setShowLicenseScopeEditor(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2236,7 +2265,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={topManagement}
           onSave={saveTopManagement}
-          onClose={() => setShowTopManagement(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2250,7 +2279,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={technicalStaff}
           onSave={saveTechnicalStaff}
-          onClose={() => setShowTechnicalStaff(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2275,7 +2304,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={factoryTestReports}
           onSave={saveFactoryTestReports}
-          onClose={() => setShowFactoryTestReport(false)}
+          onClose={clearDoc}
           onEditSample={handleEditSampleFromFtr}
         />
       )}
@@ -2290,7 +2319,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           rows={subcontractedTests}
           document={subcontractedTestsDocument}
           onSave={saveSubcontractedTests}
-          onClose={() => setShowSubcontractedTests(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2311,7 +2340,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           licenseScopeRows={licenseScopeRows}
           rows={cmpf305Machinery}
           onSave={saveCmpf305Machinery}
-          onClose={() => setShowCmpf305(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2333,7 +2362,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           licenseScopeRows={licenseScopeRows}
           document={cmpf306}
           onSave={saveCmpf306}
-          onClose={() => setShowCmpf306(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2346,7 +2375,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           rows={rawMaterialDetails}
           onSave={saveRawMaterialDetails}
-          onClose={() => setShowRawMaterialDetails(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2359,7 +2388,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           rows={certifiedReferenceMaterials}
           onSave={saveCertifiedReferenceMaterials}
-          onClose={() => setShowCertifiedReferenceMaterials(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2372,7 +2401,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           document={cmpf307}
           onSave={saveCmpf307}
-          onClose={() => setShowCmpf307(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2386,7 +2415,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           companyScale={client?.company_scale ?? null}
           topManagement={topManagement}
           onSave={saveCmpf310}
-          onClose={() => setShowCmpf310(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2403,7 +2432,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           }
           topManagement={topManagement}
           onSave={saveCmpf311}
-          onClose={() => setShowCmpf311(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2416,7 +2445,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={undertakingOption2}
           onSave={saveUndertakingOption2}
-          onClose={() => setShowUndertakingOption2(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2432,7 +2461,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           projectId={row.id}
           legalDocumentRows={legalDocumentRows}
           onLegalDocumentsChange={updateLegalDocuments}
-          onClose={() => setShowApplicationDetails(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2448,7 +2477,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={undertakingGeneralIss}
           onSave={saveUndertakingGeneralIss}
-          onClose={() => setShowUndertakingGeneralIss(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2461,7 +2490,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={undertakingLongDurationTest}
           onSave={saveUndertakingLongDurationTest}
-          onClose={() => setShowUndertakingLongDurationTest(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2476,7 +2505,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={undertakingMinimumMarkingFee}
           onSave={saveUndertakingMinimumMarkingFee}
-          onClose={() => setShowUndertakingMinimumMarkingFee(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2488,7 +2517,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={locationMap}
           onSave={saveLocationMap}
-          onClose={() => setShowLocationMap(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2498,7 +2527,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           storedDocument={updatedSchemeOfInspection}
           onSave={saveUpdatedSchemeOfInspection}
-          onClose={() => setShowUpdatedSchemeOfInspection(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2510,7 +2539,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={plantLayout}
           onSave={savePlantLayout}
-          onClose={() => setShowPlantLayout(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2522,7 +2551,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={processFlowChart}
           onSave={saveProcessFlowChart}
-          onClose={() => setShowProcessFlowChart(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2539,7 +2568,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           processFlowChart={processFlowChart}
           storedDocument={processDescription}
           onSave={saveProcessDescription}
-          onClose={() => setShowProcessDescription(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2552,7 +2581,7 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={authorizationLetter}
           onSave={saveAuthorizationLetter}
-          onClose={() => setShowAuthorizationLetter(false)}
+          onClose={clearDoc}
         />
       )}
 
@@ -2569,15 +2598,14 @@ function ApplicationFormModal({ row, onClose }: { row: ApplicationRow; onClose: 
           topManagement={topManagement}
           storedDocument={selfEvaluationForm}
           onSave={saveSelfEvaluationForm}
-          onClose={() => setShowSelfEvaluationForm(false)}
+          onClose={clearDoc}
         />
       )}
 
-    </div>
+    </div>,
+    document.body,
   );
 }
-
-const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
 
 function formatDate(dateStr: string | null): string {
   return formatDisplayDate(dateStr);
@@ -2693,27 +2721,160 @@ function TargetDateCell({
   );
 }
 
+function applicationStageClass(stage: BisApplicationStage): string {
+  switch (stage) {
+    case "Draft":
+      return "border-zinc-300 bg-zinc-50 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200";
+    case "Submitted":
+      return "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300";
+    case "Query Done":
+      return "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300";
+    case "Application Recorded":
+      return "border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300";
+    case "Inspection Planned":
+      return "border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300";
+    case "Inspection Done":
+      return "border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300";
+    case "License Granted":
+      return "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300";
+    default:
+      return "border-zinc-300 bg-zinc-50 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200";
+  }
+}
+
+function ApplicationStageCell({
+  projectId,
+  stage,
+  onUpdate,
+}: {
+  projectId: string;
+  stage: string | null | undefined;
+  onUpdate: (id: string, stage: BisApplicationStage) => void;
+}) {
+  const current = normalizeBisApplicationStage(stage);
+  const [saving, startSave] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function handleChange(next: string) {
+    if (!isBisApplicationStage(next) || next === current) return;
+    setError(null);
+    startSave(async () => {
+      const res = await updateBisProjectApplicationStage(projectId, next);
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      onUpdate(projectId, next);
+    });
+  }
+
+  return (
+    <div className="mx-auto min-w-[11rem] max-w-[14rem] text-center">
+      <select
+        value={current}
+        disabled={saving}
+        onChange={(e) => handleChange(e.target.value)}
+        aria-label="Application status"
+        className={`w-full rounded-lg border px-2 py-1.5 text-center text-xs font-semibold outline-none focus:ring-2 focus:ring-sky-500/30 disabled:opacity-60 ${applicationStageClass(current)}`}
+      >
+        {BIS_APPLICATION_STAGES.map((s) => (
+          <option key={s} value={s}>
+            {s}
+          </option>
+        ))}
+      </select>
+      {error ? (
+        <p className="mt-1 text-[10px] text-red-600 dark:text-red-400">{error}</p>
+      ) : null}
+    </div>
+  );
+}
+
 export function PendingApplicationsSection({
   rows,
   variant = "pending_applications",
+  isAdmin = false,
 }: {
   rows: ApplicationRow[];
   variant?: "pending_applications" | "expired_licenses";
+  /** Super Admin (`profiles.role = admin`) — enables footer Delete. */
+  isAdmin?: boolean;
 }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const preparationId = searchParams.get(PREPARATION_QUERY);
+  const preparationDoc = searchParams.get(PREPARATION_DOC_QUERY);
   const [search, setSearch] = useState("");
+  const [stateFilter, setStateFilter] = useState("all");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
-  const [chatOpen, setChatOpen] = useState(false);
-  const [applyRow, setApplyRow] = useState<ApplicationRow | null>(null);
   const [convertRow, setConvertRow] = useState<ApplicationRow | null>(null);
+  const [addApplicationOpen, setAddApplicationOpen] = useState(false);
   const [viewRow, setViewRow] = useState<ApplicationRow | null>(null);
   const [isCodeView, setIsCodeView] = useState<{ id: string; is_number: string | null; revision_year: number | null } | null>(null);
   const [targetDates, setTargetDates] = useState<Record<string, string>>({});
+  const [applicationStages, setApplicationStages] = useState<
+    Record<string, BisApplicationStage>
+  >({});
   const [convertedIds, setConvertedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [convertingId, setConvertingId] = useState<string | null>(null);
   const [isConverting, startConvert] = useTransition();
+  const [isDeleting, startDelete] = useTransition();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const { goDisplay: goDraft, setGoDraft, clearGoDraft } = useGoPageDraft(page);
 
+  const applyRow = useMemo(() => {
+    if (!preparationId) return null;
+    return rows.find((r) => r.id === preparationId) ?? null;
+  }, [rows, preparationId]);
+
+  const replaceQuery = useCallback(
+    (mutate: (params: URLSearchParams) => void) => {
+      const params = new URLSearchParams(searchParams.toString());
+      mutate(params);
+      const q = params.toString();
+      router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+    },
+    [router, pathname, searchParams],
+  );
+
+  const openPreparation = useCallback(
+    (r: ApplicationRow) => {
+      replaceQuery((params) => {
+        params.set(PREPARATION_QUERY, r.id);
+        params.delete(PREPARATION_DOC_QUERY);
+      });
+    },
+    [replaceQuery],
+  );
+
+  const closePreparation = useCallback(() => {
+    replaceQuery((params) => {
+      params.delete(PREPARATION_QUERY);
+      params.delete(PREPARATION_DOC_QUERY);
+    });
+  }, [replaceQuery]);
+
+  const setPreparationDoc = useCallback(
+    (doc: string | null) => {
+      replaceQuery((params) => {
+        if (doc) params.set(PREPARATION_DOC_QUERY, doc);
+        else params.delete(PREPARATION_DOC_QUERY);
+      });
+    },
+    [replaceQuery],
+  );
+
+  useEffect(() => {
+    if (preparationId && !applyRow) {
+      closePreparation();
+    }
+  }, [preparationId, applyRow, closePreparation]);
+
+  const searchActive = search.trim().length > 0;
+  const stateFilterActive = stateFilter !== "all";
   const visibleRows = useMemo(() => {
     const base =
       variant === "pending_applications"
@@ -2724,26 +2885,88 @@ export function PendingApplicationsSection({
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
+    const stateQ = stateFilter.trim().toLowerCase();
     return visibleRows.filter((r) => {
+      if (stateFilter !== "all") {
+        const rowState = (r.client_state ?? "").trim().toLowerCase();
+        if (!rowState || rowState !== stateQ) return false;
+      }
       const matchSearch =
         !q ||
         r.client_name.toLowerCase().includes(q) ||
         r.title.toLowerCase().includes(q) ||
         (r.is_number?.toLowerCase().includes(q) ?? false) ||
-        (r.cm_l_digits?.toLowerCase().includes(q) ?? false);
+        (r.cm_l_digits?.toLowerCase().includes(q) ?? false) ||
+        (r.client_state?.toLowerCase().includes(q) ?? false) ||
+        normalizeBisApplicationStage(
+          applicationStages[r.id] ?? r.application_stage,
+        )
+          .toLowerCase()
+          .includes(q);
       return matchSearch;
     });
-  }, [visibleRows, search]);
+  }, [visibleRows, search, applicationStages, stateFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
   const isExpired = variant === "expired_licenses";
+  const grandTotal = visibleRows.length;
+  const tableColCount = isExpired ? 7 : 8;
+  const pageRowIds = paginated.map((r) => r.id);
+  const allPageSelected =
+    pageRowIds.length > 0 && pageRowIds.every((id) => selectedIds.has(id));
+  const somePageSelected =
+    pageRowIds.some((id) => selectedIds.has(id)) && !allPageSelected;
+  const pageBtn =
+    "rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700";
+  const navDisabled = grandTotal === 0;
+  const showPagination = filtered.length > 0;
+  const sectionTitle =
+    variant === "expired_licenses" ? "Expired Licenses" : "Pending Applications";
+  const chk =
+    "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500";
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (el) el.indeterminate = somePageSelected;
+  }, [somePageSelected]);
+
+  function toggleRowSelection(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectPage() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (pageRowIds.every((id) => next.has(id))) {
+        for (const id of pageRowIds) next.delete(id);
+      } else {
+        for (const id of pageRowIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function handleGoTo() {
+    const n = Number.parseInt(goDraft.trim(), 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setGoDraft(null);
+      return;
+    }
+    clearGoDraft();
+    setPage(Math.min(n, totalPages));
+  }
 
   function handleConvertToApplication(row: ApplicationRow) {
     const label = row.client_name || "this client";
     if (
       !window.confirm(
-        `Convert the expired license for ${label} into a new application? The record will move to the Applications tab.`,
+        `Create a new BIS application for ${label} from this expired license? The new application will open under BIS New Applications.`,
       )
     ) {
       return;
@@ -2757,85 +2980,157 @@ export function PendingApplicationsSection({
         return;
       }
       setConvertedIds((prev) => new Set(prev).add(row.id));
+      router.push("/dashboard/bis-new-applications");
+      router.refresh();
+    });
+  }
+
+  function handleDeleteSelected() {
+    if (!isAdmin) {
+      window.alert("Only Super Admin can delete applications.");
+      return;
+    }
+    const ids = [...selectedIds];
+    if (ids.length === 0) {
+      window.alert("Select at least one application to delete.");
+      return;
+    }
+    const label =
+      ids.length === 1
+        ? "this application"
+        : `${ids.length} selected applications`;
+    if (
+      !window.confirm(
+        `Delete ${label} permanently? This cannot be undone.`,
+      )
+    ) {
+      return;
+    }
+    startDelete(async () => {
+      const res = await deletePendingApplicationsAsAdmin(ids);
+      if (!res.ok) {
+        window.alert(res.error);
+        return;
+      }
+      setConvertedIds((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.add(id);
+        return next;
+      });
+      setSelectedIds(new Set());
       router.refresh();
     });
   }
 
   return (
     <>
-    <section className="rounded-2xl border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-      {/* Section header + controls */}
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800 lg:flex-nowrap">
-        <h2 className="shrink-0 text-sm font-bold text-zinc-900 dark:text-white">
-          {variant === "expired_licenses" ? "Expired Licenses" : "Pending Applications"}
-        </h2>
+    <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <header className="border-b border-zinc-200 bg-zinc-50/90 px-4 py-2 dark:border-zinc-800 dark:bg-zinc-900/80">
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between lg:gap-3">
+          <div className="shrink-0">
+            <h1 className="text-base font-semibold leading-tight text-zinc-900 dark:text-zinc-50">
+              {sectionTitle}
+            </h1>
+          </div>
 
-        <div className="relative w-full max-w-[min(100%,12rem)] shrink-0 sm:max-w-[14rem]">
-          <svg className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search…"
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="w-full rounded-md border border-zinc-200 bg-zinc-50 py-1 pl-7 pr-2 text-xs text-zinc-800 placeholder-zinc-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-          />
+          <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:gap-2.5">
+            <div className="flex min-w-0 shrink-0 items-center gap-2">
+              <div className="w-full max-w-[min(100%,14rem)] sm:max-w-[16rem] md:max-w-[18rem] lg:max-w-[20rem]">
+                <label htmlFor="pending-applications-search" className="sr-only">
+                  Search clients, IS numbers, and titles
+                </label>
+                <input
+                  id="pending-applications-search"
+                  type="search"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search All Fields"
+                  autoComplete="off"
+                  className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm text-zinc-900 shadow-sm outline-none placeholder:text-zinc-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                />
+              </div>
+              <select
+                id="pending-applications-page-size"
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(Number(e.target.value));
+                  setPage(1);
+                }}
+                aria-label="Entries per page"
+                title="Entries per page"
+                className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              >
+                {PAGE_SIZE_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              <select
+                id="pending-applications-state-filter"
+                value={stateFilter}
+                onChange={(e) => {
+                  setStateFilter(e.target.value);
+                  setPage(1);
+                }}
+                aria-label="Filter by state"
+                title="Filter by state"
+                className="max-w-[11rem] shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+              >
+                <option value="all">All</option>
+                {INDIA_STATES.map((state) => (
+                  <option key={state} value={state}>
+                    {state}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {(searchActive || stateFilterActive) ? (
+              <p className="text-xs text-zinc-600 dark:text-zinc-400 sm:ml-auto">
+                <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                  {filtered.length} match{filtered.length === 1 ? "" : "es"}
+                </span>
+                {stateFilterActive ? (
+                  <span className="text-zinc-500 dark:text-zinc-400">
+                    {" "}
+                    · {stateFilter}
+                  </span>
+                ) : null}
+              </p>
+            ) : null}
+          </div>
+
+          <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:self-center">
+            <button
+              type="button"
+              className="inline-flex items-center justify-center rounded-lg border border-violet-400 bg-violet-50 px-3 py-1.5 text-sm font-medium text-violet-700 shadow-sm hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/40"
+              title="Open QE Assistant — AI-powered Quality Engineering helper"
+              onClick={() =>
+                window.dispatchEvent(
+                  new CustomEvent("qe-assistant:open", {
+                    detail: { module: "bis-new-applications" },
+                  }),
+                )
+              }
+            >
+              QE Assistant
+            </button>
+            {!isExpired ? (
+              <button
+                type="button"
+                onClick={() => setAddApplicationOpen(true)}
+                className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
+              >
+                Add New Application
+              </button>
+            ) : null}
+          </div>
         </div>
-
-        <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
-          {filtered.length} record{filtered.length !== 1 ? "s" : ""}
-        </span>
-
-        <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-          <span className="whitespace-nowrap">Show</span>
-          <select
-            value={pageSize}
-            onChange={(e) => {
-              setPageSize(Number(e.target.value));
-              setPage(1);
-            }}
-            className="rounded-md border border-zinc-200 bg-white py-1 pl-2 pr-6 text-[11px] font-medium text-zinc-700 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-          >
-            {PAGE_SIZE_OPTIONS.map((size) => (
-              <option key={size} value={size}>{size} Entries</option>
-            ))}
-          </select>
-        </label>
-
-        <div className="flex shrink-0 items-center gap-0.5">
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-            disabled={page === 1}
-            className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-          >
-            ‹ Prev
-          </button>
-          <span className="rounded bg-zinc-100 px-2 py-0.5 text-[11px] font-bold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-            {page} / {totalPages}
-          </span>
-          <button
-            type="button"
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            disabled={page === totalPages}
-            className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-          >
-            Next ›
-          </button>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setChatOpen(true)}
-          className="ml-auto inline-flex shrink-0 items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 shadow-sm transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
-        >
-          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-          </svg>
-          Ask QE Assistant
-        </button>
-      </div>
+      </header>
 
       {/* Table */}
       <div className="overflow-x-auto">
@@ -2847,14 +3142,30 @@ export function PendingApplicationsSection({
           </p>
         ) : filtered.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-zinc-500">
-            No applications match your search.
+            {search.trim() || stateFilterActive
+              ? "No applications match your filters."
+              : "No applications match your search."}
           </p>
         ) : (
           <table
-            className={`dashboard-section-table w-full text-sm ${isExpired ? "min-w-[860px]" : "min-w-[980px]"}`}
+            className={`dashboard-section-table w-full text-sm ${isExpired ? "min-w-[860px]" : "min-w-[1120px]"}`}
           >
             <thead className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/60">
               <tr>
+                <th className="w-11 px-3 py-2.5 text-center align-middle">
+                  <div className="flex items-center justify-center">
+                    <input
+                      ref={selectAllRef}
+                      type="checkbox"
+                      disabled={pageRowIds.length === 0}
+                      checked={allPageSelected}
+                      onChange={toggleSelectPage}
+                      className={chk}
+                      title="Select all on this page"
+                      aria-label="Select all applications on this page"
+                    />
+                  </div>
+                </th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Client Name</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">IS Number</th>
                 {isExpired && (
@@ -2863,6 +3174,9 @@ export function PendingApplicationsSection({
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Start Date</th>
                 {!isExpired && (
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Target Date</th>
+                )}
+                {!isExpired && (
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Status</th>
                 )}
                 {isExpired && (
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">License Validity</th>
@@ -2876,6 +3190,17 @@ export function PendingApplicationsSection({
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
               {paginated.map((r) => (
                 <tr key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                  <td className="w-11 px-3 py-3 text-center align-middle">
+                    <div className="flex items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => toggleRowSelection(r.id)}
+                        className={chk}
+                        aria-label={`Select ${r.client_name}`}
+                      />
+                    </div>
+                  </td>
                   <td className="px-4 py-3 text-left">
                     <button
                       type="button"
@@ -2918,6 +3243,17 @@ export function PendingApplicationsSection({
                       />
                     </td>
                   )}
+                  {!isExpired && (
+                    <td className="px-4 py-3 text-center">
+                      <ApplicationStageCell
+                        projectId={r.id}
+                        stage={applicationStages[r.id] ?? r.application_stage}
+                        onUpdate={(id, stage) =>
+                          setApplicationStages((prev) => ({ ...prev, [id]: stage }))
+                        }
+                      />
+                    </td>
+                  )}
                   {isExpired && (
                     <td className="px-4 py-3 text-xs text-zinc-700 dark:text-zinc-300">
                       {formatDate(r.license_validity_date)}
@@ -2951,21 +3287,160 @@ export function PendingApplicationsSection({
                         {isConverting && convertingId === r.id ? "Converting…" : "Convert into Application"}
                       </button>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={() => setApplyRow(r)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 dark:bg-sky-700 dark:hover:bg-sky-600"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
-                        </svg>
-                        Apply
-                      </button>
+                      <div className="inline-flex flex-wrap items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => openPreparation(r)}
+                          title="Preparation — checklist and application draft"
+                          className="inline-flex items-center gap-1 rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 dark:bg-sky-700 dark:hover:bg-sky-600"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+                          </svg>
+                          Preparation
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openManakEbisAssist({
+                              userId: r.portal_user_id,
+                              password: r.portal_password,
+                              clientName: r.client_name,
+                              isLabel:
+                                r.is_number != null
+                                  ? `IS ${r.is_number}${
+                                      r.is_revision_year != null
+                                        ? `: ${r.is_revision_year}`
+                                        : ""
+                                    }`
+                                  : null,
+                            })
+                          }
+                          title={manakRenewalLinkNativeTitle(
+                            r.portal_user_id,
+                            r.portal_password,
+                          )}
+                          aria-label={manakRenewalLinkAriaLabel(
+                            r.portal_user_id,
+                            r.portal_password,
+                          )}
+                          className="inline-flex items-center gap-1 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                          </svg>
+                          Apply
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
               ))}
             </tbody>
+            <tfoot className="border-t border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200">
+              <tr>
+                <td colSpan={tableColCount} className="px-3 py-2 align-middle">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+                    <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2.5">
+                      <span>Total Entries: {filtered.length}</span>
+                      {searchActive && filtered.length !== grandTotal ? (
+                        <span className="text-xs font-normal text-zinc-600 dark:text-zinc-400">
+                          ({filtered.length} of {grandTotal} loaded)
+                        </span>
+                      ) : null}
+                      <button
+                        type="button"
+                        disabled={
+                          !isAdmin || selectedIds.size === 0 || isDeleting
+                        }
+                        title={
+                          !isAdmin
+                            ? "Only Super Admin can delete applications"
+                            : selectedIds.size === 0
+                              ? "Select one or more rows, then Delete"
+                              : `Delete ${selectedIds.size} selected application${selectedIds.size === 1 ? "" : "s"}`
+                        }
+                        onClick={handleDeleteSelected}
+                        className="inline-flex items-center justify-center rounded-lg border border-red-300 bg-white px-2.5 py-1 text-xs font-medium text-red-700 shadow-sm hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-red-900 dark:bg-zinc-800 dark:text-red-300 dark:hover:bg-red-950/50"
+                      >
+                        {isDeleting ? "Deleting…" : "Delete"}
+                      </button>
+                    </div>
+
+                    {showPagination ? (
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="text-xs font-normal text-zinc-600 dark:text-zinc-400">
+                          Page{" "}
+                          <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                            {page}
+                          </span>{" "}
+                          of{" "}
+                          <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                            {totalPages}
+                          </span>
+                        </p>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            disabled={navDisabled || page <= 1}
+                            onClick={() => {
+                              clearGoDraft();
+                              setPage(page - 1);
+                            }}
+                            className={pageBtn}
+                          >
+                            Previous
+                          </button>
+                          <button
+                            type="button"
+                            disabled={navDisabled || page >= totalPages}
+                            onClick={() => {
+                              clearGoDraft();
+                              setPage(page + 1);
+                            }}
+                            className={pageBtn}
+                          >
+                            Next
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <label
+                            htmlFor="pending-applications-go-page"
+                            className={CLIENT_FIELD_LABEL_CLASS}
+                          >
+                            Go to
+                          </label>
+                          <input
+                            id="pending-applications-go-page"
+                            type="number"
+                            min={1}
+                            max={totalPages}
+                            value={goDraft}
+                            onChange={(e) => setGoDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                e.preventDefault();
+                                handleGoTo();
+                              }
+                            }}
+                            className="w-14 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-center text-sm font-normal text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100"
+                            aria-label="Page number to go to"
+                          />
+                          <button
+                            type="button"
+                            onClick={handleGoTo}
+                            disabled={navDisabled}
+                            className={`${pageBtn} px-3`}
+                          >
+                            Go
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                </td>
+              </tr>
+            </tfoot>
           </table>
         )}
       </div>
@@ -2973,7 +3448,20 @@ export function PendingApplicationsSection({
 
     {viewRow && <ClientSnapshotModal row={viewRow} onClose={() => setViewRow(null)} />}
     {isCodeView && <IsCodeViewModal isCodeId={isCodeView.id} isNumber={isCodeView.is_number} revisionYear={isCodeView.revision_year} onClose={() => setIsCodeView(null)} />}
-    {applyRow && <ApplicationFormModal row={applyRow} onClose={() => setApplyRow(null)} />}
+    {applyRow && (
+      <ApplicationFormModal
+        row={applyRow}
+        initialDoc={preparationDoc}
+        onDocChange={setPreparationDoc}
+        onClose={closePreparation}
+      />
+    )}
+    {addApplicationOpen && !isExpired && (
+      <AddNewApplicationModal
+        onClose={() => setAddApplicationOpen(false)}
+        onCreated={() => router.refresh()}
+      />
+    )}
     {convertRow && !isExpired && (
       <ConvertToLicenseModal
         projectId={convertRow.id}
@@ -2990,17 +3478,6 @@ export function PendingApplicationsSection({
           setConvertedIds((prev) => new Set(prev).add(convertRow.id));
           router.refresh();
         }}
-      />
-    )}
-
-    {chatOpen && (
-      <AiChatModal
-        title="QE Assistant"
-        subtitle="BIS Applications · AI Powered"
-        systemPrompt={APP_SYSTEM_PROMPT}
-        starterQuestions={APP_STARTERS}
-        accentColor="amber"
-        onClose={() => setChatOpen(false)}
       />
     )}
     </>

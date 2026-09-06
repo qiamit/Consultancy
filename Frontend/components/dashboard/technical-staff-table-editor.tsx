@@ -1,67 +1,80 @@
 "use client";
 
+import { useEffect, useMemo, useRef, useState } from "react";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
-import type { TechnicalStaffRow } from "@backend/modules/bis/technical-staff";
-
-/** Column widths for list view — percentages must sum to 100. */
-const LIST_COLUMN_WIDTHS = {
-  sr: "5%",
-  name: "17%",
-  designation: "14%",
-  qualification: "22%",
-  documents: "22%",
-  photo: "8%",
-  action: "12%",
-} as const;
+import {
+  rowHasContent,
+  type TechnicalStaffRow,
+} from "@backend/modules/bis/technical-staff";
 
 const themes = {
   light: {
     wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700",
     thead: "bg-zinc-100 dark:bg-zinc-800",
-    th: "border-b border-zinc-200 px-2 py-2.5 text-center align-middle text-[10px] font-semibold uppercase leading-tight tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
+    thLeft:
+      "border border-zinc-200 px-2 py-2 text-left align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
+    thCenter:
+      "border border-zinc-200 px-2 py-2 text-center align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
     thSub:
-      "mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-400 dark:text-zinc-500",
-    td: "border-b border-zinc-100 px-2 py-2.5 align-middle text-center text-xs leading-snug text-zinc-700 dark:border-zinc-800/80 dark:text-zinc-300",
-    tdLeft: "border-b border-zinc-100 px-2 py-2.5 align-middle text-left text-xs leading-snug text-zinc-700 dark:border-zinc-800/80 dark:text-zinc-300",
-    srCell:
-      "border-b border-r border-zinc-200 bg-zinc-50 px-1.5 py-2.5 text-center align-middle text-xs font-bold tabular-nums text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300",
+      "mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-500",
+    tdLeft:
+      "border border-zinc-200 px-2 py-2.5 align-middle text-left text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300",
+    tdCenter:
+      "border border-zinc-200 px-2 py-2.5 align-middle text-center text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300",
+    selectCell:
+      "border border-zinc-200 bg-zinc-50 px-2 py-2.5 text-center align-middle dark:border-zinc-700 dark:bg-zinc-800/60",
     cellStack: "mx-auto flex max-w-full flex-col items-center justify-center gap-0.5",
     cellMuted: "text-[10px] text-zinc-500 dark:text-zinc-400",
     docRow: "flex items-center justify-center gap-1.5",
     docLabel:
       "shrink-0 text-[9px] font-semibold uppercase tracking-wide text-zinc-400 dark:text-zinc-500",
     empty: "px-4 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400",
-    addBtn:
-      "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700",
     editBtn:
-      "rounded-md border border-sky-300 px-2.5 py-1 text-[10px] font-semibold text-sky-700 hover:bg-sky-50 dark:border-sky-800 dark:text-sky-300 dark:hover:bg-sky-950/40",
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
+    copyBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-sky-600 dark:hover:bg-zinc-800 dark:hover:text-sky-300",
+    delBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800 dark:hover:text-red-400",
+    muted: "text-zinc-400 dark:text-zinc-500",
+    addBtn:
+      "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
     viewLink:
       "inline-flex items-center justify-center gap-0.5 rounded-md border border-sky-200 bg-sky-50 px-1.5 py-0.5 text-[10px] font-medium text-sky-700 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300",
-    muted: "text-xs text-zinc-400 dark:text-zinc-500",
+    chk: "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500",
   },
   dark: {
     wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800",
     thead: "bg-zinc-800",
-    th: "border-b border-zinc-700 px-2 py-2.5 text-center align-middle text-[10px] font-semibold uppercase leading-tight tracking-wide text-zinc-300",
+    thLeft:
+      "border border-zinc-700 px-2 py-2 text-left align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
+    thCenter:
+      "border border-zinc-700 px-2 py-2 text-center align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
     thSub:
       "mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-500",
-    td: "border-b border-zinc-800/80 px-2 py-2.5 align-middle text-center text-xs leading-snug text-zinc-300",
-    tdLeft: "border-b border-zinc-800/80 px-2 py-2.5 align-middle text-left text-xs leading-snug text-zinc-300",
-    srCell:
-      "border-b border-r border-zinc-700 bg-zinc-800/60 px-1.5 py-2.5 text-center align-middle text-xs font-bold tabular-nums text-zinc-300",
+    tdLeft:
+      "border border-zinc-700 px-2 py-2.5 align-middle text-left text-xs text-zinc-300",
+    tdCenter:
+      "border border-zinc-700 px-2 py-2.5 align-middle text-center text-xs text-zinc-300",
+    selectCell:
+      "border border-zinc-700 bg-zinc-800/60 px-2 py-2.5 text-center align-middle",
     cellStack: "mx-auto flex max-w-full flex-col items-center justify-center gap-0.5",
     cellMuted: "text-[10px] text-zinc-500",
     docRow: "flex items-center justify-center gap-1.5",
     docLabel:
       "shrink-0 text-[9px] font-semibold uppercase tracking-wide text-zinc-500",
     empty: "px-4 py-10 text-center text-sm text-zinc-500",
-    addBtn:
-      "rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-zinc-800",
     editBtn:
-      "rounded-md border border-sky-800 px-2.5 py-1 text-[10px] font-semibold text-sky-300 hover:bg-sky-950/40",
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200",
+    copyBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-sky-300",
+    delBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-red-400",
+    muted: "text-zinc-500",
+    addBtn:
+      "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
     viewLink:
       "inline-flex items-center justify-center gap-0.5 rounded-md border border-sky-800 bg-sky-950/30 px-1.5 py-0.5 text-[10px] font-medium text-sky-300 hover:bg-sky-950/50",
-    muted: "text-xs text-zinc-500",
+    chk: "h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-sky-500 focus:ring-sky-500/30",
   },
 } as const;
 
@@ -71,73 +84,126 @@ function FileLink({ theme, url }: { theme: keyof typeof themes; url: string }) {
   return <StorageDocumentLink value={url} className={t.viewLink} />;
 }
 
-function CellText({ children }: { children: React.ReactNode }) {
-  return (
-    <span className="block max-w-full break-words hyphens-auto">{children}</span>
-  );
+function cellText(value: string, mutedClass: string) {
+  const v = value.trim();
+  if (!v) return <span className={mutedClass}>—</span>;
+  return <span className="block max-w-full break-words">{v}</span>;
 }
 
 export function TechnicalStaffTableEditor({
   theme = "light",
   rows,
   onEdit,
+  onCopy,
+  onRemove,
 }: {
   theme?: keyof typeof themes;
   rows: TechnicalStaffRow[];
   onEdit: (row: TechnicalStaffRow) => void;
+  onCopy: (row: TechnicalStaffRow) => void;
+  onRemove: (row: TechnicalStaffRow) => void;
 }) {
   const t = themes[theme];
+  const visibleRows = useMemo(() => rows.filter(rowHasContent), [rows]);
+  const visibleIds = useMemo(() => visibleRows.map((r) => r.id), [visibleRows]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set([...prev].filter((id) => visibleIds.includes(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visibleIds]);
+
+  const allSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const someSelected =
+    visibleIds.some((id) => selectedIds.has(id)) && !allSelected;
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (el) el.indeterminate = someSelected;
+  }, [someSelected]);
+
+  function toggleRow(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      if (visibleIds.length > 0 && visibleIds.every((id) => prev.has(id))) {
+        return new Set();
+      }
+      return new Set(visibleIds);
+    });
+  }
 
   return (
     <div className={t.wrap}>
       <div className="min-h-0 flex-1 overflow-auto">
-        {rows.length === 0 ? (
+        {visibleRows.length === 0 ? (
           <p className={t.empty}>
             No technical staff added yet. Use &ldquo;Add Technical Staff&rdquo; to add a person.
           </p>
         ) : (
-          <table className="w-full table-fixed border-collapse">
-            <colgroup>
-              <col style={{ width: LIST_COLUMN_WIDTHS.sr }} />
-              <col style={{ width: LIST_COLUMN_WIDTHS.name }} />
-              <col style={{ width: LIST_COLUMN_WIDTHS.designation }} />
-              <col style={{ width: LIST_COLUMN_WIDTHS.qualification }} />
-              <col style={{ width: LIST_COLUMN_WIDTHS.documents }} />
-              <col style={{ width: LIST_COLUMN_WIDTHS.photo }} />
-              <col style={{ width: LIST_COLUMN_WIDTHS.action }} />
-            </colgroup>
+          <table className="w-full min-w-[980px] border-collapse text-xs">
             <thead className={`${t.thead} sticky top-0 z-[1]`}>
               <tr>
-                <th className={t.th}>Sr. No.</th>
-                <th className={t.th}>Name</th>
-                <th className={t.th}>Designation</th>
-                <th className={t.th}>
+                <th className={`${t.thCenter} w-12`}>
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    className={t.chk}
+                    aria-label="Select all technical staff"
+                  />
+                </th>
+                <th className={`${t.thCenter} w-14`}>Sr No</th>
+                <th className={t.thLeft}>Name</th>
+                <th className={t.thCenter}>Designation</th>
+                <th className={t.thCenter}>
                   Qualification
                   <span className={t.thSub}>&amp; Experience</span>
                 </th>
-                <th className={t.th}>
+                <th className={t.thCenter}>
                   Documents
                   <span className={t.thSub}>Appt., Cert. &amp; Seal</span>
                 </th>
-                <th className={t.th}>Photo</th>
-                <th className={t.th}>Action</th>
+                <th className={t.thCenter}>Photo</th>
+                <th className={`${t.thCenter} w-28`}>Action</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((row, index) => {
+              {visibleRows.map((row, index) => {
+                const srNo = String(index + 1).padStart(2, "0");
+                const selected = selectedIds.has(row.id);
                 const exp = row.experience_years.trim();
                 return (
-                  <tr key={row.id} className="hover:bg-zinc-800/20">
-                    <td className={t.srCell}>{index + 1}</td>
-                    <td className={t.tdLeft}>
-                      <CellText>{row.person_name || "—"}</CellText>
+                  <tr key={row.id}>
+                    <td className={t.selectCell}>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleRow(row.id)}
+                        className={t.chk}
+                        aria-label={`Select technical staff ${srNo}`}
+                      />
                     </td>
-                    <td className={t.td}>
-                      <CellText>{row.designation || "—"}</CellText>
+                    <td className={t.tdCenter}>
+                      <span className="font-semibold tabular-nums">{srNo}</span>
                     </td>
-                    <td className={t.td}>
+                    <td className={t.tdLeft}>{cellText(row.person_name, t.muted)}</td>
+                    <td className={t.tdCenter}>{cellText(row.designation, t.muted)}</td>
+                    <td className={t.tdCenter}>
                       <div className={t.cellStack}>
-                        <CellText>{row.educational_qualification || "—"}</CellText>
+                        {cellText(row.educational_qualification, t.muted)}
                         {exp ? (
                           <span className={t.cellMuted}>
                             {exp} {exp === "1" ? "Year" : "Years"}
@@ -145,7 +211,7 @@ export function TechnicalStaffTableEditor({
                         ) : null}
                       </div>
                     </td>
-                    <td className={t.td}>
+                    <td className={t.tdCenter}>
                       <div className={t.cellStack}>
                         <div className={t.docRow}>
                           <span className={t.docLabel}>Appt.</span>
@@ -161,17 +227,39 @@ export function TechnicalStaffTableEditor({
                         </div>
                       </div>
                     </td>
-                    <td className={t.td}>
+                    <td className={t.tdCenter}>
                       <FileLink theme={theme} url={row.photo} />
                     </td>
-                    <td className={t.td}>
-                      <button
-                        type="button"
-                        onClick={() => onEdit(row)}
-                        className={t.editBtn}
-                      >
-                        Edit
-                      </button>
+                    <td className={t.tdCenter}>
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => onEdit(row)}
+                          className={t.editBtn}
+                          aria-label={`Edit technical staff ${srNo}`}
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onCopy(row)}
+                          className={t.copyBtn}
+                          aria-label={`Copy technical staff ${srNo}`}
+                          title="Copy"
+                        >
+                          📋
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRemove(row)}
+                          className={t.delBtn}
+                          aria-label={`Delete technical staff ${srNo}`}
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -185,7 +273,7 @@ export function TechnicalStaffTableEditor({
 }
 
 export function TechnicalStaffAddButton({
-  theme = "light",
+  theme = "dark",
   onClick,
 }: {
   theme?: keyof typeof themes;
@@ -194,6 +282,9 @@ export function TechnicalStaffAddButton({
   const t = themes[theme];
   return (
     <button type="button" onClick={onClick} className={t.addBtn}>
+      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+      </svg>
       Add Technical Staff
     </button>
   );

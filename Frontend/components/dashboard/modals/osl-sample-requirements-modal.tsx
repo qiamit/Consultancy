@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { useEditorRowsFromStored } from "@/components/modules/finance/use-finance-master-state";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
-import { OslSampleRequirementsTableEditor } from "@/components/dashboard/osl-sample-requirements-table-editor";
+import { OslSampleFormModal } from "@/components/dashboard/modals/osl-sample-form-modal";
+import {
+  OslSampleAddButton,
+  OslSampleRequirementsTableEditor,
+} from "@/components/dashboard/osl-sample-requirements-table-editor";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
 import {
   printPreviewIframeStyle,
@@ -14,7 +18,6 @@ import {
 import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
 
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
-import { ClientMasterEmbedModal } from "@/components/modules/finance/client-master-embed-modal";
 import { createClient } from "@backend/db/client/client";
 import {
   buildOslSampleRequirementsHtml,
@@ -34,6 +37,7 @@ import { loadCompanyPrintContext } from "@backend/modules/print/load-company-pri
 import type { PrintSettings } from "@backend/modules/print/types";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 import {
+  createOslSampleRequirementRow,
   editorRowsFromStored,
   storedFromEditor,
   type OslSampleRequirementRow,
@@ -107,7 +111,9 @@ export function OslSampleRequirementsModal({
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
-  const [addClientForRowId, setAddClientForRowId] = useState<string | null>(null);
+  const [sampleFormRow, setSampleFormRow] = useState<
+    OslSampleRequirementRow | null | undefined
+  >(undefined);
   const [clientRows, setClientRows] = useState<ClientPickerRow[]>([]);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
@@ -280,6 +286,45 @@ export function OslSampleRequirementsModal({
     });
   }
 
+  function openAddSampleForm() {
+    setSampleFormRow(null);
+  }
+
+  function openEditSampleForm(row: OslSampleRequirementRow) {
+    setSampleFormRow(row);
+  }
+
+  function handleSampleFormSave(row: OslSampleRequirementRow) {
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.id === row.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = row;
+        return next;
+      }
+      return [...prev, row];
+    });
+    setSampleFormRow(undefined);
+  }
+
+  function handleRemoveSample(row: OslSampleRequirementRow) {
+    setRows((prev) => prev.filter((r) => r.id !== row.id));
+  }
+
+  function handleCopySample(row: OslSampleRequirementRow) {
+    const copy: OslSampleRequirementRow = {
+      ...row,
+      id: createOslSampleRequirementRow().id,
+    };
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.id === row.id);
+      if (idx < 0) return [...prev, copy];
+      const next = [...prev];
+      next.splice(idx + 1, 0, copy);
+      return next;
+    });
+  }
+
   function handlePrint() {
     if (showPrintPreview && iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.focus();
@@ -341,7 +386,7 @@ export function OslSampleRequirementsModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
+      <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950">
         <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-800 bg-zinc-900 px-4 py-3">
           <div className="min-w-0 shrink-0 flex-1 basis-48">
             <h2 className="truncate text-sm font-semibold text-white">{labels.modalTitle}</h2>
@@ -446,26 +491,33 @@ export function OslSampleRequirementsModal({
               }`}
             >
               <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-zinc-200">Sample Requirements</p>
-                    <p className="mt-0.5 text-xs font-semibold text-teal-300">{isFullNumber}</p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 text-sm font-medium leading-snug text-zinc-200">
+                    Sample Requirements of{" "}
+                    <span className="font-semibold text-teal-300">{isFullNumber}</span>
                     {isTitle ? (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{isTitle}</p>
+                      <>
+                        {" "}
+                        as per{" "}
+                        <span className="text-zinc-300">{isTitle}</span>
+                      </>
+                    ) : null}
+                  </p>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <OslSampleAddButton theme="dark" onClick={openAddSampleForm} />
+                    {isCodeId ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowIsCodeView(true)}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        View IS Files
+                      </button>
                     ) : null}
                   </div>
-                  {isCodeId ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowIsCodeView(true)}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      View IS Files
-                    </button>
-                  ) : null}
                 </div>
               </div>
 
@@ -473,9 +525,9 @@ export function OslSampleRequirementsModal({
                 <OslSampleRequirementsTableEditor
                   theme="dark"
                   rows={rows}
-                  onChange={setRows}
-                  clientOptions={clientOptions}
-                  onRequestAddClient={setAddClientForRowId}
+                  onEdit={openEditSampleForm}
+                  onCopy={handleCopySample}
+                  onRemove={handleRemoveSample}
                   focusSampleIndex={initialFocusSampleIndex}
                 />
               </div>
@@ -544,30 +596,15 @@ export function OslSampleRequirementsModal({
         />
       )}
 
-      {addClientForRowId && (
-        <ClientMasterEmbedModal
-          onClose={() => setAddClientForRowId(null)}
-          onSuccess={async (clientId) => {
-            const rowId = addClientForRowId;
-            setAddClientForRowId(null);
-            await reloadClients();
-            const supabase = createClient();
-            const { data } = await supabase
-              .from("clients")
-              .select("name, company_name")
-              .eq("id", clientId)
-              .maybeSingle();
-            if (data && rowId) {
-              const label = clientDisplayLabel(data as ClientPickerRow);
-              setRows((prev) =>
-                prev.map((r) =>
-                  r.id === rowId ? { ...r, laboratory_name: label } : r,
-                ),
-              );
-            }
-          }}
+      {sampleFormRow !== undefined ? (
+        <OslSampleFormModal
+          initial={sampleFormRow}
+          clientOptions={clientOptions}
+          onClientsChanged={reloadClients}
+          onSave={handleSampleFormSave}
+          onClose={() => setSampleFormRow(undefined)}
         />
-      )}
+      ) : null}
     </>
   );
 }

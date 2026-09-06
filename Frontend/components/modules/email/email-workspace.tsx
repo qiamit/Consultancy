@@ -272,23 +272,36 @@ export function EmailWorkspace({
     setSyncing(true);
     setError(null);
     try {
-      const res = await fetch("/api/email/sync", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(
-          allFolders
-            ? { accountId: effectiveAccountId, allFolders: true }
-            : { accountId: effectiveAccountId, folderKey },
-        ),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Sync failed");
-      await loadMessages();
-      const activeSelectedId = selectedIdRef.current;
-      if (activeSelectedId) void loadThread(activeSelectedId);
-      router.refresh();
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 120_000);
+      try {
+        const res = await fetch("/api/email/sync", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(
+            allFolders
+              ? { accountId: effectiveAccountId, allFolders: true }
+              : { accountId: effectiveAccountId, folderKey },
+          ),
+          signal: controller.signal,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Sync failed");
+        await loadMessages();
+        const activeSelectedId = selectedIdRef.current;
+        if (activeSelectedId) void loadThread(activeSelectedId);
+        router.refresh();
+      } finally {
+        window.clearTimeout(timeout);
+      }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Sync failed");
+      const msg =
+        e instanceof Error
+          ? e.name === "AbortError"
+            ? "Sync timed out. Try again — recent mail sync should be faster now."
+            : e.message
+          : "Sync failed";
+      setError(msg);
     } finally {
       syncingRef.current = false;
       setSyncing(false);
@@ -660,7 +673,7 @@ export function EmailWorkspace({
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-white dark:bg-zinc-900">
       {notice && (
         <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-900 dark:border-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
           {notice}
@@ -831,7 +844,7 @@ export function EmailWorkspace({
               onChange={(e) => setReadFilter(e.target.value as MessageReadFilter)}
               className="w-full rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-950"
             >
-              <option value="all">All messages</option>
+              <option value="all">All Message</option>
               <option value="unread">Unread</option>
               <option value="read">Read</option>
               <option value="starred">Starred</option>

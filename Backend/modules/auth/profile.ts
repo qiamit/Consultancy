@@ -1,12 +1,11 @@
 import type { AppDbClient } from "@backend/db/client/types";
-import type { DashboardModuleKey } from "@backend/modules/auth/modules";
 import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
 
 export type UserProfile = {
   id: string;
   full_name: string | null;
-  role: "admin" | "staff";
-  module_access?: DashboardModuleKey[];
+  role: string;
+  module_access?: unknown;
   created_at: string;
 };
 

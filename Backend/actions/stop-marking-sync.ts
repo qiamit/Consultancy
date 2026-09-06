@@ -7,100 +7,54 @@ import {
   isApplicationProjectKind,
 } from "@backend/modules/bis/bis-project-kind";
 import {
-  MANAK_STOP_MARKING_REPORT_URL,
   cmlMatchKeys,
-  extractCmlNumbersFromManakHtml,
   normalizeCmlDigits,
 } from "@backend/modules/bis/manak-online-portal";
+import { extractCmlNumbersFromManakExcel } from "@backend/modules/bis/manak-stop-marking-excel";
+import { canApplyStopMarking } from "@backend/modules/bis/bis-project-license-status";
 
-export type SyncStopMarkingResult =
+export type ImportStopMarkingResult =
   | {
       ok: true;
       manakCount: number;
       matched: number;
       added: number;
       alreadyMarked: number;
+      skippedExpired: number;
       notInDbCount: number;
       notInDbSample: string[];
-      reportUrl: string;
     }
   | {
       ok: false;
       error: string;
-      reportUrl: string;
     };
 
-const MANAK_FETCH_HEADERS: HeadersInit = {
-  "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-  "Accept-Language": "en-IN,en;q=0.9",
-  Referer: "https://www.manakonline.in/",
+export type StopMarkingCmlLookup =
+  | {
+      ok: true;
+      projectId: string;
+      cm_l_digits: string;
+      client_name: string;
+      is_number: string | null;
+      is_revision_year: number | null;
+      is_code_title: string | null;
+      alreadyStopMarking: boolean;
+    }
+  | { ok: false; error: string };
+
+const MAX_EXCEL_BYTES = 12 * 1024 * 1024;
+
+type Proj = {
+  id: string;
+  cm_l_digits: string | null;
+  status: string | null;
+  project_kind: string | null;
+  license_validity_date: string | null;
 };
 
-/**
- * Fetch Manak “Licences Under Suspension”, match CM/L to `bis_projects`,
- * and set matching rows to `status = stop_marking`.
- */
-export async function syncStopMarkingFromManak(): Promise<SyncStopMarkingResult> {
-  const reportUrl = MANAK_STOP_MARKING_REPORT_URL;
-
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    return { ok: false, error: "You must be signed in to sync.", reportUrl };
-  }
-
-  let html: string;
-  try {
-    const cookie = (process.env.MANAK_COOKIE ?? "").trim();
-    const res = await fetch(reportUrl, {
-      method: "GET",
-      headers: {
-        ...MANAK_FETCH_HEADERS,
-        ...(cookie ? { Cookie: cookie } : {}),
-      },
-      cache: "no-store",
-      redirect: "follow",
-    });
-    if (!res.ok) {
-      return {
-        ok: false,
-        error: `Manak report returned HTTP ${res.status}. Sign in on Manak, open the suspension report, or set MANAK_COOKIE on the app service — or use Add to Stop Marking manually.`,
-        reportUrl,
-      };
-    }
-    html = await res.text();
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : "Network error";
-    return {
-      ok: false,
-      error: `Could not reach Manak: ${msg}`,
-      reportUrl,
-    };
-  }
-
-  if (!html || html.length < 200) {
-    return {
-      ok: false,
-      error:
-        "Manak returned an empty page (login/session may be required). Open the report in your browser, or add licenses manually.",
-      reportUrl,
-    };
-  }
-
-  const manakCmls = extractCmlNumbersFromManakHtml(html);
-  if (manakCmls.length === 0) {
-    return {
-      ok: false,
-      error:
-        "No CML numbers found in the Manak HTML. The report may require a logged-in Manak session, or the page layout changed.",
-      reportUrl,
-    };
-  }
-
+async function loadLicenceProjectsByCml(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+): Promise<{ byKey: Map<string, Proj[]>; error: string | null }> {
   const applicationKinds = await applicationProjectKindDbValues(supabase);
   const appKindSet = new Set(
     applicationKinds.map((k) => k.trim().toLowerCase()),
@@ -108,19 +62,12 @@ export async function syncStopMarkingFromManak(): Promise<SyncStopMarkingResult>
 
   const { data: projectRows, error: loadErr } = await supabase
     .from("bis_projects")
-    .select("id, cm_l_digits, status, project_kind")
+    .select("id, cm_l_digits, status, project_kind, license_validity_date")
     .not("cm_l_digits", "is", null);
 
   if (loadErr) {
-    return { ok: false, error: loadErr.message, reportUrl };
+    return { byKey: new Map(), error: loadErr.message };
   }
-
-  type Proj = {
-    id: string;
-    cm_l_digits: string | null;
-    status: string | null;
-    project_kind: string | null;
-  };
 
   const candidates = ((projectRows ?? []) as Proj[]).filter((p) => {
     const kind = (p.project_kind ?? "").trim();
@@ -138,25 +85,100 @@ export async function syncStopMarkingFromManak(): Promise<SyncStopMarkingResult>
       else byKey.set(key, [p]);
     }
   }
+  return { byKey, error: null };
+}
+
+function findProjectsForCml(
+  byKey: Map<string, Proj[]>,
+  manakCml: string,
+): Proj[] {
+  for (const key of cmlMatchKeys(manakCml)) {
+    const hits = byKey.get(key);
+    if (hits?.length) return hits;
+  }
+  return [];
+}
+
+/**
+ * Import Manak Stop Marking Excel (ReportExcel.xlsx), match CM/L to `bis_projects`,
+ * and set matching licence rows to `status = stop_marking`.
+ * Client / IS come from existing DB rows (not from Excel firm/standard columns).
+ */
+export async function importStopMarkingFromManakExcel(
+  formData: FormData,
+): Promise<ImportStopMarkingResult> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "You must be signed in to import." };
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return { ok: false, error: "Choose a Manak Excel file (.xlsx) to import." };
+  }
+  const name = file.name.toLowerCase();
+  if (!name.endsWith(".xlsx") && !name.endsWith(".xlsm")) {
+    return {
+      ok: false,
+      error: "Only Excel files (.xlsx) are supported. Export ReportExcel.xlsx from Manak.",
+    };
+  }
+  if (file.size <= 0) {
+    return { ok: false, error: "The uploaded Excel file is empty." };
+  }
+  if (file.size > MAX_EXCEL_BYTES) {
+    return { ok: false, error: "Excel file is too large (max 12 MB)." };
+  }
+
+  let manakCmls: string[];
+  try {
+    manakCmls = await extractCmlNumbersFromManakExcel(await file.arrayBuffer());
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Unable to read Excel file.",
+    };
+  }
+
+  if (manakCmls.length === 0) {
+    return {
+      ok: false,
+      error:
+        "No CML numbers found in the Excel file. Check that column “CML No” is present.",
+    };
+  }
+
+  const { byKey, error: loadErr } = await loadLicenceProjectsByCml(supabase);
+  if (loadErr) {
+    return { ok: false, error: loadErr };
+  }
 
   const matchedIds = new Set<string>();
   const toUpdateIds: string[] = [];
   let alreadyMarked = 0;
+  let skippedExpired = 0;
   const notInDb: string[] = [];
 
   for (const manakCml of manakCmls) {
-    let hits: Proj[] | undefined;
-    for (const key of cmlMatchKeys(manakCml)) {
-      hits = byKey.get(key);
-      if (hits?.length) break;
-    }
-    if (!hits?.length) {
+    const hits = findProjectsForCml(byKey, manakCml);
+    if (!hits.length) {
       notInDb.push(manakCml);
       continue;
     }
     for (const p of hits) {
       if (matchedIds.has(p.id)) continue;
       matchedIds.add(p.id);
+      const eligible = canApplyStopMarking(
+        p.project_kind ?? "licence",
+        p.license_validity_date,
+      );
+      if (!eligible) {
+        skippedExpired += 1;
+        continue;
+      }
       if ((p.status ?? "").trim() === "stop_marking") {
         alreadyMarked += 1;
       } else {
@@ -176,13 +198,14 @@ export async function syncStopMarkingFromManak(): Promise<SyncStopMarkingResult>
         .update({ status: "stop_marking", updated_at: now })
         .in("id", chunk);
       if (upErr) {
-        return { ok: false, error: upErr.message, reportUrl };
+        return { ok: false, error: upErr.message };
       }
       added += chunk.length;
     }
   }
 
   revalidatePath("/dashboard");
+  revalidatePath("/dashboard/license-stop-marking");
 
   return {
     ok: true,
@@ -190,8 +213,121 @@ export async function syncStopMarkingFromManak(): Promise<SyncStopMarkingResult>
     matched: matchedIds.size,
     added,
     alreadyMarked,
+    skippedExpired,
     notInDbCount: notInDb.length,
     notInDbSample: notInDb.slice(0, 12),
-    reportUrl,
   };
+}
+
+/** Lookup a licence project by CM/L for Add to Stop Marking autofill. */
+export async function lookupStopMarkingProjectByCml(
+  cmlInput: string,
+): Promise<StopMarkingCmlLookup> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "You must be signed in." };
+  }
+
+  const digits = normalizeCmlDigits(cmlInput);
+  if (digits.length < 5) {
+    return { ok: false, error: "Enter a valid CM/L number (at least 5 digits)." };
+  }
+
+  const { byKey, error: loadErr } = await loadLicenceProjectsByCml(supabase);
+  if (loadErr) {
+    return { ok: false, error: loadErr };
+  }
+
+  const hits = findProjectsForCml(byKey, digits);
+  if (!hits.length) {
+    return {
+      ok: false,
+      error: "No matching licence found in your database for this CM/L number.",
+    };
+  }
+
+  const project = hits[0]!;
+  const { data: detail, error: detailErr } = await supabase
+    .from("bis_projects")
+    .select(
+      "id, cm_l_digits, status, project_kind, license_validity_date, clients(name, company_name), is_codes(is_number, revision_year, is_code_title)",
+    )
+    .eq("id", project.id)
+    .maybeSingle();
+
+  if (detailErr || !detail) {
+    return {
+      ok: false,
+      error: detailErr?.message ?? "Could not load licence details.",
+    };
+  }
+
+  if (
+    !canApplyStopMarking(
+      (detail.project_kind as string | null) ?? "licence",
+      detail.license_validity_date as string | null,
+    )
+  ) {
+    return {
+      ok: false,
+      error:
+        "Expired licences cannot be put on Stop Marking. Start a new application instead.",
+    };
+  }
+
+  const client = Array.isArray(detail.clients)
+    ? detail.clients[0]
+    : (detail.clients as { name?: string | null; company_name?: string | null } | null);
+  const isCode = Array.isArray(detail.is_codes)
+    ? detail.is_codes[0]
+    : (detail.is_codes as {
+        is_number?: string | null;
+        revision_year?: number | null;
+        is_code_title?: string | null;
+      } | null);
+
+  const clientName =
+    (client?.company_name ?? "").trim() ||
+    (client?.name ?? "").trim() ||
+    "—";
+
+  return {
+    ok: true,
+    projectId: detail.id as string,
+    cm_l_digits: normalizeCmlDigits(detail.cm_l_digits as string | null) || digits,
+    client_name: clientName,
+    is_number: isCode?.is_number ?? null,
+    is_revision_year: isCode?.revision_year ?? null,
+    is_code_title: isCode?.is_code_title ?? null,
+    alreadyStopMarking: (detail.status as string | null)?.trim() === "stop_marking",
+  };
+}
+
+export async function markProjectStopMarking(
+  projectId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    return { ok: false, error: "You must be signed in." };
+  }
+  if (!projectId.trim()) {
+    return { ok: false, error: "Missing project." };
+  }
+
+  const { error } = await supabase
+    .from("bis_projects")
+    .update({ status: "stop_marking", updated_at: new Date().toISOString() })
+    .eq("id", projectId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/license-stop-marking");
+  return { ok: true };
 }

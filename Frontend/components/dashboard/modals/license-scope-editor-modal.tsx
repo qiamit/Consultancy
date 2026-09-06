@@ -420,14 +420,18 @@ export function LicenseScopeEditorModal({
               }`}
             >
               <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-zinc-200">License Scope</p>
-                    <p className="mt-0.5 text-xs font-semibold text-indigo-300">{isFullNumber}</p>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 text-sm font-medium leading-snug text-zinc-200">
+                    License Scope of{" "}
+                    <span className="font-semibold text-indigo-300">{isFullNumber}</span>
                     {declarationData.isTitle ? (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{declarationData.isTitle}</p>
+                      <>
+                        {" "}
+                        as per{" "}
+                        <span className="text-zinc-300">{declarationData.isTitle}</span>
+                      </>
                     ) : null}
-                  </div>
+                  </p>
                   {isCodeId ? (
                     <button
                       type="button"

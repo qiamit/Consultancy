@@ -4,7 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from
 import { useEditorRowsFromStored } from "@/components/modules/finance/use-finance-master-state";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
-import { TopManagementTableEditor } from "@/components/dashboard/top-management-table-editor";
+import { TopManagementPersonFormModal } from "@/components/dashboard/modals/top-management-person-form-modal";
+import {
+  TopManagementAddPersonButton,
+  TopManagementTableEditor,
+} from "@/components/dashboard/top-management-table-editor";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
 import {
   printPreviewIframeStyle,
@@ -29,8 +33,10 @@ import {
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  createTopManagementRow,
   editorRowsFromStored,
   resolvePrimaryTopManagementPerson,
+  rowHasContent,
   storedFromEditor,
   type TopManagementRow,
   type TopManagementStored,
@@ -83,6 +89,9 @@ export function TopManagementModal({
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
+  const [personFormRow, setPersonFormRow] = useState<
+    TopManagementRow | null | undefined
+  >(undefined);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
@@ -204,6 +213,56 @@ export function TopManagementModal({
     });
   }
 
+  function openAddPersonForm() {
+    setPersonFormRow(null);
+  }
+
+  function openEditPersonForm(row: TopManagementRow) {
+    setPersonFormRow(row);
+  }
+
+  function handlePersonFormSave(row: TopManagementRow) {
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.id === row.id);
+      if (idx >= 0) {
+        const next = [...prev];
+        next[idx] = row;
+        return next;
+      }
+      return [...prev, row];
+    });
+    setPersonFormRow(undefined);
+  }
+
+  function handleRemovePerson(row: TopManagementRow) {
+    setRows((prev) => prev.filter((r) => r.id !== row.id));
+  }
+
+  function handleCopyPerson(row: TopManagementRow) {
+    const copy: TopManagementRow = {
+      ...row,
+      id: createTopManagementRow().id,
+      signature_image_url: "",
+      apply_signature_on_documents: false,
+    };
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.id === row.id);
+      if (idx < 0) return [...prev, copy];
+      const next = [...prev];
+      next.splice(idx + 1, 0, copy);
+      return next;
+    });
+  }
+
+  const personFormIsPrimary = useMemo(() => {
+    if (personFormRow === undefined) return false;
+    if (personFormRow === null) {
+      return rows.filter(rowHasContent).length === 0;
+    }
+    const visible = rows.filter(rowHasContent);
+    return visible[0]?.id === personFormRow.id;
+  }, [personFormRow, rows]);
+
   function handlePrint() {
     iframeRef.current?.contentWindow?.focus();
     iframeRef.current?.contentWindow?.print();
@@ -246,7 +305,7 @@ export function TopManagementModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
+      <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950">
         <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-800 bg-zinc-900 px-4 py-3">
           <div className="min-w-0 shrink-0 flex-1 basis-48">
             <h2 className="truncate text-sm font-semibold text-white">Top Management Details</h2>
@@ -330,18 +389,6 @@ export function TopManagementModal({
             >
               QE Assistant
             </button>
-            {isCodeId ? (
-              <button
-                type="button"
-                onClick={() => setShowIsCodeView(true)}
-                className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
-              >
-                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                </svg>
-                View IS Files
-              </button>
-            ) : null}
             <button
               type="button"
               onClick={onClose}
@@ -362,8 +409,50 @@ export function TopManagementModal({
                 settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
               }`}
             >
+              <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <p className="min-w-0 text-sm font-medium leading-snug text-zinc-200">
+                    Top Management persons for{" "}
+                    <span className="font-semibold text-teal-300">
+                      {letterData.companyName}
+                    </span>
+                    {isFullNumber !== "—" ? (
+                      <>
+                        {" "}
+                        ·{" "}
+                        <span className="text-zinc-300">{isFullNumber}</span>
+                      </>
+                    ) : null}
+                  </p>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <TopManagementAddPersonButton
+                      theme="dark"
+                      onClick={openAddPersonForm}
+                    />
+                    {isCodeId ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowIsCodeView(true)}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        View IS Files
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-                <TopManagementTableEditor theme="dark" rows={rows} onChange={setRows} />
+                <TopManagementTableEditor
+                  theme="dark"
+                  rows={rows}
+                  onEdit={openEditPersonForm}
+                  onCopy={handleCopyPerson}
+                  onRemove={handleRemovePerson}
+                />
               </div>
             </div>
           )}
@@ -406,6 +495,15 @@ export function TopManagementModal({
             </div>
           )}
         </div>
+
+        {personFormRow !== undefined ? (
+          <TopManagementPersonFormModal
+            initial={personFormRow}
+            showSignatureFields={personFormIsPrimary}
+            onSave={handlePersonFormSave}
+            onClose={() => setPersonFormRow(undefined)}
+          />
+        ) : null}
       </div>
 
       {showIsCodeView && isCodeId && (

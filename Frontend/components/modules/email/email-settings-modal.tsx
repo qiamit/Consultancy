@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { EmailAccountSafe } from "@backend/shared/types/email";
 import type { EmailPreferences } from "@backend/modules/email/preferences";
+import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
 import { PROVIDER_OPTIONS } from "./constants";
 import { formatEmailDate } from "./constants";
 
@@ -116,6 +117,7 @@ export function EmailSettingsModal({
   onAddAccount: () => void;
   onEditAccount: (account: EmailAccountSafe) => void;
 }) {
+  const { open: sidebarOpen } = useSidebarLayout();
   const [category, setCategory] = useState<Category>("mail");
   const [section, setSection] = useState<SectionId>("mail:sync");
   const [search, setSearch] = useState("");
@@ -142,7 +144,11 @@ export function EmailSettingsModal({
     accounts.find((a) => a.id === signatureAccountId) ?? accounts[0] ?? null;
 
   return (
-    <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-3 sm:p-6">
+    <div
+      className={`fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-3 sm:p-6 ${
+        sidebarOpen ? "lg:left-64" : "lg:left-0"
+      }`}
+    >
       <div className="flex h-[min(720px,90vh)] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-800 dark:bg-zinc-900">
         <div className="flex items-center justify-between border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
           <h2 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">Settings</h2>
@@ -315,7 +321,7 @@ export function EmailSettingsModal({
                     }
                     className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm dark:border-zinc-700 dark:bg-zinc-950"
                   >
-                    <option value="all">All messages</option>
+                    <option value="all">All Message</option>
                     <option value="unread">Unread</option>
                     <option value="read">Read</option>
                     <option value="starred">Starred</option>

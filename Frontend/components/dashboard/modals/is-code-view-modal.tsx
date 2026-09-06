@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { createClient } from "@backend/db/client/client";
+import { removeIsCodeFile } from "@backend/actions/is-codes";
 
 type IsCodeDetail = {
   is_number: string | null;
@@ -59,6 +60,19 @@ function ISSlabRow({ label, quantity, rate }: { label: string; quantity: string 
   );
 }
 
+function fileDisplayName(f: IsCodeFileEntry): string {
+  return f.file_name ?? f.storage_path.split("/").pop() ?? "File";
+}
+
+function storagePublicUrl(path: string, disposition: "inline" | "attachment"): string {
+  const params = new URLSearchParams({
+    bucket: "is_code_documents",
+    path,
+    disposition,
+  });
+  return `/api/storage/public?${params.toString()}`;
+}
+
 export function IsCodeViewModal({
   isCodeId,
   isNumber,
@@ -75,7 +89,9 @@ export function IsCodeViewModal({
   const [isCode, setIsCode] = useState<IsCodeDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [files, setFiles] = useState<IsCodeFileEntry[]>([]);
-  const [fileUrls, setFileUrls] = useState<Record<string, string>>({});
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [fileError, setFileError] = useState<string | null>(null);
+  const [deleting, startDelete] = useTransition();
 
   useEffect(() => {
     const supabase = createClient();
@@ -89,17 +105,39 @@ export function IsCodeViewModal({
     ]).then(([{ data, error }, { data: fileData }]) => {
       if (error) console.error("[IsCodeViewModal] fetch error:", error, "id:", isCodeId);
       setIsCode(data as IsCodeDetail | null);
-      const fileList = (fileData ?? []) as IsCodeFileEntry[];
-      setFiles(fileList);
-      const urls: Record<string, string> = {};
-      for (const f of fileList) {
-        const { data: urlData } = supabase.storage.from("is_code_documents").getPublicUrl(f.storage_path);
-        if (urlData?.publicUrl) urls[f.id] = urlData.publicUrl;
-      }
-      setFileUrls(urls);
+      setFiles((fileData ?? []) as IsCodeFileEntry[]);
       setLoading(false);
     });
   }, [isCodeId]);
+
+  function handleView(f: IsCodeFileEntry) {
+    window.open(storagePublicUrl(f.storage_path, "inline"), "_blank", "noopener,noreferrer");
+  }
+
+  function handleDownload(f: IsCodeFileEntry) {
+    const a = document.createElement("a");
+    a.href = storagePublicUrl(f.storage_path, "attachment");
+    a.download = fileDisplayName(f);
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+  }
+
+  function handleDelete(f: IsCodeFileEntry) {
+    if (!window.confirm(`Delete "${fileDisplayName(f)}"?`)) return;
+    setFileError(null);
+    setDeletingId(f.id);
+    startDelete(async () => {
+      const res = await removeIsCodeFile(f.id);
+      setDeletingId(null);
+      if (!res.ok) {
+        setFileError(res.error);
+        return;
+      }
+      setFiles((prev) => prev.filter((x) => x.id !== f.id));
+    });
+  }
 
   const fullNumber = isNumber && revisionYear ? `${isNumber}: ${revisionYear}` : isNumber ?? "—";
 
@@ -181,34 +219,58 @@ export function IsCodeViewModal({
                   </p>
                 ) : (
                   <div className="space-y-1.5">
-                    {files.map((f) => (
-                      <a
-                        key={f.id}
-                        href={fileUrls[f.id] ?? "#"}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="flex items-center gap-2.5 rounded-none border border-zinc-200 px-3 py-2 text-sm hover:border-indigo-300 hover:bg-indigo-50 dark:border-zinc-700 dark:hover:border-indigo-700 dark:hover:bg-indigo-950/20"
-                      >
-                        <svg className="h-4 w-4 shrink-0 text-indigo-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span className="min-w-0 flex-1 truncate text-zinc-700 dark:text-zinc-200">
-                          {f.file_name ?? f.storage_path.split("/").pop() ?? "File"}
-                        </span>
-                        <svg className="h-3.5 w-3.5 shrink-0 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                        </svg>
-                      </a>
-                    ))}
+                    {files.map((f) => {
+                      const name = fileDisplayName(f);
+                      const busy = deleting && deletingId === f.id;
+                      return (
+                        <div
+                          key={f.id}
+                          className="flex flex-wrap items-center gap-2 rounded-none border border-zinc-200 px-3 py-2 dark:border-zinc-700"
+                        >
+                          <svg className="h-4 w-4 shrink-0 text-indigo-500" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="min-w-0 flex-1 truncate text-sm text-zinc-700 dark:text-zinc-200">
+                            {name}
+                          </span>
+                          <div className="flex shrink-0 flex-wrap items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleView(f)}
+                              className="rounded-md border border-indigo-300 bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 hover:bg-indigo-100 dark:border-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 dark:hover:bg-indigo-950/70"
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownload(f)}
+                              className="rounded-md border border-zinc-300 bg-white px-2.5 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                            >
+                              Download
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDelete(f)}
+                              disabled={busy}
+                              className="rounded-md border border-red-300 bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700 hover:bg-red-100 disabled:opacity-50 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300 dark:hover:bg-red-950/50"
+                            >
+                              {busy ? "Deleting…" : "Delete"}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
+                {fileError ? (
+                  <p className="mt-2 text-xs text-red-600 dark:text-red-400">{fileError}</p>
+                ) : null}
               </div>
             </>
           )}
         </div>
 
-        <div className="flex items-center justify-between rounded-none border-t border-zinc-200 bg-zinc-50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
-          <p className="text-xs text-zinc-400">View-only snapshot</p>
+        <div className="flex items-center justify-end rounded-none border-t border-zinc-200 bg-zinc-50 px-5 py-3 dark:border-zinc-800 dark:bg-zinc-900">
           <button onClick={onClose} className="rounded-none bg-indigo-600 px-4 py-2 text-xs font-semibold text-white hover:bg-indigo-500">
             Close
           </button>

@@ -2,7 +2,30 @@ const fs = require("fs");
 const path = require("path");
 const { Client } = require("pg");
 
+function loadEnvFile(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  for (const line of fs.readFileSync(filePath, "utf8").split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let value = trimmed.slice(eq + 1).trim();
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (!(key in process.env)) process.env[key] = value;
+  }
+}
+
 async function main() {
+  loadEnvFile(path.join(process.cwd(), ".env.local"));
+  loadEnvFile(path.join(process.cwd(), "Frontend", ".env.local"));
+  loadEnvFile(path.join(process.cwd(), ".env"));
+
   const dir = path.join("Backend", "db", "migrations");
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
   const client = new Client({

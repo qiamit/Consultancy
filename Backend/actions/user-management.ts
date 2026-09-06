@@ -8,9 +8,11 @@ import { createClient } from "@backend/db/client/server";
 
 import { createAdminClient, isAdminClientConfigured } from "@backend/db/client/admin";
 
+import { findUserByEmail } from "@backend/db/auth/users";
+
 import { requireAdminProfile } from "@backend/modules/auth/profile";
 
-import { normalizeModuleAccess, type DashboardModuleKey } from "@backend/modules/auth/modules";
+import { normalizeModuleAccessMap, type ModuleAccessMap } from "@backend/modules/auth/modules";
 
 
 
@@ -31,28 +33,25 @@ export type PortalRoleRow = {
 
 
 export type StaffUserRow = {
-
   id: string;
-
   email: string;
-
   full_name: string | null;
-
   mobile: string | null;
-
   role: string;
-
   role_label: string;
-
-  module_access: DashboardModuleKey[];
-
+  module_access: ModuleAccessMap;
   created_at: string;
-
   last_sign_in_at: string | null;
-
 };
 
-
+/** Reject email-like values that were wrongly saved into mobile. */
+function normalizeStaffMobile(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value) return null;
+  if (value.includes("@")) return null;
+  return value;
+}
 
 function slugifyRoleLabel(label: string): string {
 
@@ -70,26 +69,82 @@ function slugifyRoleLabel(label: string): string {
 
 }
 
+/** Canonical roles shown in User Management (Employee removed). */
+const CANONICAL_PORTAL_ROLES: Omit<PortalRoleRow, "id">[] = [
+  { slug: "admin", label: "Super Admin", is_system: true, sort_order: 0 },
+  {
+    slug: "inspection_engineer",
+    label: "Inspection Engineer",
+    is_system: true,
+    sort_order: 1,
+  },
+  { slug: "accountant", label: "Accountant", is_system: true, sort_order: 2 },
+];
 
+const DEFAULT_NON_ADMIN_ROLE = "inspection_engineer";
+
+async function ensureCanonicalPortalRoles(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+) {
+  try {
+    for (const role of CANONICAL_PORTAL_ROLES) {
+      const { data: existing } = await supabase
+        .from("portal_roles")
+        .select("id")
+        .eq("slug", role.slug)
+        .maybeSingle();
+
+      if (existing?.id) {
+        await supabase
+          .from("portal_roles")
+          .update({
+            label: role.label,
+            is_system: role.is_system,
+            sort_order: role.sort_order,
+          })
+          .eq("id", existing.id);
+      } else {
+        await supabase.from("portal_roles").insert(role);
+      }
+    }
+
+    // Remap + remove legacy Employee (staff). Prefer admin client for system-row delete.
+    if (isAdminClientConfigured()) {
+      const admin = createAdminClient();
+      await admin
+        .from("profiles")
+        .update({
+          role: DEFAULT_NON_ADMIN_ROLE,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("role", "staff");
+      await admin.from("portal_roles").delete().eq("slug", "staff");
+    } else {
+      await supabase
+        .from("profiles")
+        .update({
+          role: DEFAULT_NON_ADMIN_ROLE,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("role", "staff");
+      await supabase.from("portal_roles").delete().eq("slug", "staff");
+    }
+  } catch {
+    // Non-fatal: role list can still load from whatever rows exist.
+  }
+}
 
 async function loadPortalRoles(supabase: Awaited<ReturnType<typeof createClient>>) {
+  await ensureCanonicalPortalRoles(supabase);
 
   const { data, error } = await supabase
-
     .from("portal_roles")
-
     .select("id, slug, label, is_system, sort_order")
-
     .order("sort_order")
-
     .order("label");
 
-
-
   if (error) throw new Error(error.message);
-
   return (data ?? []) as PortalRoleRow[];
-
 }
 
 
@@ -292,7 +347,7 @@ export async function fetchStaffUsers(): Promise<{
 
       const p = profileMap.get(u.id);
 
-      const role = (p?.role as string) ?? "staff";
+      const role = (p?.role as string) ?? DEFAULT_NON_ADMIN_ROLE;
 
       const isAdminRole = role === "admin";
 
@@ -305,15 +360,17 @@ export async function fetchStaffUsers(): Promise<{
         full_name: p?.full_name ?? (u.user_metadata?.full_name as string | undefined) ?? null,
 
         mobile:
-          (typeof p?.mobile === "string" ? p.mobile.trim() : "") ||
-          (typeof u.user_metadata?.mobile === "string" ? u.user_metadata.mobile.trim() : "") ||
+          normalizeStaffMobile(p?.mobile) ||
+          normalizeStaffMobile(u.user_metadata?.mobile) ||
           null,
 
         role,
 
         role_label: roleLabelMap.get(role) ?? role,
 
-        module_access: isAdminRole ? normalizeModuleAccess([]) : normalizeModuleAccess(p?.module_access),
+        module_access: isAdminRole
+          ? {}
+          : normalizeModuleAccessMap(p?.module_access),
 
         created_at: p?.created_at ?? u.created_at,
 
@@ -380,11 +437,11 @@ export async function createStaffUser(formData: FormData) {
 
   const email = String(formData.get("email") ?? "").trim().toLowerCase();
 
-  const mobile = String(formData.get("mobile") ?? "").trim();
+  const mobile = normalizeStaffMobile(formData.get("mobile")) ?? "";
 
   const password = String(formData.get("password") ?? "");
 
-  const role = String(formData.get("role") ?? "staff").trim();
+  const role = String(formData.get("role") ?? DEFAULT_NON_ADMIN_ROLE).trim();
 
 
 
@@ -406,7 +463,13 @@ export async function createStaffUser(formData: FormData) {
 
   if (!roleCheck.ok) return roleCheck;
 
-
+  const existingUser = await findUserByEmail(email);
+  if (existingUser) {
+    return {
+      ok: false as const,
+      error: "A user with this email already exists. Open Edit on that row instead of adding again.",
+    };
+  }
 
   const admin = createAdminClient();
 
@@ -425,9 +488,14 @@ export async function createStaffUser(formData: FormData) {
 
 
   if (error || !data.user) {
-
-    return { ok: false as const, error: error?.message ?? "Could not create user." };
-
+    const raw = error?.message ?? "Could not create user.";
+    if (raw.includes("app_users_email_key") || raw.includes("duplicate key")) {
+      return {
+        ok: false as const,
+        error: "A user with this email already exists. Open Edit on that row instead of adding again.",
+      };
+    }
+    return { ok: false as const, error: raw };
   }
 
 
@@ -442,7 +510,7 @@ export async function createStaffUser(formData: FormData) {
 
     role,
 
-    module_access: role === "admin" ? [] : normalizeModuleAccess([]),
+    module_access: role === "admin" ? [] : normalizeModuleAccessMap([]),
 
     updated_at: new Date().toISOString(),
 
@@ -476,9 +544,9 @@ export async function updateStaffUser(userId: string, formData: FormData) {
 
   const fullName = String(formData.get("full_name") ?? "").trim();
 
-  const mobile = String(formData.get("mobile") ?? "").trim();
+  const mobile = normalizeStaffMobile(formData.get("mobile")) ?? "";
 
-  const role = String(formData.get("role") ?? "staff").trim();
+  const role = String(formData.get("role") ?? DEFAULT_NON_ADMIN_ROLE).trim();
 
   const password = String(formData.get("password") ?? "");
 
@@ -520,7 +588,7 @@ export async function updateStaffUser(userId: string, formData: FormData) {
 
       role,
 
-      module_access: role === "admin" ? [] : normalizeModuleAccess([]),
+      module_access: role === "admin" ? [] : normalizeModuleAccessMap([]),
 
       updated_at: new Date().toISOString(),
 
@@ -600,11 +668,20 @@ export async function updateStaffUserRole(userId: string, role: string) {
   if (!roleCheck.ok) return roleCheck;
 
   const admin = createAdminClient();
+  const { data: existingProfile } = await admin
+    .from("profiles")
+    .select("module_access")
+    .eq("id", userId)
+    .maybeSingle();
+
   const { error } = await admin
     .from("profiles")
     .update({
       role: nextRole,
-      module_access: nextRole === "admin" ? [] : normalizeModuleAccess([]),
+      module_access:
+        nextRole === "admin"
+          ? []
+          : normalizeModuleAccessMap(existingProfile?.module_access),
       updated_at: new Date().toISOString(),
     })
     .eq("id", userId);
@@ -612,7 +689,51 @@ export async function updateStaffUserRole(userId: string, role: string) {
   if (error) return { ok: false as const, error: error.message };
 
   revalidatePath("/dashboard/settings/users");
+  revalidatePath("/dashboard/settings/module-access");
   return { ok: true as const };
+}
+
+export async function updateStaffModuleAccess(
+  userId: string,
+  access: ModuleAccessMap | string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  await requireAdminProfile(supabase);
+
+  const trimmedId = userId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid user." };
+
+  const admin = createAdminClient();
+  const { data: profile, error: fetchError } = await admin
+    .from("profiles")
+    .select("id, role")
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!profile) return { ok: false, error: "User not found." };
+  if ((profile.role as string) === "admin") {
+    return {
+      ok: false,
+      error: "Super Admin already has access to all modules.",
+    };
+  }
+
+  const module_access = normalizeModuleAccessMap(access);
+
+  const { error } = await admin
+    .from("profiles")
+    .update({
+      module_access,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard/settings/users");
+  revalidatePath("/dashboard/settings/module-access");
+  return { ok: true };
 }
 
 export async function resetStaffUserPassword(userId: string, newPassword: string) {

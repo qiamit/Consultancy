@@ -7,6 +7,8 @@ import {
   companyAssetBucketPath,
 } from "@backend/modules/storage/documents";
 import { createClient } from "@backend/db/client/server";
+import { normalizeAppTheme } from "@backend/shared/constants/app-themes";
+import { settingsRedirect } from "@backend/shared/settings-tab-redirect";
 
 function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -90,7 +92,13 @@ export async function updateCompanySettings(formData: FormData) {
   for (const [field, slug, key] of uploads) {
     const res = await uploadIfPresent(supabase, user.id, formData, field, slug);
     if (res === null) continue;
-    if (!res.ok) redirect("/dashboard/settings/company?error=upload");
+    if (!res.ok) {
+      redirect(
+        settingsRedirect("/dashboard/settings/company", formData, {
+          error: "upload",
+        }),
+      );
+    }
     const old = prev[key] as string | null | undefined;
     if (key === "logo_path") {
       await maybeRemovePath(supabase, old, res.path);
@@ -164,13 +172,18 @@ export async function updateCompanySettings(formData: FormData) {
     { onConflict: "id" },
   );
 
-  if (error) redirect("/dashboard/settings/company?error=db");
+  if (error) {
+    redirect(
+      settingsRedirect("/dashboard/settings/company", formData, { error: "db" }),
+    );
+  }
   revalidatePath("/dashboard/settings/company");
   revalidatePath("/dashboard/finance", "layout");
-  redirect("/dashboard/settings/company");
+  redirect(
+    settingsRedirect("/dashboard/settings/company", formData, { saved: true }),
+  );
 }
 
-const APP_THEMES = new Set(["light", "dark", "system"]);
 const TIME_FORMATS = new Set(["12h", "24h"]);
 const DATE_FORMATS = new Set(["DD/MM/YYYY", "MM/DD/YYYY", "YYYY-MM-DD", "DD-MM-YYYY"]);
 
@@ -187,8 +200,7 @@ export async function updateAppSettings(formData: FormData) {
   const reference_prefix = str(formData, "reference_prefix");
   const reference_suffix = str(formData, "reference_suffix");
 
-  const themeRaw = str(formData, "app_theme") || "system";
-  const app_theme = APP_THEMES.has(themeRaw) ? themeRaw : "system";
+  const app_theme = normalizeAppTheme(str(formData, "app_theme") || "system");
 
   const currencyCustom = str(formData, "app_currency_custom");
   const currencySelect = str(formData, "app_currency") || "INR";
@@ -217,20 +229,26 @@ export async function updateAppSettings(formData: FormData) {
     { onConflict: "id" },
   );
 
-  if (error) redirect("/dashboard/settings/app?error=db");
+  if (error) {
+    redirect(settingsRedirect("/dashboard/settings/app", formData, { error: "db" }));
+  }
 
   // Save the theme preference in a cookie so the server and head script can read it instantly on every page load
   try {
     const { cookies } = await import("next/headers");
     const cookieStore = await cookies();
-    cookieStore.set("theme", app_theme, { path: "/", maxAge: 60 * 60 * 24 * 365 });
+    cookieStore.set("theme", app_theme, {
+      path: "/",
+      maxAge: 60 * 60 * 24 * 365,
+      sameSite: "lax",
+    });
   } catch (cookieError) {
     console.error("Failed to set theme cookie:", cookieError);
   }
 
   revalidatePath("/dashboard/settings/app");
-  revalidatePath("/");
-  redirect("/dashboard/settings/app");
+  revalidatePath("/", "layout");
+  redirect(settingsRedirect("/dashboard/settings/app", formData, { saved: true }));
 }
 
 export async function updateServiceOffering(

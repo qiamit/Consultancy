@@ -174,7 +174,8 @@ const server = http.createServer(async (req, res) => {
         : `${opts.filename}.pdf`
       res.writeHead(200, {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="${outName.replace(/"/g, '')}"`,
+        // inline: avoid duplicate browser download when clients fetch + save via blob
+        'Content-Disposition': `inline; filename="${outName.replace(/"/g, '')}"`,
         'Content-Length': pdf.length,
         'Access-Control-Allow-Origin': '*',
       })

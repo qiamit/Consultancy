@@ -30,7 +30,7 @@ export function projectKindLabel(value: string): string {
 export function emptyForm(): Record<string, string> {
   return {
     id: "",
-    project_kind: "",
+    project_kind: "licence",
     client_id: "",
     is_code_id: "",
     cm_l_digits: "",
@@ -49,6 +49,7 @@ export function emptyForm(): Record<string, string> {
     scope_type: "plain",
     license_scope_rows: "[]",
     title: "",
+    is_qe_managed: "1",
   };
 }
 
@@ -78,5 +79,6 @@ export function rowToForm(r: BisProjectMasterRow): Record<string, string> {
     scope_type: scope.scopeType,
     license_scope_rows: JSON.stringify(scope.rows),
     title: r.title ?? "",
+    is_qe_managed: r.is_qe_managed === false ? "0" : "1",
   };
 }

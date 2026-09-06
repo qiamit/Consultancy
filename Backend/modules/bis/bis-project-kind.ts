@@ -19,7 +19,7 @@ export function isLicenseProjectKind(value: string | null | undefined): boolean 
   const raw = (value ?? "").trim();
   if (!raw) return false;
   const key = normalizeProjectKindKey(raw);
-  return key === "license" || key === "new_license";
+  return key === "license" || key === "licence" || key === "new_license";
 }
 
 /** Distinct `project_kind` values that mean “application” (for query filters). */

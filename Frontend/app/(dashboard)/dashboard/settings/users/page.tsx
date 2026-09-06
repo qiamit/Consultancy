@@ -21,12 +21,6 @@ export default async function UserManagementPage() {
 
   return (
     <div className="mx-2.5 flex h-full min-h-0 flex-col gap-4 p-5">
-      <div className="shrink-0">
-        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-          User Management
-        </h1>
-      </div>
-
       <UserManagementPanel
         initialUsers={result.ok ? result.users : []}
         initialRoles={rolesResult.ok ? rolesResult.roles : []}

@@ -6,15 +6,13 @@ import { DialogCloseXButton } from "@/components/modules/client-master/dialog-cl
 import {
   DROPDOWN_KEY_BIS_BILLING_FREQUENCY,
   DROPDOWN_KEY_BIS_PROJECT_CLIENT,
-  DROPDOWN_KEY_BIS_PROJECT_KIND,
 } from "@backend/shared/dropdown-keys";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 import {
   computeLicenseDisplayStatus,
-  cmPrefixForProjectKind,
 } from "@backend/modules/bis/bis-project-license-status";
 import { BIS_FIELD_LABEL_CLASS, DEFAULT_BILLING_FREQUENCY } from "./constants";
-import { manakOnlineEbisLoginHref } from "@backend/modules/bis/manak-online-portal";
+import { openManakEbisAssist } from "./manak-ebis-assist";
 import { IsCodeCombobox, type IsCodeComboboxOption } from "./is-code-combobox";
 import { LicenseScopeField, ScopeTypeSelect } from "./license-scope-field";
 import type { LicenseScopeFormat } from "@backend/modules/bis/application-checklist-notes";
@@ -32,17 +30,27 @@ const fieldInputRowShellClass =
 const fieldInputInnerClass =
   "min-w-0 flex-1 border-0 bg-transparent py-2 pl-3 pr-2 text-sm text-zinc-900 outline-none ring-0 focus:ring-0 dark:bg-transparent dark:text-zinc-100";
 
-function ManakOnlineSearchLink({ userId }: { userId: string }) {
+function ManakOnlineSearchLink({
+  userId,
+  password,
+}: {
+  userId: string;
+  password?: string;
+}) {
   const suffixClass =
     "inline-flex shrink-0 items-center justify-center border-l border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-700 transition hover:bg-sky-50 hover:text-sky-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-sky-500 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200 dark:hover:bg-sky-950/40 dark:hover:text-sky-300";
   return (
-    <a
-      href={manakOnlineEbisLoginHref(userId)}
-      target="_blank"
-      rel="noopener noreferrer"
+    <button
+      type="button"
+      onClick={() =>
+        openManakEbisAssist({
+          userId,
+          password,
+        })
+      }
       className={suffixClass}
-      aria-label="Open Manak Online BIS eBIS login in a new tab (User ID passed as userId= when entered)"
-      title="Open Manak Online — User ID is added to the link when the field is filled"
+      aria-label="Open Manak Online BIS eBIS login in a new tab (User ID and password pre-filled when entered)"
+      title="Open Manak Online — same login fill as Status / Apply for Renewal (User ID + password)"
     >
       <svg
         width={18}
@@ -58,7 +66,7 @@ function ManakOnlineSearchLink({ userId }: { userId: string }) {
         <circle cx="11" cy="11" r="8" />
         <path d="m21 21-4.3-4.3" />
       </svg>
-    </a>
+    </button>
   );
 }
 
@@ -143,9 +151,9 @@ export function BisProjectsMasterForm({
   formValues,
   isNewParam,
   idParam,
+  listPath = "/dashboard/bis-projects",
   clientOptions,
   isCodeOptions,
-  projectKindOptions,
   billingFrequencyOptions,
   onClose,
   onAddNew,
@@ -158,9 +166,10 @@ export function BisProjectsMasterForm({
   formValues: Record<string, string>;
   isNewParam: boolean;
   idParam: string | null;
+  /** Where to return after save (Existing vs Our BIS License). */
+  listPath?: "/dashboard/bis-projects" | "/dashboard/our-bis-licenses";
   clientOptions: AppDropdownOptionRow[];
   isCodeOptions: IsCodeComboboxOption[];
-  projectKindOptions: AppDropdownOptionRow[];
   billingFrequencyOptions: AppDropdownOptionRow[];
   onClose: () => void;
   onAddNew: () => void;
@@ -168,9 +177,8 @@ export function BisProjectsMasterForm({
   onRequestQuickAddClient?: () => void;
   onRequestQuickAddIsCode?: () => void;
 }) {
-  const isApplication = formValues.project_kind === "application";
   const licenseStatus = computeLicenseDisplayStatus(
-    formValues.project_kind,
+    formValues.project_kind || "licence",
     formValues.license_validity_date,
     formValues.status,
   );
@@ -233,6 +241,8 @@ export function BisProjectsMasterForm({
       >
         <input type="hidden" name="id" value={formValues.id} />
         <input type="hidden" name="title" value={formValues.title} />
+        <input type="hidden" name="list_path" value={listPath} />
+        <input type="hidden" name="project_kind" value={formValues.project_kind || "licence"} />
         <input type="hidden" name="license_number" value={formValues.license_number} />
         <input type="hidden" name="start_date" value={formValues.start_date} />
         <input type="hidden" name="target_date" value={formValues.target_date} />
@@ -241,34 +251,22 @@ export function BisProjectsMasterForm({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 lg:grid-rows-[auto_auto] lg:gap-x-4 lg:gap-y-2">
             <div className="flex min-w-0 flex-col gap-1 lg:contents">
               <label
-                htmlFor="project_kind_input"
+                htmlFor="bis_qe_managed"
                 className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-1 lg:row-start-1`}
               >
-                Project Type<span className="text-red-500"> *</span>
+                QE Management
               </label>
               <div className="min-w-0 w-full lg:col-start-1 lg:row-start-2">
-                <ClientDropdownField
-                  hideLabel
-                  inputRowShellClassName={fieldInputRowShellClass}
-                  optionKey={DROPDOWN_KEY_BIS_PROJECT_KIND}
-                  name="project_kind"
-                  label="Project Type"
-                  dialogTitle="Project types"
-                  addPlaceholder="Add project type…"
-                  manageAriaLabel="Add or remove project types"
-                  value={formValues.project_kind}
-                  onChange={(v) => {
-                    onUpdateField("project_kind", v);
-                    if (v === "application") onUpdateField("license_validity_date", "");
-                  }}
-                  options={projectKindOptions}
-                  selectedValue={formValues.project_kind}
-                  onClearSelection={() => onUpdateField("project_kind", "")}
-                  includeEmptyOption={false}
-                  searchPlaceholder="Search project type…"
-                  overlayZIndexClass="z-[119]"
-                  listZIndexClass="z-[119]"
-                />
+                <select
+                  id="bis_qe_managed"
+                  name="is_qe_managed"
+                  value={formValues.is_qe_managed === "0" ? "0" : "1"}
+                  onChange={(e) => onUpdateField("is_qe_managed", e.target.value)}
+                  className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                >
+                  <option value="1">Managed by QE</option>
+                  <option value="0">Not Managed By QE</option>
+                </select>
               </div>
             </div>
 
@@ -299,14 +297,14 @@ export function BisProjectsMasterForm({
                 htmlFor="bis_cm_digits"
                 className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-3 lg:row-start-1`}
               >
-                CM/L Number
+                CM/L Number<span className="text-red-500"> *</span>
               </label>
               <div className={`min-w-0 w-full lg:col-start-3 lg:row-start-2 ${fieldInputRowShellClass}`}>
                 <span
                   className="flex shrink-0 items-center border-r border-zinc-200 bg-zinc-50 px-3 text-sm font-semibold tabular-nums text-zinc-800 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200"
                   aria-hidden
                 >
-                  {cmPrefixForProjectKind(formValues.project_kind)}
+                  CM/L
                 </span>
                 <input
                   id="bis_cm_digits"
@@ -314,7 +312,8 @@ export function BisProjectsMasterForm({
                   inputMode="numeric"
                   autoComplete="off"
                   maxLength={10}
-                  title="Leave blank or enter exactly 10 digits"
+                  required
+                  title="Enter exactly 10 digits"
                   value={formValues.cm_l_digits}
                   onChange={(e) =>
                     onUpdateField(
@@ -333,35 +332,21 @@ export function BisProjectsMasterForm({
                 htmlFor="bis_validity"
                 className={`${BIS_FIELD_LABEL_CLASS} lg:col-start-4 lg:row-start-1`}
               >
-                Licence Validity
+                Licence Validity<span className="text-red-500"> *</span>
               </label>
               <div className="min-w-0 w-full lg:col-start-4 lg:row-start-2">
-                {isApplication ? (
-                  <>
-                    <input type="hidden" name="license_validity_date" value="" />
-                    <input
-                      id="bis_validity"
-                      type="date"
-                      disabled
-                      readOnly
-                      value=""
-                      className="block w-full cursor-not-allowed rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-2 text-sm text-zinc-500 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400"
-                      title="Not applicable for Application (CM/A) type"
-                    />
-                  </>
-                ) : (
-                  <input
-                    id="bis_validity"
-                    name="license_validity_date"
-                    type="date"
-                    value={formValues.license_validity_date}
-                    onChange={(e) =>
-                      onUpdateField("license_validity_date", e.target.value)
-                    }
-                    title="Optional — end date of licence validity when known"
-                    className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-                  />
-                )}
+                <input
+                  id="bis_validity"
+                  name="license_validity_date"
+                  type="date"
+                  required
+                  value={formValues.license_validity_date}
+                  onChange={(e) =>
+                    onUpdateField("license_validity_date", e.target.value)
+                  }
+                  title="End date of licence validity"
+                  className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
+                />
               </div>
             </div>
 
@@ -442,7 +427,10 @@ export function BisProjectsMasterForm({
                     onChange={(e) => onUpdateField("portal_user_id", e.target.value)}
                     className={fieldInputInnerClass}
                   />
-                  <ManakOnlineSearchLink userId={formValues.portal_user_id} />
+                  <ManakOnlineSearchLink
+                    userId={formValues.portal_user_id}
+                    password={formValues.portal_password}
+                  />
                 </div>
               </div>
             </div>

@@ -57,6 +57,11 @@ export async function createUser(input: {
   user_metadata?: Record<string, unknown>;
 }): Promise<AppUserRow> {
   const email = normalizeEmail(input.email);
+  const existing = await findUserByEmail(email);
+  if (existing) {
+    throw new Error("A user with this email already exists.");
+  }
+
   const password_hash = await hashPassword(input.password);
   const meta: Record<string, unknown> = {
     ...(input.user_metadata ?? {}),
@@ -65,23 +70,34 @@ export async function createUser(input: {
     meta.full_name = input.full_name;
   }
 
-  const { rows } = await query<AppUserRow>(
-    `insert into public.app_users (
-       email, password_hash, email_confirmed_at, raw_user_meta_data
-     ) values (
-       $1, $2,
-       case when $3 then now() else null end,
-       $4::jsonb
-     )
-     returning *`,
-    [
-      email,
-      password_hash,
-      Boolean(input.email_confirm),
-      JSON.stringify(meta),
-    ],
-  );
-  return rows[0];
+  try {
+    const { rows } = await query<AppUserRow>(
+      `insert into public.app_users (
+         email, password_hash, email_confirmed_at, raw_user_meta_data
+       ) values (
+         $1, $2,
+         case when $3 then now() else null end,
+         $4::jsonb
+       )
+       returning *`,
+      [
+        email,
+        password_hash,
+        Boolean(input.email_confirm),
+        JSON.stringify(meta),
+      ],
+    );
+    return rows[0];
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (
+      message.includes("app_users_email_key") ||
+      message.includes("duplicate key")
+    ) {
+      throw new Error("A user with this email already exists.");
+    }
+    throw e instanceof Error ? e : new Error(message);
+  }
 }
 
 export async function updateUserPassword(

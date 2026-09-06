@@ -156,24 +156,32 @@ export function openManakLicenceStatusReport(
 }
 
 /**
- * Manak eBIS login with optional `userId` query (matches login field `name="userId"`).
- * Password is not supported in the URL for security; use clipboard paste after opening.
+ * Manak eBIS login with optional `userId` / `passwd` query params.
+ * Manak’s server fills `#InputEmail` from `userId` and `#InputPassword` from `passwd`
+ * (same mechanism — not clipboard paste). Prefer omitting password when possible:
+ * it will appear in the browser address bar / history.
  */
 export function manakOnlineEbisLoginHref(
   portalUserId: string | null | undefined,
+  portalPassword?: string | null | undefined,
 ): string {
   const id = (portalUserId ?? "").trim();
-  if (!id) return MANAK_ONLINE_EBIS_LOGIN_URL;
+  const pwd = (portalPassword ?? "").trim();
+  if (!id && !pwd) return MANAK_ONLINE_EBIS_LOGIN_URL;
   try {
     const u = new URL(MANAK_ONLINE_EBIS_LOGIN_URL);
-    u.searchParams.set("userId", id);
+    if (id) u.searchParams.set("userId", id);
+    if (pwd) u.searchParams.set("passwd", pwd);
     return u.toString();
   } catch {
-    return `${MANAK_ONLINE_EBIS_LOGIN_URL}?userId=${encodeURIComponent(id)}`;
+    const parts: string[] = [];
+    if (id) parts.push(`userId=${encodeURIComponent(id)}`);
+    if (pwd) parts.push(`passwd=${encodeURIComponent(pwd)}`);
+    return `${MANAK_ONLINE_EBIS_LOGIN_URL}?${parts.join("&")}`;
   }
 }
 
-/** Native `title` for “Apply for renewal” → Manak eBIS (URL `userId` + clipboard password). */
+/** Native `title` for “Apply for renewal” → Manak eBIS (`userId` + `passwd` in login URL). */
 export function manakRenewalLinkNativeTitle(
   portalUserId: string | null | undefined,
   portalPassword: string | null | undefined,
@@ -182,28 +190,18 @@ export function manakRenewalLinkNativeTitle(
   const pwd = (portalPassword ?? "").trim();
 
   const open =
-    "Opens BIS Manakonline eBIS login in a new tab. Password is never added to the URL (only User ID can appear as ?userId=).";
+    "Opens BIS Manakonline eBIS login in a new tab. Manak pre-fills fields from the link (not clipboard paste).";
 
-  const urlHint = uid
-    ? " This row’s User ID is included in the link so Manak can pre-fill the login field when their site supports it."
-    : " Save a User ID on this project to add ?userId= to the link for the same effect.";
-
-  let clip: string;
   if (uid && pwd) {
-    clip =
-      " On click, only the saved password is copied to the clipboard for pasting into the password field (User ID is already in the link, not copied).";
-  } else if (uid) {
-    clip =
-      " On click, nothing is copied. Save a portal password on this row to copy it on click; User ID is already in the link when present.";
-  } else if (pwd) {
-    clip =
-      " On click, your saved password is copied to the clipboard. Add a User ID on this row to also get ?userId= in the link.";
-  } else {
-    clip =
-      " No portal User ID or password on this row—only the login page opens (nothing copied).";
+    return `${open} User ID and password from this row are passed so Manak can fill both login fields.`;
   }
-
-  return `${open}${urlHint}${clip}`;
+  if (uid) {
+    return `${open} User ID is included. Save a portal password on this row to also pre-fill the password field.`;
+  }
+  if (pwd) {
+    return `${open} Password is included. Add a User ID on this row to also pre-fill the username field.`;
+  }
+  return `${open} No portal User ID or password on this row—only the blank login page opens.`;
 }
 
 /** Short `aria-label` for the renewal link. */
@@ -214,8 +212,7 @@ export function manakRenewalLinkAriaLabel(
   const uid = (portalUserId ?? "").trim();
   const pwd = (portalPassword ?? "").trim();
   const parts = ["Apply for renewal", "open BIS eBIS login in a new tab"];
-  if (uid) parts.push("User ID in link");
-  if (pwd) parts.push("copy password on click");
-  else if (uid) parts.push("no clipboard copy without password");
+  if (uid) parts.push("User ID pre-filled");
+  if (pwd) parts.push("password pre-filled");
   return parts.join(", ") + ".";
 }

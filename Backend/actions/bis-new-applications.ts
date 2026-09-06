@@ -729,6 +729,7 @@ export async function convertBisNewApplicationToLicense(
     billing_frequency: app.billing_frequency,
     portal_user_id: app.portal_user_id,
     portal_password: app.portal_password,
+    is_qe_managed: true,
     created_by: app.created_by ?? user.id,
   });
 
@@ -743,6 +744,7 @@ export async function convertBisNewApplicationToLicense(
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/our-bis-licenses");
   revalidatePath("/dashboard/bis-new-applications");
   return { ok: true };
 }

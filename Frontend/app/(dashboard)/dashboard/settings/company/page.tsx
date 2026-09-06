@@ -64,6 +64,8 @@ export default async function CompanySettingsPage({
   const sp = (await searchParams) ?? {};
   const err = firstSearchParam(sp, "error");
   const errMsg = companySettingsPageError(err);
+  const savedTab = firstSearchParam(sp, "tab");
+  const saved = firstSearchParam(sp, "saved") === "1";
 
   const supabase = await createClient();
   const { data: row } = await supabase
@@ -98,7 +100,10 @@ export default async function CompanySettingsPage({
 
   return (
     <CompanySettingsTabs
+      key={savedTab ?? "company"}
       errMsg={errMsg}
+      saved={saved}
+      initialTab={savedTab}
       r={r}
       logoUrl={logoUrl}
       letterUpperUrl={letterUpperUrl}

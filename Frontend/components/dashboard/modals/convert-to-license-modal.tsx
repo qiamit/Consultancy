@@ -7,6 +7,7 @@ import {
 } from "@backend/actions/bis-projects";
 import { convertBisNewApplicationToLicense } from "@backend/actions/bis-new-applications";
 import type { BisApplicationSource } from "@backend/modules/bis/bis-project-kind";
+import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
 
 export function ConvertToLicenseModal({
   projectId,
@@ -25,6 +26,7 @@ export function ConvertToLicenseModal({
   onClose: () => void;
   onConverted: () => void;
 }) {
+  const { open: sidebarOpen } = useSidebarLayout();
   const [cmDigits, setCmDigits] = useState("");
   const [validityDate, setValidityDate] = useState("");
   const [saving, startSave] = useTransition();
@@ -33,9 +35,6 @@ export function ConvertToLicenseModal({
   const isRenewal = mode === "update_license";
   const title = isRenewal ? "Update License" : "Convert to License";
   const submitLabel = isRenewal ? "Update License" : "Convert to License";
-  const description = isRenewal
-    ? "Enter the renewed CM/L number and license validity for this record."
-    : "Enter the issued CM/L number and license validity. This application will move to BIS All Projects as a license.";
 
   function handleConvert() {
     if (cmDigits.length !== 10) {
@@ -64,7 +63,9 @@ export function ConvertToLicenseModal({
 
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm"
+      className={`fixed inset-0 z-[300] flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm ${
+        sidebarOpen ? "lg:left-64" : "lg:left-0"
+      }`}
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
@@ -112,10 +113,6 @@ export function ConvertToLicenseModal({
         </div>
 
         <div className="space-y-4 px-6 py-5">
-          <p className="text-xs leading-relaxed text-zinc-600 dark:text-zinc-400">
-            {description}
-          </p>
-
           <div>
             <label htmlFor="convert_cm_l" className="block text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
               CM/L Number <span className="text-red-500">*</span>

@@ -23,7 +23,7 @@ export default async function DashboardLayout({
 
   return (
     <SidebarLayoutProvider>
-      <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
+      <div className="min-h-screen bg-background text-foreground">
         <Suspense fallback={<SidebarFallback />}>
           <Sidebar />
         </Suspense>

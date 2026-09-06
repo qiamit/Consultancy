@@ -44,6 +44,17 @@ const menuNavItems: MenuNavItem[] = [
     ),
   },
   {
+    href: "/dashboard/settings/module-access",
+    label: "Module Access",
+    adminOnly: true,
+    icon: (
+      <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h7" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M15 15l2 2 4-4" />
+      </svg>
+    ),
+  },
+  {
     href: "/dashboard/cms",
     label: "Website CMS",
     adminOnly: true,

@@ -3,15 +3,20 @@
 import Link from "next/link";
 import { useSidebarLayout } from "./sidebar-layout-context";
 import { DashboardUserMenu } from "./dashboard-user-menu";
+import { HeaderEmailButton } from "./header-email-button";
 
 export function DashboardTopBar({
   userName,
   userEmail,
   isAdmin,
+  canAccessEmail = false,
+  unreadEmailCount = 0,
 }: {
   userName: string;
   userEmail: string;
   isAdmin: boolean;
+  canAccessEmail?: boolean;
+  unreadEmailCount?: number;
 }) {
   const { open, toggle } = useSidebarLayout();
 
@@ -63,11 +68,16 @@ export function DashboardTopBar({
         </Link>
       </div>
 
-      <DashboardUserMenu
-        userName={userName}
-        userEmail={userEmail}
-        isAdmin={isAdmin}
-      />
+      <div className="flex items-center gap-2">
+        {canAccessEmail ? (
+          <HeaderEmailButton initialUnreadCount={unreadEmailCount} />
+        ) : null}
+        <DashboardUserMenu
+          userName={userName}
+          userEmail={userEmail}
+          isAdmin={isAdmin}
+        />
+      </div>
     </header>
   );
 }

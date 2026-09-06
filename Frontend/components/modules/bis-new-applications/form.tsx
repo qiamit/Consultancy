@@ -14,7 +14,7 @@ import {
   cmPrefixForProjectKind,
 } from "@backend/modules/bis/bis-project-license-status";
 import { BIS_FIELD_LABEL_CLASS, DEFAULT_BILLING_FREQUENCY } from "./constants";
-import { manakOnlineEbisLoginHref } from "@backend/modules/bis/manak-online-portal";
+import { openManakEbisAssist } from "@/components/modules/bis-projects/manak-ebis-assist";
 import { IsCodeCombobox, type IsCodeComboboxOption } from "./is-code-combobox";
 
 const fieldInputRowShellClass =
@@ -23,17 +23,27 @@ const fieldInputRowShellClass =
 const fieldInputInnerClass =
   "min-w-0 flex-1 border-0 bg-transparent py-2 pl-3 pr-2 text-sm text-zinc-900 outline-none ring-0 focus:ring-0 dark:bg-transparent dark:text-zinc-100";
 
-function ManakOnlineSearchLink({ userId }: { userId: string }) {
+function ManakOnlineSearchLink({
+  userId,
+  password,
+}: {
+  userId: string;
+  password?: string;
+}) {
   const suffixClass =
     "inline-flex shrink-0 items-center justify-center border-l border-zinc-200 bg-zinc-50 px-3 py-2 text-zinc-700 transition hover:bg-sky-50 hover:text-sky-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-0 focus-visible:outline-sky-500 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-200 dark:hover:bg-sky-950/40 dark:hover:text-sky-300";
   return (
-    <a
-      href={manakOnlineEbisLoginHref(userId)}
-      target="_blank"
-      rel="noopener noreferrer"
+    <button
+      type="button"
+      onClick={() =>
+        openManakEbisAssist({
+          userId,
+          password,
+        })
+      }
       className={suffixClass}
-      aria-label="Open Manak Online BIS eBIS login in a new tab (User ID passed as userId= when entered)"
-      title="Open Manak Online — User ID is added to the link when the field is filled"
+      aria-label="Open Manak Online BIS eBIS login in a new tab (User ID and password pre-filled when entered)"
+      title="Open Manak Online — same login fill as Status / Apply for Renewal (User ID + password)"
     >
       <svg
         width={18}
@@ -49,7 +59,7 @@ function ManakOnlineSearchLink({ userId }: { userId: string }) {
         <circle cx="11" cy="11" r="8" />
         <path d="m21 21-4.3-4.3" />
       </svg>
-    </a>
+    </button>
   );
 }
 
@@ -392,7 +402,10 @@ export function BisNewApplicationsMasterForm({
                     onChange={(e) => onUpdateField("portal_user_id", e.target.value)}
                     className={fieldInputInnerClass}
                   />
-                  <ManakOnlineSearchLink userId={formValues.portal_user_id} />
+                  <ManakOnlineSearchLink
+                    userId={formValues.portal_user_id}
+                    password={formValues.portal_password}
+                  />
                 </div>
               </div>
             </div>

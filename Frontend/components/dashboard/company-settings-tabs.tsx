@@ -67,6 +67,8 @@ function ImageFieldPreview({
 
 export function CompanySettingsTabs({
   errMsg,
+  saved,
+  initialTab,
   r,
   logoUrl,
   letterUpperUrl,
@@ -79,6 +81,8 @@ export function CompanySettingsTabs({
   notesRows,
 }: {
   errMsg: string | null;
+  saved?: boolean;
+  initialTab?: string;
   r: Record<string, string | null | undefined> | null;
   logoUrl: string | null;
   letterUpperUrl: string | null;
@@ -90,7 +94,11 @@ export function CompanySettingsTabs({
   scopeRows: CompanyTextTemplateRow[];
   notesRows: CompanyTextTemplateRow[];
 }) {
-  const [tab, setTab] = useState<TabId>("company");
+  const validTabIds = TABS.map((t) => t.id) as string[];
+  const startTab = (
+    initialTab && validTabIds.includes(initialTab) ? initialTab : "company"
+  ) as TabId;
+  const [tab, setTab] = useState<TabId>(startTab);
   const isBaseSettingsTab = tab === "company" || tab === "bank" || tab === "images" || tab === "print";
 
   const tabBtn = (id: TabId, label: string) => {
@@ -115,9 +123,16 @@ export function CompanySettingsTabs({
 
   return (
     <div className="w-full max-w-none space-y-6">
-      <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-        Company Settings
-      </h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+          Company Settings
+        </h1>
+        {saved ? (
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+            Settings saved successfully.
+          </p>
+        ) : null}
+      </div>
 
       {errMsg ? (
         <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
@@ -137,6 +152,7 @@ export function CompanySettingsTabs({
         <div className="p-6">
           {isBaseSettingsTab ? (
             <form action={updateCompanySettings}>
+              <input type="hidden" name="settings_tab" value={tab} />
               <div
                 className={tab === "company" ? "space-y-4" : "hidden"}
                 role="tabpanel"

@@ -1,17 +1,20 @@
 "use client";
 
-import { useMemo, useState, useEffect, useTransition } from "react";
+import { useMemo, useState, useEffect, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
 import { ClientSnapshotModal } from "@/components/dashboard/modals/client-snapshot-modal";
 import { UpdateValidityModal } from "@/components/dashboard/modals/update-validity-modal";
-import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
 import {
-  manakLicenceStatusLinkAriaLabel,
-  manakLicenceStatusLinkNativeTitle,
-  normalizeManakLicenceDigits,
-  openManakLicenceStatusReport,
+  formatCmDisplay,
+  computeLicenseDisplayStatus,
+  licensePhaseForStopMarking,
+} from "@backend/modules/bis/bis-project-license-status";
+import {
+  MANAK_ONLINE_APPLICATION_LICENCE_REPORT_URL,
+  manakRenewalLinkAriaLabel,
+  manakRenewalLinkNativeTitle,
 } from "@backend/modules/bis/manak-online-portal";
+import { openManakEbisAssist } from "@/components/modules/bis-projects/manak-ebis-assist";
 import { formatDisplayDate, parseDisplayDateInput, toYmdDateString } from "@backend/shared/format-date";
 import {
   fetchRenewalApplication,
@@ -19,6 +22,7 @@ import {
   upsertRenewalApplication,
   type RenewalApplication,
 } from "@backend/actions/renewals";
+import { convertLicenseToApplication } from "@backend/actions/bis-projects";
 import {
   downloadRenewalExcel,
   openRenewalPrintWindow,
@@ -26,26 +30,12 @@ import {
 } from "@backend/modules/bis/renewal-form-export";
 import { createClient } from "@backend/db/client/client";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
+import { useGoPageDraft } from "@/components/modules/finance/use-finance-master-state";
+import { CLIENT_FIELD_LABEL_CLASS } from "@/components/modules/client-master/constants";
+import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
 
-const RENEWAL_SYSTEM_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS License Renewal Management.
-You help with:
-- BIS license renewal timelines and procedures
-- License validity tracking and expiry management
-- CM/L number and marking fee queries
-- Renewal application filing with BIS (Bureau of Indian Standards)
-- Documents required for renewal
-- MANAK Online portal procedures
-- Dealing with expired licenses and emergency renewal steps
-- Renewal cost estimation and billing
-
-Be concise, practical, and use Indian BIS/ISI certification context.`;
-
-const RENEWAL_STARTERS = [
-  "How do I renew a BIS license?",
-  "What documents are needed for renewal?",
-  "License expired — what are next steps?",
-  "How early should I apply for renewal?",
-];
+const APPLICATION_FEE = 1000;
+const ANNUAL_LICENSE_FEE_PER_YEAR = 1000;
 
 type RenewalRow = {
   id: string;
@@ -59,11 +49,14 @@ type RenewalRow = {
   client_id: string | null;
   client_name: string;
   client_email?: string | null;
+  portal_user_id?: string | null;
+  portal_password?: string | null;
   is_number: string | null;
   is_revision_year: number | null;
   is_code_title: string | null;
   is_code_id: string | null;
   notes: string | null;
+  is_qe_managed?: boolean | null;
 };
 
 function formatIsDisplay(isNumber: string | null, revisionYear: number | null): string {
@@ -73,6 +66,29 @@ function formatIsDisplay(isNumber: string | null, revisionYear: number | null): 
 
 function formatCmLDisplay(projectKind: string, cmDigits: string | null): string {
   return formatCmDisplay(projectKind, cmDigits);
+}
+
+/** Copy CM/L as exactly 10 digits for pasting into Manak Online search. */
+function copyCmLTenDigits(cmLDigits: string | null | undefined): void {
+  const digits = String(cmLDigits ?? "").replace(/\D/g, "");
+  if (!digits) return;
+  const ten = digits.length >= 10 ? digits.slice(-10) : digits.padStart(10, "0");
+  try {
+    const el = document.createElement("textarea");
+    el.value = ten;
+    el.setAttribute("readonly", "");
+    el.style.position = "fixed";
+    el.style.left = "-9999px";
+    document.body.appendChild(el);
+    el.select();
+    el.setSelectionRange(0, ten.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(el);
+    if (ok) return;
+  } catch {
+    // fall through to Clipboard API
+  }
+  void navigator.clipboard?.writeText(ten).catch(() => {});
 }
 
 type PeriodRow = {
@@ -86,9 +102,6 @@ type PeriodRow = {
   parentFrom?: string;
   parentTo?: string;
 };
-
-const APPLICATION_FEE = 1000;
-const ANNUAL_LICENSE_FEE_PER_YEAR = 1000;
 
 type RenewalFormSnapshot = {
   version: 1;
@@ -436,49 +449,69 @@ function formatDate(dateStr: string | null): string {
 
 function ExpiryBadge({
   dateStr,
-  cmLDigits,
+  projectKind,
+  dbStatus,
+  portalUserId,
+  portalPassword,
+  clientName,
+  isLabel,
 }: {
   dateStr: string | null;
-  cmLDigits?: string | null;
+  projectKind: string;
+  dbStatus?: string | null;
+  portalUserId?: string | null;
+  portalPassword?: string | null;
+  clientName?: string | null;
+  isLabel?: string | null;
 }) {
-  const digits = normalizeManakLicenceDigits(cmLDigits);
   const days = daysUntil(dateStr);
   if (days === null) return <span className="text-zinc-400">—</span>;
 
-  let cls = "rounded-full px-2 py-0.5 text-xs font-semibold ";
-  let label = "";
+  const lic = computeLicenseDisplayStatus(projectKind, dateStr, dbStatus);
+  const absDays = Math.abs(days);
+  const daysLabel =
+    days === 0
+      ? "0 Days"
+      : `${absDays} Day${absDays === 1 ? "" : "s"}`;
 
-  if (days < 0) {
-    cls += "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300";
-    label = `Deferred ${Math.abs(days)}d`;
-  } else if (days === 0) {
-    cls += "bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300";
-    label = "Expires today";
-  } else if (days <= 30) {
-    cls += "bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300";
-    label = `${days} Days Left`;
-  } else if (days <= 90) {
-    cls += "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300";
-    label = `${days} Days Left`;
+  let status = "Renewal";
+  let colorCls = "text-red-600 dark:text-red-400";
+
+  if (lic === "Deferred") {
+    status = "Deferred";
+    colorCls = "text-blue-700 dark:text-blue-300";
+  } else if (lic === "Expired") {
+    status = "Expired";
+    colorCls = "text-violet-700 dark:text-violet-300";
+  } else if (lic === "Stop Marking") {
+    status = "Stop Marking";
+    colorCls = "text-orange-700 dark:text-orange-300";
   } else {
-    cls += "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300";
-    label = `${days} Days Left`;
-  }
-
-  if (!digits) {
-    return <span className={cls}>{label}</span>;
+    // Operative within renewal list → Renewal
+    status = "Renewal";
+    colorCls = "text-red-600 dark:text-red-400";
   }
 
   return (
-    <button
-      type="button"
-      className={`${cls} cursor-pointer transition hover:ring-2 hover:ring-offset-1 hover:ring-zinc-300 dark:hover:ring-zinc-600 dark:hover:ring-offset-zinc-900`}
-      title={manakLicenceStatusLinkNativeTitle(digits)}
-      aria-label={manakLicenceStatusLinkAriaLabel(digits)}
-      onClick={() => openManakLicenceStatusReport(digits)}
-    >
-      {label}
-    </button>
+    <div className={`inline-flex flex-col items-center px-1 py-0.5 text-xs font-semibold leading-tight ${colorCls}`}>
+      <button
+        type="button"
+        onClick={() =>
+          openManakEbisAssist({
+            userId: portalUserId,
+            password: portalPassword,
+            clientName,
+            isLabel,
+          })
+        }
+        className="underline-offset-2 transition hover:underline"
+        title={manakRenewalLinkNativeTitle(portalUserId, portalPassword)}
+        aria-label={`${status} status — ${manakRenewalLinkAriaLabel(portalUserId, portalPassword)}`}
+      >
+        {status}
+      </button>
+      <span className="tabular-nums font-bold">{daysLabel}</span>
+    </div>
   );
 }
 
@@ -557,6 +590,7 @@ function ISSlabRow({
 
 // ── Renewal Application Form Modal ────────────────────────────────────────────
 function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => void }) {
+  const { open: sidebarOpen } = useSidebarLayout();
   const [firmAddress, setFirmAddress] = useState("Loading…");
   const [firmScale, setFirmScale] = useState("—");
   const [isCodeDetail, setIsCodeDetail] = useState<IsCodeFeeDetail | null>(null);
@@ -894,10 +928,12 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm"
+      className={`fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm ${
+        sidebarOpen ? "lg:left-64" : "lg:left-0"
+      }`}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="my-4 w-full max-w-5xl rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="my-4 w-full max-w-none rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-zinc-100 bg-sky-50 px-6 py-4 dark:border-zinc-800 dark:bg-sky-950/20">
           <div>
@@ -1363,7 +1399,57 @@ function CurrencyInput({ value, onChange }: { value: string; onChange: (v: strin
 type SortKey = "client_name" | "is_number" | "license_number" | "license_validity_date" | "days_remaining";
 type SortDir = "asc" | "desc";
 
+type StatusFilter = "all" | "operative" | "renewal" | "deferred" | "expired";
+type QeManagedFilter = "all" | "managed" | "not_managed";
+
+const RENEWAL_STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All Status" },
+  { value: "renewal", label: "Renewal" },
+  { value: "deferred", label: "Deferred" },
+];
+
+const STOP_MARKING_STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All Status" },
+  { value: "operative", label: "Operative" },
+  { value: "renewal", label: "Renewal" },
+  { value: "deferred", label: "Deferred" },
+];
+
+const EXPIRED_STATUS_FILTER_OPTIONS: { value: StatusFilter; label: string }[] = [
+  { value: "all", label: "All Status" },
+];
+
+const QE_MANAGED_FILTER_OPTIONS: { value: QeManagedFilter; label: string }[] = [
+  { value: "all", label: "All" },
+  { value: "managed", label: "Managed by QE" },
+  { value: "not_managed", label: "Not Managed by QE" },
+];
+
 const PAGE_SIZE_OPTIONS = [10, 25, 50, 100] as const;
+
+function renewalStatusFilterKey(
+  r: Pick<RenewalRow, "project_kind" | "license_validity_date" | "status">,
+): StatusFilter {
+  const lic = computeLicenseDisplayStatus(
+    r.project_kind,
+    r.license_validity_date,
+    r.status,
+  );
+  if (lic === "Operative") return "renewal";
+  if (lic === "Deferred") return "deferred";
+  if (lic === "Expired") return "expired";
+  return "all";
+}
+
+function stopMarkingStatusFilterKey(
+  r: Pick<RenewalRow, "project_kind" | "license_validity_date">,
+): StatusFilter {
+  const phase = licensePhaseForStopMarking(r.project_kind, r.license_validity_date);
+  if (phase === "operative") return "operative";
+  if (phase === "renewal") return "renewal";
+  if (phase === "deferred") return "deferred";
+  return "all";
+}
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
   const icon = active ? (dir === "asc" ? "▲" : "▼") : "↕";
@@ -1375,15 +1461,46 @@ function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
 }
 
 // ── Main Section ──────────────────────────────────────────────────────────────
-export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals", emptyMsg = "No renewals due within 90 days.", extraHeaderButton }: { rows: RenewalRow[]; sectionLabel?: string; emptyMsg?: string; extraHeaderButton?: React.ReactNode }) {
+export function PendingRenewalsSection({
+  rows,
+  sectionLabel = "Pending Renewals",
+  emptyMsg = "No renewals due within 90 days.",
+  extraHeaderButton,
+  initialStatusFilter = "renewal",
+  statusFilterVariant = "renewals",
+}: {
+  rows: RenewalRow[];
+  sectionLabel?: string;
+  emptyMsg?: string;
+  extraHeaderButton?: React.ReactNode;
+  /** Stop Marking / Expired pages should use `"all"`. */
+  initialStatusFilter?: StatusFilter;
+  /**
+   * `renewals` → Renewal / Deferred
+   * `stop_marking` → Operative / Renewal / Deferred
+   * `expired` → All only (no status split)
+   */
+  statusFilterVariant?: "renewals" | "stop_marking" | "expired";
+}) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   const [search, setSearch] = useState("");
-  const [chatOpen, setChatOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(initialStatusFilter);
+  const [qeManagedFilter, setQeManagedFilter] = useState<QeManagedFilter>("managed");
+  const statusFilterOptions =
+    statusFilterVariant === "stop_marking"
+      ? STOP_MARKING_STATUS_FILTER_OPTIONS
+      : statusFilterVariant === "expired"
+        ? EXPIRED_STATUS_FILTER_OPTIONS
+        : RENEWAL_STATUS_FILTER_OPTIONS;
+  const showStatusFilter = statusFilterVariant !== "expired";
+  const isExpiredModule = statusFilterVariant === "expired";
   const [viewRow, setViewRow] = useState<RenewalRow | null>(null);
   const [renewalRow, setRenewalRow] = useState<RenewalRow | null>(null);
   const [validityRow, setValidityRow] = useState<RenewalRow | null>(null);
   const [removedIds, setRemovedIds] = useState<Set<string>>(() => new Set());
+  const [convertingId, setConvertingId] = useState<string | null>(null);
+  const [isConverting, startConvert] = useTransition();
   const [sendingReminderId, setSendingReminderId] = useState<string | null>(null);
   const [reminderMsg, setReminderMsg] = useState<{ id: string; ok: boolean; text: string } | null>(null);
   const [isCodeView, setIsCodeView] = useState<{ id: string; is_number: string | null; revision_year: number | null } | null>(null);
@@ -1391,6 +1508,11 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectAllRef = useRef<HTMLInputElement>(null);
+  const { goDisplay: goDraft, setGoDraft, clearGoDraft } = useGoPageDraft(page);
+  const searchActive = search.trim().length > 0;
+  const grandTotal = rows.filter((r) => !removedIds.has(r.id)).length;
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -1420,15 +1542,49 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
     });
   }
 
+  function handleConvertToApplication(row: RenewalRow) {
+    const label = row.client_name || "this client";
+    if (
+      !window.confirm(
+        `Create a new BIS application for ${label} from this expired license? The new application will open under BIS New Applications.`,
+      )
+    ) {
+      return;
+    }
+    setConvertingId(row.id);
+    startConvert(async () => {
+      const res = await convertLicenseToApplication(row.id);
+      setConvertingId(null);
+      if (!res.ok) {
+        window.alert(res.error);
+        return;
+      }
+      setRemovedIds((prev) => new Set(prev).add(row.id));
+      router.push("/dashboard/bis-new-applications");
+      router.refresh();
+    });
+  }
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    const list = rows.filter((r) =>
-      !removedIds.has(r.id) &&
-      (!q ||
-      r.client_name.toLowerCase().includes(q) ||
-      formatCmLDisplay(r.project_kind, r.cm_l_digits).toLowerCase().includes(q) ||
-      formatIsDisplay(r.is_number, r.is_revision_year).toLowerCase().includes(q))
-    );
+    const list = rows.filter((r) => {
+      if (removedIds.has(r.id)) return false;
+      if (qeManagedFilter === "managed" && !r.is_qe_managed) return false;
+      if (qeManagedFilter === "not_managed" && r.is_qe_managed) return false;
+      if (statusFilter !== "all") {
+        const key =
+          statusFilterVariant === "stop_marking"
+            ? stopMarkingStatusFilterKey(r)
+            : renewalStatusFilterKey(r);
+        if (key !== statusFilter) return false;
+      }
+      if (!q) return true;
+      return (
+        r.client_name.toLowerCase().includes(q) ||
+        formatCmLDisplay(r.project_kind, r.cm_l_digits).toLowerCase().includes(q) ||
+        formatIsDisplay(r.is_number, r.is_revision_year).toLowerCase().includes(q)
+      );
+    });
     list.sort((a, b) => {
       let va: string | number = "";
       let vb: string | number = "";
@@ -1452,100 +1608,207 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
       return 0;
     });
     return list;
-  }, [rows, search, sortKey, sortDir, removedIds]);
+  }, [rows, search, statusFilter, statusFilterVariant, qeManagedFilter, sortKey, sortDir, removedIds]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
+  const pageRowIds = paginated.map((r) => r.id);
+  const allPageSelected =
+    pageRowIds.length > 0 && pageRowIds.every((id) => selectedIds.has(id));
+  const somePageSelected =
+    pageRowIds.some((id) => selectedIds.has(id)) && !allPageSelected;
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (el) el.indeterminate = somePageSelected;
+  }, [somePageSelected]);
+
+  function toggleRowSelection(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectPage() {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (pageRowIds.every((id) => next.has(id))) {
+        for (const id of pageRowIds) next.delete(id);
+      } else {
+        for (const id of pageRowIds) next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function handleGoTo() {
+    const n = Number.parseInt(goDraft.trim(), 10);
+    if (!Number.isFinite(n) || n < 1) {
+      setGoDraft(null);
+      return;
+    }
+    clearGoDraft();
+    setPage(Math.min(n, totalPages));
+  }
+
+  const pageBtn =
+    "rounded-lg border border-zinc-300 bg-white px-2.5 py-1 text-xs font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-40 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700";
+  const tableColCount = 8;
+  const navDisabled = grandTotal === 0;
+  const showPagination = filtered.length > 0;
 
   return (
     <>
-      <section className="rounded-2xl border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
-        {/* Header + controls */}
-        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800 lg:flex-nowrap">
-          <h2 className="shrink-0 text-sm font-bold text-zinc-900 dark:text-white">{sectionLabel}</h2>
+      <section className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+        <header className="border-b border-zinc-200 bg-zinc-50/90 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/80">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+            <div className="shrink-0">
+              <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-50">
+                {sectionLabel}
+              </h1>
+            </div>
 
-          <div className="relative w-full max-w-[min(100%,12rem)] shrink-0 sm:max-w-[14rem]">
-            <svg className="pointer-events-none absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-zinc-400" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-            <input
-              type="text"
-              placeholder="Search…"
-              value={search}
-              onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-              className="w-full rounded-md border border-zinc-200 bg-zinc-50 py-1 pl-7 pr-2 text-xs text-zinc-800 placeholder-zinc-400 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-100"
-            />
+            <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-center sm:gap-3">
+              <div className="flex min-w-0 shrink-0 items-center gap-2">
+                <div className="w-full max-w-[min(100%,14rem)] sm:max-w-[16rem] md:max-w-[18rem] lg:max-w-[20rem]">
+                  <label htmlFor="bis-license-renewals-search" className="sr-only">
+                    Search clients, IS numbers, and CM/L numbers
+                  </label>
+                  <input
+                    id="bis-license-renewals-search"
+                    type="search"
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value);
+                      setPage(1);
+                    }}
+                    placeholder="Search All Fields"
+                    autoComplete="off"
+                    className="w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none placeholder:text-zinc-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                  />
+                </div>
+                <select
+                  id="bis-license-renewals-page-size"
+                  value={pageSize}
+                  onChange={(e) => {
+                    setPageSize(Number(e.target.value));
+                    setPage(1);
+                  }}
+                  aria-label="Entries per page"
+                  title="Entries per page"
+                  className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                >
+                  {PAGE_SIZE_OPTIONS.map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+                {showStatusFilter ? (
+                  <select
+                    id="bis-license-renewals-status-filter"
+                    value={statusFilter}
+                    onChange={(e) => {
+                      setStatusFilter(e.target.value as StatusFilter);
+                      setPage(1);
+                    }}
+                    aria-label="Filter by license status"
+                    title="Filter by license status"
+                    className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                  >
+                    {statusFilterOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                ) : null}
+                <select
+                  id="bis-license-renewals-qe-managed-filter"
+                  value={qeManagedFilter}
+                  onChange={(e) => {
+                    setQeManagedFilter(e.target.value as QeManagedFilter);
+                    setPage(1);
+                  }}
+                  aria-label="Filter by QE management"
+                  title="Filter by QE management"
+                  className="shrink-0 rounded-lg border border-zinc-300 bg-white px-2 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                >
+                  {QE_MANAGED_FILTER_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {(searchActive || statusFilter !== "all" || qeManagedFilter !== "all") &&
+              filtered.length !== grandTotal ? (
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 sm:ml-auto">
+                  <span className="font-medium text-zinc-800 dark:text-zinc-200">
+                    {filtered.length} match{filtered.length === 1 ? "" : "es"}
+                  </span>
+                </p>
+              ) : null}
+            </div>
+
+            <div className="flex shrink-0 flex-wrap items-center gap-2 self-start sm:self-center">
+              <button
+                type="button"
+                className="inline-flex items-center justify-center rounded-lg border border-violet-400 bg-violet-50 px-3 py-2 text-sm font-medium text-violet-700 shadow-sm hover:bg-violet-100 dark:border-violet-700 dark:bg-violet-950/40 dark:text-violet-300 dark:hover:bg-violet-900/40"
+                title="Open QE Assistant — AI-powered Quality Engineering helper"
+                onClick={() =>
+                  window.dispatchEvent(
+                    new CustomEvent("qe-assistant:open", {
+                      detail: { module: "bis-license-renewals" },
+                    }),
+                  )
+                }
+              >
+                QE Assistant
+              </button>
+              {extraHeaderButton}
+            </div>
           </div>
-
-          <span className="shrink-0 text-[11px] text-zinc-400 dark:text-zinc-500">
-            {filtered.length} record{filtered.length !== 1 ? "s" : ""}
-          </span>
-
-          <label className="flex shrink-0 items-center gap-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
-            <span className="whitespace-nowrap">Show</span>
-            <select
-              value={pageSize}
-              onChange={(e) => {
-                setPageSize(Number(e.target.value));
-                setPage(1);
-              }}
-              className="rounded-md border border-zinc-200 bg-white py-1 pl-2 pr-6 text-[11px] font-medium text-zinc-700 focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-200 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-200"
-            >
-              {PAGE_SIZE_OPTIONS.map((size) => (
-                <option key={size} value={size}>{size} Entries</option>
-              ))}
-            </select>
-          </label>
-
-          <div className="flex shrink-0 items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-            >
-              ‹ Prev
-            </button>
-            <span className="rounded bg-zinc-100 px-2 py-0.5 text-[11px] font-bold text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-              {page} / {totalPages}
-            </span>
-            <button
-              type="button"
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="rounded px-1.5 py-0.5 text-[11px] font-semibold text-zinc-500 hover:bg-zinc-100 disabled:opacity-30 dark:hover:bg-zinc-800"
-            >
-              Next ›
-            </button>
-          </div>
-
-          <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
-            {extraHeaderButton}
-            <button
-              type="button"
-              onClick={() => setChatOpen(true)}
-              className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700 shadow-sm transition-colors hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-300 dark:hover:bg-amber-950/50"
-            >
-              <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              Ask QE Assistant
-            </button>
-          </div>
-        </div>
+        </header>
 
         {/* Table */}
         <div className="overflow-x-auto">
           {rows.length === 0 ? (
             <p className="px-6 py-8 text-center text-sm text-zinc-500">{emptyMsg}</p>
           ) : filtered.length === 0 ? (
-            <p className="px-6 py-8 text-center text-sm text-zinc-500">No renewals match your search.</p>
+            <p className="px-6 py-8 text-center text-sm text-zinc-500">
+              {search.trim()
+                ? "No renewals match your search."
+                : qeManagedFilter !== "all"
+                  ? `No ${QE_MANAGED_FILTER_OPTIONS.find((o) => o.value === qeManagedFilter)?.label ?? "matching"} licenses found.`
+                  : statusFilter === "all"
+                    ? emptyMsg
+                    : `No ${statusFilterOptions.find((o) => o.value === statusFilter)?.label ?? statusFilter} licenses found.`}
+            </p>
           ) : (
             <table className="w-full min-w-[880px] text-sm">
               <thead className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/60">
                 <tr>
+                  <th className="w-11 px-3 py-2 text-center align-middle">
+                    <div className="flex items-center justify-center">
+                      <input
+                        ref={selectAllRef}
+                        type="checkbox"
+                        disabled={pageRowIds.length === 0}
+                        checked={allPageSelected}
+                        onChange={toggleSelectPage}
+                        className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500"
+                        title="Select all on this page"
+                        aria-label="Select all renewals on this page"
+                      />
+                    </div>
+                  </th>
                   <th className="px-4 py-2 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                    <button onClick={() => handleSort("client_name")} className="flex items-center hover:text-zinc-700 dark:hover:text-zinc-200">
+                    <button type="button" onClick={() => handleSort("client_name")} className="flex items-center hover:text-zinc-700 dark:hover:text-zinc-200">
                       Client Name<SortIcon active={sortKey === "client_name"} dir={sortDir} />
                     </button>
                   </th>
@@ -1578,6 +1841,17 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
               <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
                 {paginated.map((r) => (
                   <tr key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+                    <td className="w-11 px-3 py-2 text-center align-middle">
+                      <div className="flex items-center justify-center">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => toggleRowSelection(r.id)}
+                          className="h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500"
+                          aria-label={`Select ${r.client_name}`}
+                        />
+                      </div>
+                    </td>
                     <td className="px-4 py-2 text-left">
                       <button
                         type="button"
@@ -1601,7 +1875,27 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
                       )}
                     </td>
                     <td className="px-4 py-2 text-center font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-200">
-                      {formatCmLDisplay(r.project_kind, r.cm_l_digits)}
+                      {(() => {
+                        const cmDisplay = formatCmLDisplay(
+                          r.project_kind,
+                          r.cm_l_digits,
+                        );
+                        if (cmDisplay === "—") return cmDisplay;
+                        return (
+                          <a
+                            href={MANAK_ONLINE_APPLICATION_LICENCE_REPORT_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => copyCmLTenDigits(r.cm_l_digits)}
+                            onMouseDown={() => copyCmLTenDigits(r.cm_l_digits)}
+                            className="font-mono text-xs font-semibold tabular-nums text-sky-700 underline-offset-2 hover:underline dark:text-sky-400"
+                            title="Copies 10-digit CM/L, then opens BIS Manakonline reports"
+                            aria-label="Copy 10-digit CM/L number and open BIS Manakonline Application and Licence related reports in a new tab"
+                          >
+                            {cmDisplay}
+                          </a>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-2 text-center text-xs text-zinc-700 dark:text-zinc-300">
                       <button
@@ -1616,7 +1910,12 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
                     <td className="px-4 py-2 text-center">
                       <ExpiryBadge
                         dateStr={r.license_validity_date}
-                        cmLDigits={r.cm_l_digits}
+                        projectKind={r.project_kind}
+                        dbStatus={r.status}
+                        portalUserId={r.portal_user_id}
+                        portalPassword={r.portal_password}
+                        clientName={r.client_name}
+                        isLabel={formatIsDisplay(r.is_number, r.is_revision_year)}
                       />
                     </td>
                     <td className="px-4 py-2 text-center">
@@ -1653,21 +1952,127 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
                       </div>
                     </td>
                     <td className="px-4 py-2 text-right">
-                      <button
-                        type="button"
-                        onClick={() => setRenewalRow(r)}
-                        title="Apply for Renewal"
-                        className="group inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 shadow-sm transition-all hover:border-emerald-400 hover:bg-emerald-100 hover:shadow-md active:scale-95 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50"
-                      >
-                        <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        <span className="text-xs font-bold uppercase tracking-wide whitespace-nowrap">Renew</span>
-                      </button>
+                      {isExpiredModule ? (
+                        <button
+                          type="button"
+                          onClick={() => handleConvertToApplication(r)}
+                          disabled={isConverting && convertingId === r.id}
+                          title="Convert expired license to a new application"
+                          className="group inline-flex items-center gap-1.5 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sky-700 shadow-sm transition-all hover:border-sky-400 hover:bg-sky-100 hover:shadow-md active:scale-95 disabled:cursor-not-allowed disabled:opacity-50 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-400 dark:hover:bg-sky-950/50"
+                        >
+                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                          </svg>
+                          <span className="text-xs font-bold uppercase tracking-wide whitespace-nowrap">
+                            {isConverting && convertingId === r.id
+                              ? "Converting…"
+                              : "Convert to Application"}
+                          </span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setRenewalRow(r)}
+                          title="Apply for Renewal"
+                          className="group inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-emerald-700 shadow-sm transition-all hover:border-emerald-400 hover:bg-emerald-100 hover:shadow-md active:scale-95 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-400 dark:hover:bg-emerald-950/50"
+                        >
+                          <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                          </svg>
+                          <span className="text-xs font-bold uppercase tracking-wide whitespace-nowrap">Renew</span>
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
+              <tfoot className="border-t border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200">
+                <tr>
+                  <td colSpan={tableColCount} className="px-3 py-2 align-middle">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4">
+                      <div className="min-w-0 shrink-0">
+                        <span>Total Entries: {filtered.length}</span>
+                        {searchActive && filtered.length !== grandTotal ? (
+                          <span className="block text-xs font-normal text-zinc-600 dark:text-zinc-400 lg:inline lg:before:content-['_·_']">
+                            ({filtered.length} of {grandTotal} loaded)
+                          </span>
+                        ) : null}
+                      </div>
+
+                      {showPagination ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-xs font-normal text-zinc-600 dark:text-zinc-400">
+                            Page{" "}
+                            <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                              {page}
+                            </span>{" "}
+                            of{" "}
+                            <span className="font-medium text-zinc-900 dark:text-zinc-100">
+                              {totalPages}
+                            </span>
+                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={navDisabled || page <= 1}
+                              onClick={() => {
+                                clearGoDraft();
+                                setPage(page - 1);
+                              }}
+                              className={pageBtn}
+                            >
+                              Previous
+                            </button>
+                            <button
+                              type="button"
+                              disabled={navDisabled || page >= totalPages}
+                              onClick={() => {
+                                clearGoDraft();
+                                setPage(page + 1);
+                              }}
+                              className={pageBtn}
+                            >
+                              Next
+                            </button>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <label
+                              htmlFor="bis-license-renewals-go-page"
+                              className={CLIENT_FIELD_LABEL_CLASS}
+                            >
+                              Go to
+                            </label>
+                            <input
+                              id="bis-license-renewals-go-page"
+                              type="number"
+                              min={1}
+                              max={totalPages}
+                              value={goDraft}
+                              onChange={(e) => setGoDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  handleGoTo();
+                                }
+                              }}
+                              className="w-14 rounded-lg border border-zinc-300 bg-white px-2 py-1.5 text-center text-sm font-normal text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-950 dark:text-zinc-100"
+                              aria-label="Page number to go to"
+                            />
+                            <button
+                              type="button"
+                              onClick={handleGoTo}
+                              disabled={navDisabled}
+                              className={`${pageBtn} px-3`}
+                            >
+                              Go
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           )}
         </div>
@@ -1706,17 +2111,6 @@ export function PendingRenewalsSection({ rows, sectionLabel = "Pending Renewals"
           isNumber={isCodeView.is_number}
           revisionYear={isCodeView.revision_year}
           onClose={() => setIsCodeView(null)}
-        />
-      )}
-
-      {chatOpen && (
-        <AiChatModal
-          title="QE Assistant"
-          subtitle="BIS License Renewals · AI Powered"
-          systemPrompt={RENEWAL_SYSTEM_PROMPT}
-          starterQuestions={RENEWAL_STARTERS}
-          accentColor="emerald"
-          onClose={() => setChatOpen(false)}
         />
       )}
     </>

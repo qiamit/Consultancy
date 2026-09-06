@@ -98,6 +98,54 @@ export function canApplyForRenewal(lic: LicenseDisplayStatus): boolean {
   return lic === "Operative" || lic === "Deferred";
 }
 
+/**
+ * Date-based licence phase for Stop Marking filters / eligibility.
+ * Ignores DB `stop_marking` flag so Operative / Renewal / Deferred can still be grouped.
+ *
+ * - Operative: valid and more than 90 days before expiry
+ * - Renewal: valid and within 90 days before expiry
+ * - Deferred: within 90 days after expiry
+ * - Expired: past deferred window (Stop Marking not applicable)
+ */
+export type StopMarkingPhase =
+  | "operative"
+  | "renewal"
+  | "deferred"
+  | "expired"
+  | "na";
+
+export function licensePhaseForStopMarking(
+  projectKind: string,
+  validityDateYmd: string | Date | null | undefined,
+  now: Date = new Date(),
+): StopMarkingPhase {
+  if (isApplicationProjectKind(projectKind)) return "na";
+  // Pass null dbStatus so Stop Marking flag does not override date rules.
+  const lic = computeLicenseDisplayStatus(projectKind, validityDateYmd, null, now);
+  if (lic === "Deferred") return "deferred";
+  if (lic === "Expired") return "expired";
+  if (lic === "Operative") {
+    const vRaw = asTrimmedText(validityDateYmd);
+    if (!vRaw) return "na";
+    const validityEnd = startOfDay(parseYmd(vRaw));
+    const today = startOfDay(now);
+    const renewalStart = addDays(validityEnd, -90);
+    if (today >= renewalStart && today <= validityEnd) return "renewal";
+    return "operative";
+  }
+  return "na";
+}
+
+/** Stop Marking may be applied only on Operative, Renewal, or Deferred licences. */
+export function canApplyStopMarking(
+  projectKind: string,
+  validityDateYmd: string | Date | null | undefined,
+  now: Date = new Date(),
+): boolean {
+  const phase = licensePhaseForStopMarking(projectKind, validityDateYmd, now);
+  return phase === "operative" || phase === "renewal" || phase === "deferred";
+}
+
 export { cmPrefixForProjectKind };
 
 export function formatCmDisplay(

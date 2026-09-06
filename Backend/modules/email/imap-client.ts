@@ -3,7 +3,7 @@ import "server-only";
 import { ImapFlow, type MessageStructureObject } from "imapflow";
 import { simpleParser } from "mailparser";
 import { htmlToPlainText } from "@backend/modules/email/format-body";
-import type { EmailAccountRow, EmailMessageRow } from "@backend/shared/types/email";
+import type { EmailAccountRow, EmailMessageRow, EmailProvider } from "@backend/shared/types/email";
 
 type ParsedMessage = Omit<EmailMessageRow, "id" | "account_id" | "synced_at">;
 
@@ -17,6 +17,24 @@ function addrList(
 
 function normalizeAppPassword(pass: string | null | undefined): string {
   return (pass ?? "").replace(/\s+/g, "").trim();
+}
+
+function appPasswordHint(provider?: EmailProvider | null): string {
+  switch (provider) {
+    case "gmail":
+      return "For Gmail: Google Account → Security → App passwords → generate a new 16-character password, paste it in Edit account, and save.";
+    case "zoho":
+      return "For Zoho Mail: Zoho Mail → Settings → Mail Accounts → Security / App Passwords → generate an app-specific password, paste it in Edit account, and save. Also confirm IMAP is enabled.";
+    case "outlook":
+    case "hotmail":
+      return "For Outlook: account.microsoft.com → Security → App passwords (if 2FA is on), paste it in Edit account, and save.";
+    case "yahoo":
+      return "For Yahoo: Account Security → Generate app password, paste it in Edit account, and save.";
+    case "custom":
+      return "Use the IMAP/app password from your mail provider (not your regular login password), then save again.";
+    default:
+      return "Use a valid app password for this provider (not your regular login password), then save again in Edit account.";
+  }
 }
 
 function listAttachments(struct?: MessageStructureObject): {
@@ -50,13 +68,21 @@ function listAttachments(struct?: MessageStructureObject): {
   return items;
 }
 
-export function formatImapError(error: unknown): Error {
+export function formatImapError(
+  error: unknown,
+  provider?: EmailProvider | null,
+): Error {
   if (error instanceof Error) {
     const code = (error as NodeJS.ErrnoException).code;
     const msg = error.message.toLowerCase();
     const response = String(
       (error as { responseText?: string; authenticationFailed?: boolean }).responseText ?? "",
     ).toLowerCase();
+
+    // Already provider-specific / user-facing — keep as-is.
+    if (msg.startsWith("imap login failed") || msg.startsWith("imap authentication failed")) {
+      return error;
+    }
 
     if (
       msg.includes("invalid credentials") ||
@@ -66,7 +92,7 @@ export function formatImapError(error: unknown): Error {
       (error as { authenticationFailed?: boolean }).authenticationFailed
     ) {
       return new Error(
-        "IMAP login failed — invalid app password. For Gmail: Google Account → Security → App passwords → generate a new 16-character password, paste it in Edit account, and save.",
+        `IMAP login failed — invalid app password. ${appPasswordHint(provider)}`,
       );
     }
     if (code === "ETIMEOUT" || msg.includes("timeout")) {
@@ -80,7 +106,7 @@ export function formatImapError(error: unknown): Error {
       msg.includes("authentication failed")
     ) {
       return new Error(
-        "IMAP authentication failed. Use a valid app password (not your regular login password).",
+        `IMAP authentication failed. ${appPasswordHint(provider)}`,
       );
     }
     if (msg.includes("enotfound") || msg.includes("getaddrinfo")) {
@@ -126,10 +152,10 @@ async function withImapClient<T>(
   try {
     await client.connect();
     const result = await fn(client);
-    if (errors.length > 0) throw errors[errors.length - 1];
     return result;
   } catch (error) {
-    throw errors.length > 0 ? errors[errors.length - 1] : error;
+    const raw = errors.length > 0 ? errors[errors.length - 1] : error;
+    throw formatImapError(raw, account.provider);
   } finally {
     await closeClient(client);
   }
@@ -211,10 +237,13 @@ async function parseFetchedMessage(
   };
 }
 
+/** Default: recent messages only (full mailbox sync is too heavy for HTTP). */
+export const DEFAULT_SYNC_LIMIT = 100;
+
 export async function syncFolderMessages(
   account: EmailAccountRow,
   folder: string,
-  limit = 0,
+  limit = DEFAULT_SYNC_LIMIT,
 ): Promise<ParsedMessage[]> {
   return withImapClient(
     account,
@@ -222,9 +251,18 @@ export async function syncFolderMessages(
       const lock = await client.getMailboxLock(folder);
       try {
         const mailbox = client.mailbox;
-        const total = mailbox && typeof mailbox !== "boolean" ? mailbox.exists : 0;
+        let total = mailbox && typeof mailbox !== "boolean" ? mailbox.exists : 0;
+        if (!total) {
+          try {
+            const status = await client.status(folder, { messages: true });
+            total = status.messages ?? 0;
+          } catch {
+            total = 0;
+          }
+        }
         if (total === 0) return [];
 
+        // limit <= 0 means "all messages" (used only by explicit full syncs).
         const cap = limit > 0 ? Math.min(limit, total) : total;
         const results: ParsedMessage[] = [];
         let end = total;
@@ -240,7 +278,7 @@ export async function syncFolderMessages(
             flags: true,
             envelope: true,
             bodyStructure: true,
-            source: { start: 0, maxLength: 16384 },
+            // List sync stays envelope-only; body loads on open via fetchMessageBody.
           })) {
             results.push(await parseFetchedMessage(msg, folder));
           }
@@ -375,6 +413,14 @@ export async function moveMessageToTrash(
   await moveMessageToFolder(account, folder, uid, trashFolder);
 }
 
+function imapAuthUser(account: EmailAccountRow): string {
+  const email = (account.email_address ?? "").trim();
+  const username = (account.username ?? "").trim();
+  // Zoho org mailboxes authenticate most reliably with the full address.
+  if (account.provider === "zoho") return email || username;
+  return username || email;
+}
+
 function buildClient(account: EmailAccountRow, opts?: { socketTimeout?: number }) {
   if (!account.imap_host) throw new Error("IMAP host is not configured.");
   const pass = normalizeAppPassword(account.password);
@@ -387,7 +433,7 @@ function buildClient(account: EmailAccountRow, opts?: { socketTimeout?: number }
     port: account.imap_port,
     secure: account.imap_secure,
     auth: {
-      user: account.username || account.email_address,
+      user: imapAuthUser(account),
       pass,
     },
     logger: false,

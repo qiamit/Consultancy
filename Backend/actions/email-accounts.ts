@@ -229,3 +229,34 @@ export async function fetchCachedMessages(
   if (error) throw new Error(error.message);
   return data ?? [];
 }
+
+/** Unread inbox messages for the signed-in user's connected accounts (header badge). */
+export async function fetchUnreadEmailCount(): Promise<number> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return 0;
+
+    const { data: accounts, error: accountsError } = await supabase
+      .from("email_accounts")
+      .select("id")
+      .eq("user_id", user.id);
+
+    if (accountsError || !accounts?.length) return 0;
+
+    const accountIds = accounts.map((a) => a.id as string);
+    const { count, error } = await supabase
+      .from("email_messages")
+      .select("id", { count: "exact", head: true })
+      .in("account_id", accountIds)
+      .eq("is_read", false)
+      .eq("folder", "INBOX");
+
+    if (error) return 0;
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+}

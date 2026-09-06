@@ -26,14 +26,19 @@ export async function updateSession(request: NextRequest) {
     if (!session && request.nextUrl.pathname.startsWith("/dashboard")) {
       const redirectUrl = request.nextUrl.clone();
       redirectUrl.pathname = "/login";
-      redirectUrl.searchParams.set("next", request.nextUrl.pathname);
+      const nextPath = `${request.nextUrl.pathname}${request.nextUrl.search}`;
+      redirectUrl.search = "";
+      redirectUrl.searchParams.set("next", nextPath);
       return NextResponse.redirect(redirectUrl);
     }
 
     if (session && isAuthRoute) {
-      const redirectUrl = request.nextUrl.clone();
-      redirectUrl.pathname = "/dashboard";
-      return NextResponse.redirect(redirectUrl);
+      const nextRaw = request.nextUrl.searchParams.get("next");
+      const next =
+        nextRaw && nextRaw.startsWith("/") && !nextRaw.startsWith("//")
+          ? nextRaw
+          : "/dashboard";
+      return NextResponse.redirect(new URL(next, request.nextUrl.origin));
     }
   } catch {
     // Session / secret issues must not blank the whole site.

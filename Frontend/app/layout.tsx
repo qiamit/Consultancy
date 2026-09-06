@@ -2,6 +2,11 @@ import type { Metadata, Viewport } from "next";
 import { Outfit, Sora, JetBrains_Mono } from "next/font/google";
 import { cookies } from "next/headers";
 import { createClient } from "@backend/db/client/server";
+import {
+  getAppThemeOption,
+  normalizeAppTheme,
+  type AppThemeValue,
+} from "@backend/shared/constants/app-themes";
 import { QEAssistant } from "@/components/public/qe-assistant";
 import "./globals.css";
 
@@ -40,15 +45,22 @@ export const viewport: Viewport = {
   viewportFit: "cover",
 };
 
+function resolveServerDark(theme: AppThemeValue): boolean {
+  const option = getAppThemeOption(theme);
+  // On the server we cannot know system preference; treat system as light for SSR.
+  if (option.mode === "dark") return true;
+  return false;
+}
+
 export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  let theme = cookieStore.get("theme")?.value;
+  let themeRaw = cookieStore.get("theme")?.value;
 
-  if (!theme) {
+  if (!themeRaw) {
     try {
       const supabase = await createClient();
       const { data } = await supabase
@@ -56,18 +68,20 @@ export default async function RootLayout({
         .select("app_theme")
         .eq("id", 1)
         .maybeSingle();
-      theme = data?.app_theme || "system";
+      themeRaw = data?.app_theme || "system";
     } catch {
-      theme = "system";
+      themeRaw = "system";
     }
   }
 
-  const isDark = theme === "dark";
+  const theme = normalizeAppTheme(themeRaw);
+  const isDark = resolveServerDark(theme);
 
   return (
     <html
       lang="en"
       suppressHydrationWarning
+      data-theme={theme}
       className={`${outfit.variable} ${sora.variable} ${jetbrainsMono.variable} h-full antialiased ${isDark ? "dark" : ""}`}
     >
       <head>
@@ -75,12 +89,15 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{
             __html: `
               try {
-                const theme = ${JSON.stringify(theme)};
-                if (theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
-                  document.documentElement.classList.add('dark');
-                } else {
-                  document.documentElement.classList.remove('dark');
-                }
+                var cookieMatch = document.cookie.match(/(?:^|; )theme=([^;]*)/);
+                var theme = cookieMatch ? decodeURIComponent(cookieMatch[1]) : ${JSON.stringify(theme)};
+                var darkModes = { dark: 1, midnight: 1, ocean: 1, forest: 1, violet: 1 };
+                var lightModes = { light: 1, sunrise: 1 };
+                var preferDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+                var useDark = darkModes[theme] ? true : lightModes[theme] ? false : preferDark;
+                document.documentElement.setAttribute('data-theme', theme);
+                if (useDark) document.documentElement.classList.add('dark');
+                else document.documentElement.classList.remove('dark');
               } catch (_) {}
             `,
           }}

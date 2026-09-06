@@ -62,7 +62,7 @@ export async function GET(req: Request) {
     return NextResponse.json(body);
   } catch (e) {
     return NextResponse.json(
-      { error: formatImapError(e).message },
+      { error: formatImapError(e, (account as EmailAccountRow).provider).message },
       { status: 500 },
     );
   }

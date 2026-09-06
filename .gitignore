@@ -19,7 +19,8 @@ node_modules/
 /playwright/.cache/
 
 # next.js
-/.next/
+.next/
+**/.next/
 /Frontend/.next/
 /out/
 .swc/
@@ -28,6 +29,7 @@ node_modules/
 # production
 /build
 /dist
+**/dist/
 
 # misc
 .DS_Store
@@ -40,6 +42,7 @@ node_modules/
 # local-only Cursor agent artifacts
 agent-transcripts/
 mcps/
+assets/
 
 # debug
 npm-debug.log*
@@ -89,12 +92,8 @@ exports/
 downloads/
 scratch/
 uploads/
-
-# temp / backup / accidental shell artifacts
-*.tmp
-*.temp
-*.bak
-r.column_name).join('
+tmp/
+temp/
 
 # tooling caches
 .cache/
@@ -110,4 +109,3 @@ agent-tools/
 
 # Tesseract OCR language data (downloaded at runtime)
 pdf-service/*.traineddata
-

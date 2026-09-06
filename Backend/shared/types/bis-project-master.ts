@@ -27,6 +27,8 @@ export type BisProjectMasterRow = {
   billing_frequency: string | null;
   portal_user_id: string | null;
   portal_password: string | null;
+  /** True when QE actively manages this licence (Our BIS License portfolio). */
+  is_qe_managed?: boolean | null;
   created_at: string;
   updated_at?: string;
   /** Joined in page loader. */

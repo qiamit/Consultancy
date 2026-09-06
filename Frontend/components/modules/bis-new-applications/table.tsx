@@ -22,15 +22,6 @@ import {
   BIS_PROJECTS_TABLE_COL_COUNT,
 } from "./footer-bar";
 
-/** User ID is passed via `?userId=` on the link; clipboard carries password only. */
-function copyManakPortalPasswordOnly(
-  portalPassword: string | null | undefined,
-): void {
-  const pass = String(portalPassword ?? "").trim();
-  if (!pass) return;
-  void navigator.clipboard.writeText(pass).catch(() => {});
-}
-
 const chk =
   "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500";
 
@@ -289,10 +280,12 @@ export function BisNewApplicationsMasterTable({
                           {renewalWindow.main}
                         </div>
                         <a
-                          href={manakOnlineEbisLoginHref(r.portal_user_id)}
+                          href={manakOnlineEbisLoginHref(
+                            r.portal_user_id,
+                            r.portal_password,
+                          )}
                           target="_blank"
                           rel="noopener noreferrer"
-                          onClick={() => copyManakPortalPasswordOnly(r.portal_password)}
                           className="inline-block font-medium text-red-600 underline-offset-2 hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
                           title={manakRenewalLinkNativeTitle(
                             r.portal_user_id,

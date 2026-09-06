@@ -4,7 +4,6 @@ import {
   computeLicenseDisplayStatus,
   formatCmDisplay,
 } from "@backend/modules/bis/bis-project-license-status";
-import { projectKindLabel } from "./constants";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 function esc(s: string): string {
@@ -213,8 +212,8 @@ export function printBisProjectsMasterList(rows: BisProjectMasterRow[]) {
         r.license_validity_date,
       );
       return `<tr>
-  <td>${esc(isLabel(r))}<br/>${esc(projectKindLabel(r.project_kind))}</td>
   <td style="text-align:center">${esc(clientLabel(r))}</td>
+  <td>${esc(isLabel(r))}</td>
   <td style="text-align:center">${esc(formatCmDisplay(r.project_kind, r.cm_l_digits))}<br/>${esc(lic)}</td>
   <td style="text-align:center">${esc(validityCell(r))}</td>
   <td style="text-align:center">${esc(String(r.billing_amount ?? ""))}</td>
@@ -235,7 +234,7 @@ export function printBisProjectsMasterList(rows: BisProjectMasterRow[]) {
 <h1>BIS Existing Licenses</h1>
 <table>
 <thead><tr>
-<th>IS Code &amp; Type</th><th style="text-align:center">Name of the Client</th><th style="text-align:center">CM/L</th><th style="text-align:center">License Validity</th><th style="text-align:center">Billing</th><th style="text-align:center">Frequency</th>
+<th style="text-align:center">Name of the Client</th><th>IS Code</th><th style="text-align:center">CM/L</th><th style="text-align:center">License Validity</th><th style="text-align:center">Billing</th><th style="text-align:center">Frequency</th>
 </tr></thead>
 <tbody>${rowsHtml}</tbody>
 </table>

@@ -18,6 +18,12 @@ import {
   licenseProjectKindDbValue,
   applicationProjectKindDbValue,
 } from "@backend/modules/bis/bis-project-kind";
+import {
+  DEFAULT_BIS_APPLICATION_STAGE,
+  isBisApplicationStage,
+  type BisApplicationStage,
+} from "@backend/modules/bis/application-stage";
+import { requireAdminProfile } from "@backend/modules/auth/profile";
 import { createClient } from "@backend/db/client/server";
 
 function str(formData: FormData, key: string) {
@@ -139,8 +145,14 @@ export async function saveBisProjectMaster(formData: FormData) {
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
 
+  const listPathRaw = str(formData, "list_path");
+  const listPath =
+    listPathRaw === "/dashboard/our-bis-licenses"
+      ? "/dashboard/our-bis-licenses"
+      : "/dashboard/bis-projects";
+
   const id = nullableStr(formData, "id");
-  const project_kind = str(formData, "project_kind");
+  let project_kind = str(formData, "project_kind");
   const [allowedKinds, allowedBilling] = await Promise.all([
     allowedDropdownValues(supabase, DROPDOWN_KEY_BIS_PROJECT_KIND, KINDS),
     allowedDropdownValues(supabase, DROPDOWN_KEY_BIS_BILLING_FREQUENCY, BILLING),
@@ -154,45 +166,46 @@ export async function saveBisProjectMaster(formData: FormData) {
     const existingKind = (existing?.project_kind ?? "").trim();
     if (existingKind) allowedKinds.add(existingKind);
   }
-  if (!allowedKinds.has(project_kind))
-    redirect(`/dashboard/bis-projects?error=${encodeURIComponent("kind")}`);
+  // BIS License Operative is license-only (applications live under BIS New Applications).
+  if (!project_kind || isApplicationProjectKind(project_kind) || !allowedKinds.has(project_kind)) {
+    project_kind = await licenseProjectKindDbValue(supabase);
+  }
+  if (!allowedKinds.has(project_kind)) allowedKinds.add(project_kind);
 
   const client_id = nullableStr(formData, "client_id");
   if (!client_id)
-    redirect(`/dashboard/bis-projects?error=${encodeURIComponent("client")}`);
+    redirect(`${listPath}?error=${encodeURIComponent("client")}`);
 
   const is_code_id = nullableStr(formData, "is_code_id");
   if (!is_code_id)
-    redirect(`/dashboard/bis-projects?error=${encodeURIComponent("is_code")}`);
+    redirect(`${listPath}?error=${encodeURIComponent("is_code")}`);
 
   const cmDigits = str(formData, "cm_l_digits").replace(/\D/g, "");
-  if (cmDigits.length > 0 && cmDigits.length !== 10)
-    redirect(`/dashboard/bis-projects?error=${encodeURIComponent("cm_digits")}`);
-  const cm_l_digits = cmDigits.length === 10 ? cmDigits : null;
+  if (cmDigits.length !== 10)
+    redirect(`${listPath}?error=${encodeURIComponent("cm_digits")}`);
+  const cm_l_digits = cmDigits;
 
   const validityRaw = dateOrNull(formData, "license_validity_date");
-  if (project_kind === "application") {
-    if (validityRaw)
-      redirect(`/dashboard/bis-projects?error=${encodeURIComponent("validity_na")}`);
-  }
+  if (!validityRaw)
+    redirect(`${listPath}?error=${encodeURIComponent("validity")}`);
 
   const case_handled_by = str(formData, "case_handled_by") || "Amit Kumar";
   const case_referred_by = str(formData, "case_referred_by") || "QE";
 
   const billing_frequency = str(formData, "billing_frequency") || "Yearly";
   if (!allowedBilling.has(billing_frequency))
-    redirect(`/dashboard/bis-projects?error=${encodeURIComponent("billing_freq")}`);
+    redirect(`${listPath}?error=${encodeURIComponent("billing_freq")}`);
 
   const billing = parseMoney(str(formData, "billing_amount"));
   if (billing === null)
-    redirect(`/dashboard/bis-projects?error=${encodeURIComponent("billing_amount")}`);
+    redirect(`${listPath}?error=${encodeURIComponent("billing_amount")}`);
 
   const portal_user_id = nullableStr(formData, "portal_user_id");
   const portal_password = nullableStr(formData, "portal_password");
 
   const status = str(formData, "status") || "in_progress";
   if (!STATUSES.has(status))
-    redirect(`/dashboard/bis-projects?error=${encodeURIComponent("status")}`);
+    redirect(`${listPath}?error=${encodeURIComponent("status")}`);
 
   const notes = await (async () => {
     const scopeFormat = str(formData, "license_scope_format") === "table" ? "table" : "plain";
@@ -257,7 +270,7 @@ export async function saveBisProjectMaster(formData: FormData) {
     client_id,
     is_code_id,
     cm_l_digits,
-    license_validity_date: project_kind === "application" ? null : validityRaw,
+    license_validity_date: validityRaw,
     case_handled_by,
     case_referred_by,
     billing_amount: billing,
@@ -268,6 +281,7 @@ export async function saveBisProjectMaster(formData: FormData) {
     start_date: dateOrNull(formData, "start_date"),
     target_date: dateOrNull(formData, "target_date"),
     notes,
+    is_qe_managed: str(formData, "is_qe_managed") === "1",
     updated_at: new Date().toISOString(),
   };
 
@@ -280,7 +294,7 @@ export async function saveBisProjectMaster(formData: FormData) {
       if (error) {
         const hint = encodeURIComponent((error.message ?? "").slice(0, 280));
         redirect(
-          `/dashboard/bis-projects?error=db&db_code=${encodeURIComponent(error.code ?? "")}&db_hint=${hint}`,
+          `${listPath}?error=db&db_code=${encodeURIComponent(error.code ?? "")}&db_hint=${hint}`,
         );
       }
     } else {
@@ -291,19 +305,20 @@ export async function saveBisProjectMaster(formData: FormData) {
       if (error) {
         const hint = encodeURIComponent((error.message ?? "").slice(0, 280));
         redirect(
-          `/dashboard/bis-projects?error=db&db_code=${encodeURIComponent(error.code ?? "")}&db_hint=${hint}`,
+          `${listPath}?error=db&db_code=${encodeURIComponent(error.code ?? "")}&db_hint=${hint}`,
         );
       }
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Save failed.";
     redirect(
-      `/dashboard/bis-projects?error=db&db_hint=${encodeURIComponent(msg.slice(0, 280))}`,
+      `${listPath}?error=db&db_hint=${encodeURIComponent(msg.slice(0, 280))}`,
     );
   }
 
   revalidatePath("/dashboard/bis-projects");
-  redirect("/dashboard/bis-projects");
+  revalidatePath("/dashboard/our-bis-licenses");
+  redirect(listPath);
 }
 
 export async function deleteBisProject(id: string) {
@@ -319,6 +334,7 @@ export async function deleteBisProject(id: string) {
   if (error) redirect("/dashboard/bis-projects?error=db");
 
   revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/our-bis-licenses");
   redirect("/dashboard/bis-projects");
 }
 
@@ -336,7 +352,83 @@ export async function deleteBisProjects(ids: string[]) {
   if (error) redirect("/dashboard/bis-projects?error=db");
 
   revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/our-bis-licenses");
   redirect("/dashboard/bis-projects");
+}
+
+/** Mark / unmark licences as QE managed (Our BIS License portfolio). */
+export async function setBisProjectsQeManaged(
+  ids: string[],
+  managed: boolean,
+): Promise<{ ok: true; updated: number } | { ok: false; error: string }> {
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) return { ok: false, error: "Not authenticated." };
+
+    const trimmed = [
+      ...new Set(ids.map((x) => String(x ?? "").trim()).filter(Boolean)),
+    ];
+    if (trimmed.length === 0) {
+      return { ok: false, error: "No licenses selected." };
+    }
+
+    // Chunk updates so large selections stay reliable.
+    const CHUNK = 200;
+    for (let i = 0; i < trimmed.length; i += CHUNK) {
+      const chunk = trimmed.slice(i, i + CHUNK);
+      const { error } = await supabase
+        .from("bis_projects")
+        .update({
+          is_qe_managed: managed,
+          updated_at: new Date().toISOString(),
+        })
+        .in("id", chunk);
+      if (error) return { ok: false, error: error.message };
+    }
+
+    // Do not revalidate the full Existing Licenses page (~30k rows) — that
+    // times out the server-action flight ("Failed to fetch"). Our module is small.
+    revalidatePath("/dashboard/our-bis-licenses");
+    return { ok: true, updated: trimmed.length };
+  } catch (e) {
+    return {
+      ok: false,
+      error: e instanceof Error ? e.message : "Could not update Our Work flag.",
+    };
+  }
+}
+
+/** Super-admin only: delete pending application rows (dashboard list, no redirect). */
+export async function deletePendingApplicationsAsAdmin(
+  ids: string[],
+): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  try {
+    await requireAdminProfile(supabase);
+  } catch {
+    return { ok: false, error: "Only Super Admin can delete applications." };
+  }
+
+  const trimmed = [...new Set(ids.map((x) => String(x ?? "").trim()).filter(Boolean))];
+  if (trimmed.length === 0) {
+    return { ok: false, error: "Select at least one application to delete." };
+  }
+
+  const { error, count } = await supabase
+    .from("bis_projects")
+    .delete({ count: "exact" })
+    .in("id", trimmed);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/bis-new-applications");
+  revalidatePath("/dashboard/expired-licenses");
+  return { ok: true, deleted: count ?? trimmed.length };
 }
 
 type ClientRef = { id: string; name: string; company_name: string | null };
@@ -470,29 +562,20 @@ function resolveIsCodeId(label: string, codes: IsCodeRef[]): string | null {
 }
 
 function parseCmDigits(
-  projectKind: string,
+  _projectKind: string,
   cmDisplay: string,
 ):
   | { ok: true; digits: string }
   | { ok: false; error: string } {
   const raw = cmDisplay.trim();
-  const m = raw.match(/^CM\/([LA])(\d{10})$/i);
+  const m = raw.match(/^CM\/L(\d{10})$/i);
   if (!m) {
     return {
       ok: false,
-      error: `Invalid CM/L or CM/A value "${raw}" (expected e.g. CM/L1234567890).`,
+      error: `Invalid CM/L value "${raw}" (expected e.g. CM/L1234567890 — exactly 10 digits).`,
     };
   }
-  const kindChar = m[1]!.toUpperCase();
-  const digits = m[2]!;
-  const want = projectKind === "application" ? "A" : "L";
-  if (kindChar !== want) {
-    return {
-      ok: false,
-      error: `CM/${kindChar} does not match project kind "${projectKind}" (use CM/A for Application, CM/L otherwise).`,
-    };
-  }
-  return { ok: true, digits };
+  return { ok: true, digits: m[1]! };
 }
 
 async function buildBisImportPayload(
@@ -703,6 +786,37 @@ export async function updateBisProjectTargetDate(
   return { ok: true };
 }
 
+export async function updateBisProjectApplicationStage(
+  projectId: string,
+  stage: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = projectId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid project" };
+
+  const trimmedStage = String(stage ?? "").trim();
+  if (!isBisApplicationStage(trimmedStage)) {
+    return { ok: false, error: "Invalid application status." };
+  }
+
+  const { error } = await supabase
+    .from("bis_projects")
+    .update({
+      application_stage: trimmedStage as BisApplicationStage,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", trimmedId);
+
+  if (error) return { ok: false, error: error.message };
+
+  return { ok: true };
+}
+
 export async function updateBisProjectNotes(
   projectId: string,
   notes: string,
@@ -754,7 +868,7 @@ export async function convertApplicationToLicense(
 
   const { data: existing, error: fetchError } = await supabase
     .from("bis_projects")
-    .select("project_kind")
+    .select("project_kind, is_qe_managed")
     .eq("id", trimmedId)
     .maybeSingle();
 
@@ -772,6 +886,8 @@ export async function convertApplicationToLicense(
       project_kind: licenseKind,
       cm_l_digits: cmDigits,
       license_validity_date: trimmedDate,
+      application_stage: "License Granted",
+      is_qe_managed: existing.is_qe_managed !== false,
       updated_at: new Date().toISOString(),
     })
     .eq("id", trimmedId);
@@ -780,6 +896,7 @@ export async function convertApplicationToLicense(
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/our-bis-licenses");
   revalidatePath("/dashboard/bis-new-applications");
   return { ok: true };
 }
@@ -822,13 +939,143 @@ export async function updateBisProjectLicenseDetails(
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/bis-new-applications");
   return { ok: true };
 }
 
-/** Convert an expired / existing license row into a fresh application. */
+/** Create a fresh pending BIS application (no CM/L / validity yet). */
+export async function createPendingApplication(input: {
+  clientId: string;
+  isCodeId: string;
+  targetDate?: string | null;
+  portalUserId?: string | null;
+  portalPassword?: string | null;
+  caseHandledBy?: string | null;
+  caseReferredBy?: string | null;
+  billingAmount?: string | number | null;
+  billingFrequency?: string | null;
+  licenseScopeFormat?: "plain" | "table";
+  licenseScopePlain?: string | null;
+  licenseScopeRowsJson?: string | null;
+  isQeManaged?: boolean;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const clientId = input.clientId?.trim();
+  const isCodeId = input.isCodeId?.trim();
+  if (!clientId) return { ok: false, error: "Select a client." };
+  if (!isCodeId) return { ok: false, error: "Select an IS code." };
+
+  const targetRaw = (input.targetDate ?? "").trim();
+  const target_date =
+    targetRaw && /^\d{4}-\d{2}-\d{2}$/.test(targetRaw) ? targetRaw : null;
+
+  const [{ data: client }, { data: isCode }] = await Promise.all([
+    supabase.from("clients").select("id").eq("id", clientId).maybeSingle(),
+    supabase.from("is_codes").select("id").eq("id", isCodeId).maybeSingle(),
+  ]);
+  if (!client) return { ok: false, error: "Client not found." };
+  if (!isCode) return { ok: false, error: "IS code not found." };
+
+  const project_kind = await applicationProjectKindDbValue(supabase);
+  const title = await buildTitle(supabase, clientId, isCodeId, "BIS application");
+  const today = new Date().toISOString().split("T")[0]!;
+
+  const billingRaw = String(input.billingAmount ?? "").trim().replace(/,/g, "");
+  let billing_amount = 0;
+  if (billingRaw) {
+    const n = Number(billingRaw);
+    if (!Number.isFinite(n) || n < 0) {
+      return { ok: false, error: "Billing amount must be a valid number." };
+    }
+    billing_amount = Math.round(n * 100) / 100;
+  }
+
+  const billing_frequency =
+    String(input.billingFrequency ?? "").trim() || "Yearly";
+  const case_handled_by =
+    String(input.caseHandledBy ?? "").trim() || "Amit Kumar";
+  const case_referred_by =
+    String(input.caseReferredBy ?? "").trim() || "QE";
+  const portal_user_id = String(input.portalUserId ?? "").trim() || null;
+  const portal_password = String(input.portalPassword ?? "").trim() || null;
+
+  const scopeFormat =
+    input.licenseScopeFormat === "table" ? "table" : "plain";
+  let scopeRows: LicenseScopeTableRow[] = [];
+  try {
+    const rawRows = String(input.licenseScopeRowsJson ?? "").trim();
+    if (rawRows) {
+      const parsed = JSON.parse(rawRows) as unknown;
+      if (Array.isArray(parsed)) {
+        scopeRows = parsed
+          .map((row) => {
+            if (!row || typeof row !== "object") return null;
+            const r = row as Record<string, unknown>;
+            return {
+              component: String(r.component ?? "").trim(),
+              value: String(r.value ?? "").trim(),
+            };
+          })
+          .filter((r): r is LicenseScopeTableRow => r !== null);
+      }
+    }
+  } catch {
+    scopeRows = [];
+  }
+  const notesBuilt = buildBisProjectLicenseScopeNotes(null, {
+    scopeType: scopeFormat,
+    plainText: String(input.licenseScopePlain ?? ""),
+    rows: scopeRows,
+  });
+  const notes = notesBuilt.trim() ? notesBuilt : null;
+  const is_qe_managed = input.isQeManaged !== false;
+
+  const { data, error } = await supabase
+    .from("bis_projects")
+    .insert({
+      title,
+      project_kind,
+      status: "in_progress",
+      client_id: clientId,
+      is_code_id: isCodeId,
+      cm_l_digits: null,
+      license_validity_date: null,
+      license_number: null,
+      start_date: today,
+      target_date,
+      case_handled_by,
+      case_referred_by,
+      billing_amount,
+      billing_frequency,
+      portal_user_id,
+      portal_password,
+      application_stage: DEFAULT_BIS_APPLICATION_STAGE,
+      notes,
+      is_qe_managed,
+      created_by: user.id,
+      updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (error) return { ok: false, error: error.message };
+  if (!data?.id) return { ok: false, error: "Failed to create application." };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-new-applications");
+  revalidatePath("/dashboard/bis-projects");
+  return { ok: true, id: data.id as string };
+}
+
+/** Create a fresh BIS New Application from an expired / existing license, then archive the license. */
 export async function convertLicenseToApplication(
   projectId: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -840,7 +1087,9 @@ export async function convertLicenseToApplication(
 
   const { data: existing, error: fetchError } = await supabase
     .from("bis_projects")
-    .select("project_kind")
+    .select(
+      "id, title, project_kind, status, client_id, is_code_id, portal_user_id, portal_password, case_handled_by, case_referred_by, billing_amount, billing_frequency, target_date, cm_l_digits, license_number, notes",
+    )
     .eq("id", trimmedId)
     .maybeSingle();
 
@@ -849,26 +1098,85 @@ export async function convertLicenseToApplication(
   if (isApplicationProjectKind(existing.project_kind)) {
     return { ok: false, error: "This record is already an application." };
   }
-  if (!isLicenseProjectKind(existing.project_kind)) {
-    return { ok: false, error: "Only license records can be converted to an application." };
-  }
+
+  const clientId = (existing.client_id as string | null)?.trim() ?? "";
+  const isCodeId = (existing.is_code_id as string | null)?.trim() ?? "";
+  if (!clientId) return { ok: false, error: "Client is missing on this license." };
+  if (!isCodeId) return { ok: false, error: "IS code is missing on this license." };
 
   const applicationKind = await applicationProjectKindDbValue(supabase);
+  const title = await buildTitle(supabase, clientId, isCodeId, "BIS application");
+  const today = new Date().toISOString().split("T")[0]!;
+  const now = new Date().toISOString();
 
-  const { error } = await supabase
+  const targetRaw = String(existing.target_date ?? "").trim();
+  const target_date =
+    targetRaw && /^\d{4}-\d{2}-\d{2}$/.test(targetRaw) ? targetRaw : null;
+
+  const cmDigits = String(existing.cm_l_digits ?? "").replace(/\D/g, "");
+  const licenseNo = String(existing.license_number ?? "").trim();
+  const archiveNoteParts = [
+    "Converted to new application from expired license.",
+    cmDigits ? `Previous CM/L: ${cmDigits}` : null,
+    licenseNo ? `Previous license no: ${licenseNo}` : null,
+  ].filter(Boolean);
+
+  const { data: created, error: insertError } = await supabase
+    .from("bis_projects")
+    .insert({
+      title,
+      project_kind: applicationKind,
+      status: "in_progress",
+      client_id: clientId,
+      is_code_id: isCodeId,
+      cm_l_digits: null,
+      license_validity_date: null,
+      license_number: null,
+      start_date: today,
+      target_date,
+      case_handled_by:
+        String(existing.case_handled_by ?? "").trim() || "Amit Kumar",
+      case_referred_by: String(existing.case_referred_by ?? "").trim() || "QE",
+      billing_amount: existing.billing_amount ?? 0,
+      billing_frequency:
+        String(existing.billing_frequency ?? "").trim() || "Yearly",
+      portal_user_id: (existing.portal_user_id as string | null)?.trim() || null,
+      portal_password:
+        (existing.portal_password as string | null)?.trim() || null,
+      application_stage: DEFAULT_BIS_APPLICATION_STAGE,
+      notes: archiveNoteParts.join(" "),
+      created_by: user.id,
+      updated_at: now,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) return { ok: false, error: insertError.message };
+  if (!created?.id) return { ok: false, error: "Failed to create application." };
+
+  const { error: archiveError } = await supabase
     .from("bis_projects")
     .update({
-      project_kind: applicationKind,
-      license_validity_date: null,
-      cm_l_digits: null,
-      updated_at: new Date().toISOString(),
+      status: "completed",
+      notes: [
+        String(existing.notes ?? "").trim(),
+        `${archiveNoteParts.join(" ")} New application id: ${created.id}.`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      updated_at: now,
     })
     .eq("id", trimmedId);
 
-  if (error) return { ok: false, error: error.message };
+  if (archiveError) {
+    // Application was created; surface archive issue but still return success id.
+    console.error("convertLicenseToApplication archive failed:", archiveError.message);
+  }
 
   revalidatePath("/dashboard");
   revalidatePath("/dashboard/bis-projects");
   revalidatePath("/dashboard/bis-new-applications");
-  return { ok: true };
+  revalidatePath("/dashboard/expired-licenses");
+  revalidatePath("/dashboard/bis-license-renewals");
+  return { ok: true, id: created.id as string };
 }

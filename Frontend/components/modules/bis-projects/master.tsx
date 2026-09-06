@@ -72,6 +72,7 @@ export function BisProjectsMaster({
   clientMasterDropdowns,
   isCodeFormDropdowns,
   bisProjectsFormDropdowns,
+  listMode = "all",
 }: {
   initialRows: BisProjectMasterRow[];
   fetchError?: string | null;
@@ -83,7 +84,15 @@ export function BisProjectsMaster({
   clientMasterDropdowns: ClientMasterDropdownOptions;
   isCodeFormDropdowns: IsCodeFormDropdownOptions;
   bisProjectsFormDropdowns: BisProjectsFormDropdownOptions;
+  /** `our` = Our BIS License module (server already filtered to is_qe_managed). */
+  listMode?: "all" | "our";
 }) {
+  const listPath =
+    listMode === "our"
+      ? ("/dashboard/our-bis-licenses" as const)
+      : ("/dashboard/bis-projects" as const);
+  const pageTitle =
+    listMode === "our" ? "QE BIS Licenses" : "All BIS Licenses";
   const router = useRouter();
   const { open: sidebarOpen } = useSidebarLayout();
   const searchParams = useSearchParams();
@@ -105,7 +114,11 @@ export function BisProjectsMaster({
   const [form, setForm] = useRouteBoundFormState(
     formOpenKey,
     () => {
-      if (isNewParam) return emptyForm();
+      if (isNewParam) {
+        const blank = emptyForm();
+        if (listMode === "our") blank.is_qe_managed = "1";
+        return blank;
+      }
       if (idParam) {
         const row = initialRows.find((r) => r.id === idParam);
         if (row) return rowToForm(row);
@@ -115,6 +128,9 @@ export function BisProjectsMaster({
     emptyForm(),
   );
   const [searchQuery, setSearchQuery] = useState("");
+  const [qeManagedFilter, setQeManagedFilter] = useState<
+    "all" | "managed" | "not_managed"
+  >("all");
   const [embedClientOpen, setEmbedClientOpen] = useState(false);
   const [embedIsCodeOpen, setEmbedIsCodeOpen] = useState(false);
   const [embedClientForm, setEmbedClientForm] = useState(() =>
@@ -151,14 +167,23 @@ export function BisProjectsMaster({
     [isCodeRows],
   );
 
-  const filteredRows = useMemo(
-    () => filterBisProjectsBySearch(rows, searchQuery),
-    [rows, searchQuery],
-  );
+  const filteredRows = useMemo(() => {
+    let list = filterBisProjectsBySearch(rows, searchQuery);
+    if (listMode === "all") {
+      if (qeManagedFilter === "managed") {
+        list = list.filter((r) => Boolean(r.is_qe_managed));
+      } else if (qeManagedFilter === "not_managed") {
+        list = list.filter((r) => !r.is_qe_managed);
+      }
+    }
+    return list;
+  }, [rows, searchQuery, listMode, qeManagedFilter]);
 
   const grandTotal = rows.length;
   const filteredTotal = filteredRows.length;
-  const searchActive = searchQuery.trim().length > 0;
+  const searchActive =
+    searchQuery.trim().length > 0 ||
+    (listMode === "all" && qeManagedFilter !== "all");
 
   const {
     pageSize,
@@ -167,7 +192,11 @@ export function BisProjectsMaster({
     totalPages,
     paginated: paginatedRows,
     onPageSizeChange,
-  } = useFinanceListPagination(filteredRows, searchQuery, PAGE_SIZE_OPTIONS[0]);
+  } = useFinanceListPagination(
+    filteredRows,
+    `${searchQuery}|${qeManagedFilter}|${listMode}`,
+    PAGE_SIZE_OPTIONS[0],
+  );
 
   const filteredRowIds = useMemo(
     () => filteredRows.map((r) => r.id),
@@ -181,15 +210,15 @@ export function BisProjectsMaster({
   }, [toggleSelectPage, paginatedRows]);
 
   function selectRow(r: BisProjectMasterRow) {
-    router.replace(`/dashboard/bis-projects?id=${r.id}`, { scroll: false });
+    router.replace(`${listPath}?id=${r.id}`, { scroll: false });
   }
 
   function addNew() {
-    router.replace("/dashboard/bis-projects?new=1", { scroll: false });
+    router.replace(`${listPath}?new=1`, { scroll: false });
   }
 
   function closeForm() {
-    router.replace("/dashboard/bis-projects", { scroll: false });
+    router.replace(listPath, { scroll: false });
   }
 
   function updateField(key: string, value: string) {
@@ -313,6 +342,7 @@ export function BisProjectsMaster({
 
       <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
         <BisProjectsMasterHeaderBar
+          title={pageTitle}
           onAddNew={addNew}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -320,9 +350,10 @@ export function BisProjectsMaster({
           onPageSizeChange={onPageSizeChange}
           grandTotal={grandTotal}
           filteredTotal={filteredTotal}
-          page={page}
-          totalPages={totalPages}
-          onPageChange={setPage}
+          qeManagedFilter={listMode === "all" ? qeManagedFilter : undefined}
+          onQeManagedFilterChange={
+            listMode === "all" ? setQeManagedFilter : undefined
+          }
         />
 
         <BisProjectsMasterTable
@@ -332,6 +363,9 @@ export function BisProjectsMaster({
           matchedCount={filteredTotal}
           grandCount={grandTotal}
           searchActive={searchActive}
+          page={page}
+          totalPages={totalPages}
+          onPageChange={setPage}
           onImportFile={handleImportFile}
           onExport={handleExport}
           onPrintList={handlePrintList}
@@ -367,9 +401,9 @@ export function BisProjectsMaster({
               formValues={form}
               isNewParam={isNewParam}
               idParam={idParam}
+              listPath={listPath}
               clientOptions={clientOptions}
               isCodeOptions={isCodeOptions}
-              projectKindOptions={bisProjectsFormDropdowns.projectKindOptions}
               billingFrequencyOptions={
                 bisProjectsFormDropdowns.billingFrequencyOptions
               }

@@ -90,7 +90,7 @@ export function rowHasContent(row: OslSampleRequirementStored): boolean {
 }
 
 export function editorRowsFromStored(stored: OslSampleRequirementStored[]): OslSampleRequirementRow[] {
-  if (stored.length === 0) return defaultOslSampleRequirementRows();
+  if (stored.length === 0) return [];
   return stored.map((row, index) => ({
     id: `osl-row-${index}`,
     ...row,

@@ -36,7 +36,11 @@ export function triggerPdfDownload(blob: Blob, filename: string): void {
   const safe =
     filename.replace(/[\\/:*?"<>|]+/g, "_").trim() || "document.pdf";
   const outName = safe.toLowerCase().endsWith(".pdf") ? safe : `${safe}.pdf`;
-  const url = URL.createObjectURL(blob);
+  const pdfBlob =
+    blob.type === "application/pdf"
+      ? blob
+      : new Blob([blob], { type: "application/pdf" });
+  const url = URL.createObjectURL(pdfBlob);
   const a = document.createElement("a");
   a.href = url;
   a.download = outName;

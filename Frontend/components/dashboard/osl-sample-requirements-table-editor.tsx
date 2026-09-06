@@ -1,308 +1,291 @@
 "use client";
 
-import { useEffect } from "react";
-import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
-import { DROPDOWN_KEY_BIS_PROJECT_CLIENT } from "@backend/shared/dropdown-keys";
-import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { formatDisplayDate } from "@backend/shared/format-date";
 import {
-  createOslSampleRequirementRow,
-  defaultOslSampleRequirementRows,
+  rowHasContent,
   type OslSampleRequirementRow,
-  type OslSamplePriority,
 } from "@backend/modules/bis/osl-sample-requirements";
-
-const oslClientShell =
-  "flex overflow-hidden rounded-md border border-zinc-700 bg-zinc-950 shadow-sm focus-within:border-sky-500 focus-within:ring-1 focus-within:ring-sky-500/40";
 
 const themes = {
   light: {
     wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700",
     thead: "bg-zinc-100 dark:bg-zinc-800",
-    th: "border-b border-zinc-200 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
-    groupStart: "border-t-2 border-zinc-200 dark:border-zinc-700",
-    groupMid: "border-b border-zinc-100 dark:border-zinc-800/80",
-    srCell:
-      "border-r border-zinc-200 bg-zinc-50 px-2 py-2 text-center align-middle text-sm font-bold tabular-nums text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/60 dark:text-zinc-300",
-    label: "mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400",
-    td: "px-2 py-1.5 align-top",
-    inp:
-      "block w-full rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs shadow-sm outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100",
-    footer: "shrink-0 border-t border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900/50",
+    thLeft:
+      "border border-zinc-200 px-2 py-2 text-left align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
+    thCenter:
+      "border border-zinc-200 px-2 py-2 text-center align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
+    tdLeft:
+      "border border-zinc-200 px-2 py-2.5 align-middle text-left text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300",
+    tdCenter:
+      "border border-zinc-200 px-2 py-2.5 align-middle text-center text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300",
+    selectCell:
+      "border border-zinc-200 bg-zinc-50 px-2 py-2.5 text-center align-middle dark:border-zinc-700 dark:bg-zinc-800/60",
+    empty: "px-4 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400",
+    editBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
+    copyBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-sky-600 dark:hover:bg-zinc-800 dark:hover:text-sky-300",
+    delBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800 dark:hover:text-red-400",
+    muted: "text-zinc-400 dark:text-zinc-500",
+    highlight: "ring-2 ring-inset ring-sky-500/60 bg-sky-50/80 dark:bg-sky-950/20",
     addBtn:
-      "rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700",
-    delBtn: "rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800",
+      "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
+    chk: "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500",
   },
   dark: {
     wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800",
     thead: "bg-zinc-800",
-    th: "border-b border-zinc-700 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-300",
-    groupStart: "border-t-2 border-zinc-700",
-    groupMid: "border-b border-zinc-800/80",
-    srCell:
-      "border-r border-zinc-700 bg-zinc-800/60 px-2 py-2 text-center align-middle text-sm font-bold tabular-nums text-zinc-300",
-    label: "mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
-    td: "px-2 py-1.5 align-top",
-    inp:
-      "block w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40",
-    footer: "shrink-0 border-t border-zinc-800 bg-zinc-900/50 px-3 py-2",
+    thLeft:
+      "border border-zinc-700 px-2 py-2 text-left align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
+    thCenter:
+      "border border-zinc-700 px-2 py-2 text-center align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
+    tdLeft:
+      "border border-zinc-700 px-2 py-2.5 align-middle text-left text-xs text-zinc-300",
+    tdCenter:
+      "border border-zinc-700 px-2 py-2.5 align-middle text-center text-xs text-zinc-300",
+    selectCell:
+      "border border-zinc-700 bg-zinc-800/60 px-2 py-2.5 text-center align-middle",
+    empty: "px-4 py-10 text-center text-sm text-zinc-500",
+    editBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200",
+    copyBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-sky-300",
+    delBtn:
+      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-red-400",
+    muted: "text-zinc-500",
+    highlight: "ring-2 ring-inset ring-sky-500/60 bg-sky-950/20",
     addBtn:
-      "rounded-lg border border-zinc-700 px-3 py-1.5 text-xs font-semibold text-zinc-300 hover:bg-zinc-800",
-    delBtn: "rounded p-1 text-zinc-500 hover:bg-zinc-800 hover:text-red-400",
+      "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
+    chk: "h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-sky-500 focus:ring-sky-500/30",
   },
 } as const;
 
-function FieldCell({
-  label,
-  t,
-  children,
-  colSpan,
-}: {
-  label: string;
-  t: (typeof themes)[keyof typeof themes];
-  children: React.ReactNode;
-  colSpan?: number;
-}) {
-  return (
-    <td className={t.td} colSpan={colSpan}>
-      <label className={t.label}>{label}</label>
-      {children}
-    </td>
-  );
-}
-
-function SampleEntryRows({
-  row,
-  index,
-  t,
-  clientOptions,
-  onRequestAddClient,
-  onUpdate,
-  onRemove,
-  isFirst,
-  highlighted,
-}: {
-  row: OslSampleRequirementRow;
-  index: number;
-  t: (typeof themes)[keyof typeof themes];
-  clientOptions: AppDropdownOptionRow[];
-  onRequestAddClient: (rowId: string) => void;
-  onUpdate: (patch: Partial<OslSampleRequirementRow>) => void;
-  onRemove: () => void;
-  isFirst: boolean;
-  highlighted?: boolean;
-}) {
-  const srNo = String(index + 1).padStart(2, "0");
-  const row1Class = `${isFirst ? t.groupMid : `${t.groupStart} ${t.groupMid}`}${highlighted ? " ring-2 ring-inset ring-sky-500/60 bg-sky-950/20" : ""}`;
-
-  return (
-    <>
-      <tr id={`osl-sample-entry-${index}`} className={row1Class}>
-        <td rowSpan={2} className={t.srCell}>
-          {srNo}
-        </td>
-        <FieldCell label="Sample Description" t={t} colSpan={6}>
-          <input
-            type="text"
-            value={row.sample_description}
-            onChange={(e) => onUpdate({ sample_description: e.target.value })}
-            className={t.inp}
-            placeholder="Description…"
-          />
-        </FieldCell>
-        <FieldCell label="Declared Value" t={t} colSpan={4}>
-          <input
-            type="text"
-            value={row.declared_value}
-            onChange={(e) => onUpdate({ declared_value: e.target.value })}
-            className={t.inp}
-            placeholder="Value…"
-          />
-        </FieldCell>
-      </tr>
-      <tr className={t.groupMid}>
-        <FieldCell label="Batch Number" t={t}>
-          <input
-            type="text"
-            value={row.batch_number}
-            onChange={(e) => onUpdate({ batch_number: e.target.value })}
-            className={t.inp}
-            placeholder="Batch…"
-          />
-        </FieldCell>
-        <FieldCell label="Date of Manufacturing" t={t}>
-          <input
-            type="date"
-            value={row.date_of_manufacturing}
-            onChange={(e) => onUpdate({ date_of_manufacturing: e.target.value })}
-            className={t.inp}
-          />
-        </FieldCell>
-        <FieldCell label="Sample Quantity" t={t}>
-          <input
-            type="text"
-            value={row.sample_quantity}
-            onChange={(e) => onUpdate({ sample_quantity: e.target.value })}
-            className={t.inp}
-            placeholder="Qty…"
-          />
-        </FieldCell>
-        <FieldCell label="Batch Quantity" t={t}>
-          <input
-            type="text"
-            value={row.batch_quantity}
-            onChange={(e) => onUpdate({ batch_quantity: e.target.value })}
-            className={t.inp}
-            placeholder="Qty…"
-          />
-        </FieldCell>
-        <FieldCell label="Sample Code" t={t}>
-          <input
-            type="text"
-            value={row.sample_code}
-            onChange={(e) => onUpdate({ sample_code: e.target.value })}
-            className={t.inp}
-            placeholder="Code…"
-          />
-        </FieldCell>
-        <FieldCell label="QR Code" t={t}>
-          <input
-            type="text"
-            value={row.qr_code}
-            onChange={(e) => onUpdate({ qr_code: e.target.value })}
-            className={t.inp}
-            placeholder="QR…"
-          />
-        </FieldCell>
-        <FieldCell label="Sample Type" t={t}>
-          <input
-            type="text"
-            value={row.sample_type}
-            onChange={(e) => onUpdate({ sample_type: e.target.value })}
-            className={t.inp}
-            placeholder="Type…"
-          />
-        </FieldCell>
-        <FieldCell label="Priority" t={t}>
-          <select
-            value={row.priority}
-            onChange={(e) => onUpdate({ priority: e.target.value as OslSamplePriority })}
-            className={t.inp}
-          >
-            <option value="Priority">Priority</option>
-            <option value="Non Priority">Non Priority</option>
-          </select>
-        </FieldCell>
-        <FieldCell label="Name of the Laboratory" t={t}>
-          <ClientDropdownField
-            hideLabel
-            inputRowShellClassName={oslClientShell}
-            listZIndexClass="z-[410]"
-            optionKey={DROPDOWN_KEY_BIS_PROJECT_CLIENT}
-            name={`osl_lab_${row.id}`}
-            label="Name of the Laboratory"
-            dialogTitle="Clients"
-            addPlaceholder="New client label"
-            manageAriaLabel="Add new client"
-            value={row.laboratory_name}
-            onChange={(v) => onUpdate({ laboratory_name: v })}
-            options={clientOptions}
-            selectedValue={row.laboratory_name}
-            onClearSelection={() => onUpdate({ laboratory_name: "" })}
-            includeEmptyOption={false}
-            searchPlaceholder="Search client…"
-            blankInputWhenNoSelection
-            onSuffixButtonClick={() => onRequestAddClient(row.id)}
-          />
-        </FieldCell>
-        <td className={`${t.td} align-bottom text-right`}>
-          <button
-            type="button"
-            onClick={onRemove}
-            className={`${t.delBtn} inline-flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-500`}
-            aria-label={`Remove sample ${srNo}`}
-          >
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Remove
-          </button>
-        </td>
-      </tr>
-    </>
-  );
+function cellText(value: string, mutedClass: string) {
+  const v = value.trim();
+  if (!v) return <span className={mutedClass}>—</span>;
+  return <span className="block max-w-full break-words">{v}</span>;
 }
 
 export function OslSampleRequirementsTableEditor({
   rows,
-  onChange,
-  clientOptions,
-  onRequestAddClient,
+  onEdit,
+  onCopy,
+  onRemove,
   theme = "light",
   focusSampleIndex = null,
 }: {
   rows: OslSampleRequirementRow[];
-  onChange: (rows: OslSampleRequirementRow[]) => void;
-  clientOptions: AppDropdownOptionRow[];
-  onRequestAddClient: (rowId: string) => void;
+  onEdit: (row: OslSampleRequirementRow) => void;
+  onCopy: (row: OslSampleRequirementRow) => void;
+  onRemove: (row: OslSampleRequirementRow) => void;
   theme?: keyof typeof themes;
   focusSampleIndex?: number | null;
 }) {
   const t = themes[theme];
+  const visibleRows = useMemo(() => rows.filter(rowHasContent), [rows]);
+  const visibleIds = useMemo(() => visibleRows.map((r) => r.id), [visibleRows]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
+  const selectAllRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const next = new Set([...prev].filter((id) => visibleIds.includes(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [visibleIds]);
+
+  const allSelected =
+    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+  const someSelected =
+    visibleIds.some((id) => selectedIds.has(id)) && !allSelected;
+
+  useEffect(() => {
+    const el = selectAllRef.current;
+    if (el) el.indeterminate = someSelected;
+  }, [someSelected]);
 
   useEffect(() => {
     if (focusSampleIndex == null || focusSampleIndex < 0) return;
     const el = document.getElementById(`osl-sample-entry-${focusSampleIndex}`);
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [focusSampleIndex, rows.length]);
+  }, [focusSampleIndex, visibleRows.length]);
 
-  function updateRow(id: string, patch: Partial<OslSampleRequirementRow>) {
-    onChange(rows.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  function toggleRow(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   }
 
-  function addRow() {
-    onChange([...rows, createOslSampleRequirementRow()]);
-  }
-
-  function removeRow(id: string) {
-    const next = rows.filter((r) => r.id !== id);
-    onChange(next.length > 0 ? next : defaultOslSampleRequirementRows());
+  function toggleSelectAll() {
+    setSelectedIds((prev) => {
+      if (visibleIds.length > 0 && visibleIds.every((id) => prev.has(id))) {
+        return new Set();
+      }
+      return new Set(visibleIds);
+    });
   }
 
   return (
     <div className={t.wrap}>
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[1400px] border-collapse text-xs">
-          <thead className={`${t.thead} sticky top-0 z-[1]`}>
-            <tr>
-              <th className={`${t.th} w-12 text-center`}>Sr No</th>
-              <th className={t.th} colSpan={10}>
-                Sample details (2 rows per entry)
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row, index) => (
-              <SampleEntryRows
-                key={row.id}
-                row={row}
-                index={index}
-                t={t}
-                clientOptions={clientOptions}
-                onRequestAddClient={onRequestAddClient}
-                isFirst={index === 0}
-                onUpdate={(patch) => updateRow(row.id, patch)}
-                onRemove={() => removeRow(row.id)}
-                highlighted={focusSampleIndex === index}
-              />
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className={t.footer}>
-        <button type="button" onClick={addRow} className={t.addBtn}>
-          + Add Sample
-        </button>
+        {visibleRows.length === 0 ? (
+          <p className={t.empty}>
+            No samples added yet. Use &ldquo;Add Sample&rdquo; to enter sample details.
+          </p>
+        ) : (
+          <table className="w-full min-w-[1100px] border-collapse text-xs">
+            <thead className={`${t.thead} sticky top-0 z-[1]`}>
+              <tr>
+                <th className={`${t.thCenter} w-12`}>
+                  <input
+                    ref={selectAllRef}
+                    type="checkbox"
+                    checked={allSelected}
+                    onChange={toggleSelectAll}
+                    className={t.chk}
+                    aria-label="Select all samples"
+                  />
+                </th>
+                <th className={t.thLeft}>Sample Description</th>
+                <th className={t.thCenter}>Declared Value</th>
+                <th className={t.thCenter}>
+                  Batch No
+                  <span className="mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-500">
+                    DOM
+                  </span>
+                </th>
+                <th className={t.thCenter}>Sample Qty</th>
+                <th className={t.thCenter}>Batch Qty</th>
+                <th className={t.thCenter}>Sample Code</th>
+                <th className={t.thCenter}>Type</th>
+                <th className={`${t.thCenter} whitespace-nowrap`}>Priority</th>
+                <th className={t.thCenter}>Laboratory</th>
+                <th className={`${t.thCenter} w-28`}>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleRows.map((row, index) => {
+                const srNo = String(index + 1).padStart(2, "0");
+                const highlighted = focusSampleIndex === index;
+                const selected = selectedIds.has(row.id);
+                const batchNo = row.batch_number.trim();
+                const dom = row.date_of_manufacturing.trim()
+                  ? formatDisplayDate(row.date_of_manufacturing)
+                  : "";
+                return (
+                  <tr
+                    key={row.id}
+                    id={`osl-sample-entry-${index}`}
+                    className={highlighted ? t.highlight : undefined}
+                  >
+                    <td className={t.selectCell}>
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleRow(row.id)}
+                        className={t.chk}
+                        aria-label={`Select sample ${srNo}`}
+                      />
+                    </td>
+                    <td className={t.tdLeft}>
+                      {cellText(row.sample_description, t.muted)}
+                    </td>
+                    <td className={t.tdCenter}>
+                      {cellText(row.declared_value, t.muted)}
+                    </td>
+                    <td className={t.tdCenter}>
+                      {batchNo || dom ? (
+                        <span className="mx-auto flex max-w-full flex-col items-center justify-center gap-0.5">
+                          <span className="block max-w-full break-words">
+                            {batchNo || "—"}
+                          </span>
+                          <span className={`block text-[10px] ${t.muted}`}>
+                            {dom || "—"}
+                          </span>
+                        </span>
+                      ) : (
+                        <span className={t.muted}>—</span>
+                      )}
+                    </td>
+                    <td className={t.tdCenter}>
+                      {cellText(row.sample_quantity, t.muted)}
+                    </td>
+                    <td className={t.tdCenter}>
+                      {cellText(row.batch_quantity, t.muted)}
+                    </td>
+                    <td className={t.tdCenter}>
+                      {cellText(row.sample_code, t.muted)}
+                    </td>
+                    <td className={t.tdCenter}>
+                      {cellText(row.sample_type, t.muted)}
+                    </td>
+                    <td className={t.tdCenter}>
+                      {cellText(row.priority, t.muted)}
+                    </td>
+                    <td className={t.tdCenter}>
+                      {cellText(row.laboratory_name, t.muted)}
+                    </td>
+                    <td className={t.tdCenter}>
+                      <div className="inline-flex items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => onEdit(row)}
+                          className={t.editBtn}
+                          aria-label={`Edit sample ${srNo}`}
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onCopy(row)}
+                          className={t.copyBtn}
+                          aria-label={`Copy sample ${srNo}`}
+                          title="Copy"
+                        >
+                          📋
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onRemove(row)}
+                          className={t.delBtn}
+                          aria-label={`Delete sample ${srNo}`}
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        )}
       </div>
     </div>
+  );
+}
+
+export function OslSampleAddButton({
+  theme = "dark",
+  onClick,
+}: {
+  theme?: keyof typeof themes;
+  onClick: () => void;
+}) {
+  const t = themes[theme];
+  return (
+    <button type="button" onClick={onClick} className={t.addBtn}>
+      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2.5" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+      </svg>
+      Add Sample
+    </button>
   );
 }

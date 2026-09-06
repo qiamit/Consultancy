@@ -138,11 +138,33 @@ export function UserManagementPanel({
   const [error, setError] = useState<string | null>(loadError);
   const [success, setSuccess] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
-  const [newUserRole, setNewUserRole] = useState("staff");
+  const [newUserRole, setNewUserRole] = useState("inspection_engineer");
   const [newRoleName, setNewRoleName] = useState("");
   const [editingUser, setEditingUser] = useState<StaffUserRow | null>(null);
-  const [editRole, setEditRole] = useState("staff");
+  const [editRole, setEditRole] = useState("inspection_engineer");
   const [updatingRoleUserId, setUpdatingRoleUserId] = useState<string | null>(null);
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set());
+
+  const allSelected = users.length > 0 && users.every((u) => selectedUserIds.has(u.id));
+  const someSelected = users.some((u) => selectedUserIds.has(u.id));
+
+  function toggleUserSelected(userId: string) {
+    setSelectedUserIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(userId)) next.delete(userId);
+      else next.add(userId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    setSelectedUserIds((prev) => {
+      if (users.length > 0 && users.every((u) => prev.has(u.id))) {
+        return new Set();
+      }
+      return new Set(users.map((u) => u.id));
+    });
+  }
 
   function refresh() {
     router.refresh();
@@ -184,7 +206,7 @@ export function UserManagementPanel({
         return;
       }
       setSuccess("User created. They can sign in with the email and password you set.");
-      setNewUserRole("staff");
+      setNewUserRole("inspection_engineer");
       setShowForm(false);
       refresh();
     });
@@ -302,144 +324,212 @@ export function UserManagementPanel({
       )}
 
       <div className="shrink-0 space-y-4">
-      <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4 text-sm text-violet-900 dark:border-violet-900 dark:bg-violet-950/20 dark:text-violet-100">
-        <p className="font-medium">Super Admin</p>
-        <p className="mt-1 text-xs leading-relaxed text-violet-800 dark:text-violet-200">
-          Super Admins can manage users, company settings, and app settings. Employees sign in
-          only after you add them here.
-        </p>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-end gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
+          User Management
+        </h1>
         <button
           type="button"
           disabled={!serviceConfigured || pending}
-          onClick={() => setShowForm((v) => !v)}
+          onClick={() => {
+            setError(null);
+            setSuccess(null);
+            setShowForm(true);
+          }}
           className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
         >
-          {showForm ? "Cancel" : "Add employee"}
+          Add employee
         </button>
       </div>
 
       {showForm && (
-        <form
-          onSubmit={handleCreate}
-          className="space-y-4 rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900"
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm lg:left-64"
+          onClick={() => !pending && setShowForm(false)}
         >
-          <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">New employee</h2>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Full name
-              </label>
-              <input name="full_name" required className={inp} />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Work email
-              </label>
-              <input name="email" type="email" required className={inp} />
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Mobile number
-              </label>
-              <input name="mobile" type="tel" className={inp} placeholder="+91 98765 43210" />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Password
-              </label>
-              <input name="password" type="password" required minLength={8} className={inp} />
-            </div>
-            <RoleFieldWithAdd
-              roles={roles}
-              value={newUserRole}
-              onChange={setNewUserRole}
-              newRoleName={newRoleName}
-              onNewRoleNameChange={setNewRoleName}
-              onAddRole={() => handleAddRole(setNewUserRole)}
-              disabled={pending}
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="add-employee-title"
+            className="max-h-[min(90dvh,720px)] w-full max-w-2xl overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            onClick={(e) => e.stopPropagation()}
           >
-            {pending ? "Creating…" : "Create user"}
-          </button>
-        </form>
+            <form onSubmit={handleCreate} className="space-y-4 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <h2
+                  id="add-employee-title"
+                  className="text-sm font-semibold text-zinc-900 dark:text-zinc-50"
+                >
+                  New employee
+                </h2>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setShowForm(false)}
+                  className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                  aria-label="Close"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Full name
+                  </label>
+                  <input name="full_name" required className={inp} />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Work email
+                  </label>
+                  <input name="email" type="email" required className={inp} />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Mobile number
+                  </label>
+                  <input name="mobile" type="tel" className={inp} placeholder="+91 98765 43210" />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Password
+                  </label>
+                  <input name="password" type="password" required minLength={8} className={inp} />
+                </div>
+                <RoleFieldWithAdd
+                  roles={roles}
+                  value={newUserRole}
+                  onChange={setNewUserRole}
+                  newRoleName={newRoleName}
+                  onNewRoleNameChange={setNewRoleName}
+                  onAddRole={() => handleAddRole(setNewUserRole)}
+                  disabled={pending}
+                />
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setShowForm(false)}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={pending}
+                  className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+                >
+                  {pending ? "Creating…" : "Create user"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {editingUser && (
-        <form
-          onSubmit={handleEdit}
-          className="space-y-4 rounded-xl border border-sky-200 bg-sky-50/40 p-5 dark:border-sky-900 dark:bg-sky-950/20"
+        <div
+          className="fixed inset-0 z-[200] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm lg:left-64"
+          onClick={() => !pending && setEditingUser(null)}
         >
-          <div className="flex items-center justify-between gap-3">
-            <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-50">
-              Edit user — {editingUser.email}
-            </h2>
-            <button
-              type="button"
-              onClick={() => setEditingUser(null)}
-              className="text-xs text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200"
-            >
-              Close
-            </button>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Full name
-              </label>
-              <input
-                name="full_name"
-                required
-                defaultValue={editingUser.full_name ?? ""}
-                className={inp}
-              />
-            </div>
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                Mobile number
-              </label>
-              <input
-                name="mobile"
-                type="tel"
-                defaultValue={editingUser.mobile ?? ""}
-                className={inp}
-              />
-            </div>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <RoleFieldWithAdd
-              roles={roles}
-              value={editRole}
-              onChange={setEditRole}
-              newRoleName={newRoleName}
-              onNewRoleNameChange={setNewRoleName}
-              onAddRole={() => handleAddRole(setEditRole)}
-              disabled={pending}
-            />
-            <div>
-              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-                New password (optional)
-              </label>
-              <input name="password" type="password" minLength={8} className={inp} />
-            </div>
-          </div>
-          <button
-            type="submit"
-            disabled={pending}
-            className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="edit-employee-title"
+            className="max-h-[min(90dvh,720px)] w-full max-w-2xl overflow-y-auto rounded-xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900"
+            onClick={(e) => e.stopPropagation()}
           >
-            {pending ? "Saving…" : "Save changes"}
-          </button>
-        </form>
+            <form onSubmit={handleEdit} className="space-y-4 p-5">
+              <div className="flex items-start justify-between gap-3">
+                <h2
+                  id="edit-employee-title"
+                  className="text-sm font-semibold text-zinc-900 dark:text-zinc-50"
+                >
+                  Edit user — {editingUser.email}
+                </h2>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setEditingUser(null)}
+                  className="rounded-lg p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 disabled:opacity-50 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                  aria-label="Close"
+                >
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </button>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Full name
+                  </label>
+                  <input
+                    name="full_name"
+                    required
+                    defaultValue={editingUser.full_name ?? ""}
+                    className={inp}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    Mobile number
+                  </label>
+                  <input
+                    name="mobile"
+                    type="tel"
+                    inputMode="tel"
+                    placeholder="+91 98765 43210"
+                    defaultValue={
+                      editingUser.mobile?.includes("@") ? "" : (editingUser.mobile ?? "")
+                    }
+                    className={inp}
+                  />
+                </div>
+              </div>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <RoleFieldWithAdd
+                  roles={roles}
+                  value={editRole}
+                  onChange={setEditRole}
+                  newRoleName={newRoleName}
+                  onNewRoleNameChange={setNewRoleName}
+                  onAddRole={() => handleAddRole(setEditRole)}
+                  disabled={pending}
+                />
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                    New password (optional)
+                  </label>
+                  <input name="password" type="password" minLength={8} className={inp} />
+                </div>
+              </div>
+              <div className="flex flex-wrap justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={() => setEditingUser(null)}
+                  className="rounded-lg px-4 py-2 text-sm font-semibold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={pending}
+                  className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-60"
+                >
+                  {pending ? "Saving…" : "Save changes"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
       </div>
 
@@ -447,6 +537,18 @@ export function UserManagementPanel({
         <table className="min-w-full divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
           <thead className="bg-zinc-50 dark:bg-zinc-900/80">
             <tr>
+              <th className="w-10 px-3 py-3 text-center">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someSelected && !allSelected;
+                  }}
+                  onChange={toggleSelectAll}
+                  aria-label="Select all users"
+                  className="h-3.5 w-3.5 rounded border-zinc-400 text-sky-600 focus:ring-sky-500 dark:border-zinc-600 dark:bg-zinc-950"
+                />
+              </th>
               <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-zinc-500">
                 Name
               </th>
@@ -466,7 +568,16 @@ export function UserManagementPanel({
           </thead>
           <tbody className="divide-y divide-zinc-100 bg-white dark:divide-zinc-800 dark:bg-zinc-950">
             {users.map((u) => (
-              <tr key={u.id}>
+              <tr key={u.id} className={selectedUserIds.has(u.id) ? "bg-sky-50/50 dark:bg-sky-950/20" : undefined}>
+                <td className="px-3 py-3 text-center">
+                  <input
+                    type="checkbox"
+                    checked={selectedUserIds.has(u.id)}
+                    onChange={() => toggleUserSelected(u.id)}
+                    aria-label={`Select ${u.full_name ?? u.email}`}
+                    className="h-3.5 w-3.5 rounded border-zinc-400 text-sky-600 focus:ring-sky-500 dark:border-zinc-600 dark:bg-zinc-950"
+                  />
+                </td>
                 <td className="px-4 py-3 font-medium text-zinc-900 dark:text-zinc-100">
                   {u.full_name ?? "—"}
                 </td>

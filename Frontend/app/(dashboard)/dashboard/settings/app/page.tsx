@@ -32,14 +32,16 @@ export default async function AppSettingsPage({
   const initial = (row ?? {}) as Record<string, string | null | undefined>;
 
   return (
-    <div className="mx-auto w-full max-w-3xl space-y-6 px-0 sm:space-y-8">
-      <div>
+    <div className="w-full max-w-none space-y-6 px-0 sm:space-y-8">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
           App Settings
         </h1>
-        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-          Portal title, prefixes, appearance defaults, currency, date/time formats, and AI model configuration.
-        </p>
+        {saved ? (
+          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
+            Settings saved successfully.
+          </p>
+        ) : null}
       </div>
 
       {errMsg && (
@@ -48,13 +50,12 @@ export default async function AppSettingsPage({
         </p>
       )}
 
-      {saved && (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-200">
-          Settings saved successfully.
-        </p>
-      )}
-
-      <AppSettingsTabs initial={initial} aiModels={aiModels} initialTab={savedTab} />
+      <AppSettingsTabs
+        key={savedTab ?? "prefixes"}
+        initial={initial}
+        aiModels={aiModels}
+        initialTab={savedTab}
+      />
     </div>
   );
 }

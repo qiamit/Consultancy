@@ -55,6 +55,22 @@ function quoteQualified(table: string): string {
   return `public.${quoteIdent(table)}`;
 }
 
+/** node-pg treats JS arrays as PG arrays — jsonb columns need a JSON string + cast. */
+function encodeWriteValue(value: unknown): { param: unknown; cast: string } {
+  if (value === undefined || value === null) {
+    return { param: null, cast: "" };
+  }
+  if (
+    Array.isArray(value) ||
+    (typeof value === "object" &&
+      !(value instanceof Date) &&
+      !Buffer.isBuffer(value))
+  ) {
+    return { param: JSON.stringify(value), cast: "::jsonb" };
+  }
+  return { param: value, cast: "" };
+}
+
 export function parseSelectColumns(select?: string): ParsedSelect {
   if (!select || select.trim() === "" || select.trim() === "*") {
     return { columns: ["*"], embeds: [] };
@@ -680,11 +696,11 @@ export class QueryBuilder<TData = any[]> implements PromiseLike<DbResult<TData>>
 
   private async execute(): Promise<DbResult> {
     try {
-      if (this.action === "select") return this.executeSelect();
-      if (this.action === "insert") return this.executeInsert();
-      if (this.action === "update") return this.executeUpdate();
-      if (this.action === "delete") return this.executeDelete();
-      if (this.action === "upsert") return this.executeUpsert();
+      if (this.action === "select") return await this.executeSelect();
+      if (this.action === "insert") return await this.executeInsert();
+      if (this.action === "update") return await this.executeUpdate();
+      if (this.action === "delete") return await this.executeDelete();
+      if (this.action === "upsert") return await this.executeUpsert();
       return { data: null, error: { message: `Unknown action: ${this.action}` } };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
@@ -810,8 +826,9 @@ export class QueryBuilder<TData = any[]> implements PromiseLike<DbResult<TData>>
       const placeholders: string[] = [];
       for (const key of keys) {
         idx += 1;
-        params.push(row[key] === undefined ? null : row[key]);
-        placeholders.push(`$${idx}`);
+        const encoded = encodeWriteValue(row[key]);
+        params.push(encoded.param);
+        placeholders.push(`$${idx}${encoded.cast}`);
       }
       valueGroups.push(`(${placeholders.join(", ")})`);
     }
@@ -840,8 +857,9 @@ export class QueryBuilder<TData = any[]> implements PromiseLike<DbResult<TData>>
     let idx = 0;
     for (const key of keys) {
       idx += 1;
-      params.push(patch[key] === undefined ? null : patch[key]);
-      sets.push(`${quoteIdent(key)} = $${idx}`);
+      const encoded = encodeWriteValue(patch[key]);
+      params.push(encoded.param);
+      sets.push(`${quoteIdent(key)} = $${idx}${encoded.cast}`);
     }
 
     const where = buildWhere(this.filters, idx);
@@ -892,8 +910,9 @@ export class QueryBuilder<TData = any[]> implements PromiseLike<DbResult<TData>>
       const placeholders: string[] = [];
       for (const key of keys) {
         idx += 1;
-        params.push(row[key] === undefined ? null : row[key]);
-        placeholders.push(`$${idx}`);
+        const encoded = encodeWriteValue(row[key]);
+        params.push(encoded.param);
+        placeholders.push(`$${idx}${encoded.cast}`);
       }
       valueGroups.push(`(${placeholders.join(", ")})`);
     }

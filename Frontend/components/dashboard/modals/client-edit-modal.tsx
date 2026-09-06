@@ -63,7 +63,7 @@ export function ClientEditModal({
 
   return (
     <div
-      className="fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55"
+      className="absolute inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55"
       role="presentation"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();

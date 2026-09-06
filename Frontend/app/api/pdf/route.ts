@@ -65,15 +65,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "PDF service returned an empty file" }, { status: 502 });
   }
 
-  const disposition =
-    res.headers.get("Content-Disposition") ||
-    'attachment; filename="document.pdf"';
-
+  // Use inline so the browser does not auto-save this fetch response as a second
+  // "temp" download; the client triggers a single named PDF via blob + <a download>.
   return new NextResponse(pdf, {
     status: 200,
     headers: {
       "Content-Type": "application/pdf",
-      "Content-Disposition": disposition,
+      "Content-Disposition": 'inline; filename="document.pdf"',
       "Content-Length": String(pdf.byteLength),
       "Cache-Control": "no-store",
     },

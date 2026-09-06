@@ -82,12 +82,57 @@ export async function toggleAiModel(
   return { ok: true };
 }
 
+export async function updateAiModel(
+  formData: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+
+  function str(key: string) {
+    return String(formData.get(key) ?? "").trim();
+  }
+
+  const id = str("id");
+  if (!id) return { ok: false, error: "Model id is required." };
+
+  const provider = str("provider_custom") || str("provider");
+  const modelId = str("model_id_custom") || str("model_id");
+  const displayName = str("display_name") || modelId;
+  const apiKeyRaw = str("api_key");
+
+  if (!provider) return { ok: false, error: "Provider is required." };
+  if (!modelId) return { ok: false, error: "Model ID is required." };
+
+  const patch: Record<string, unknown> = {
+    provider,
+    model_id: modelId,
+    display_name: displayName,
+    updated_at: new Date().toISOString(),
+  };
+  if (apiKeyRaw) patch.api_key = apiKeyRaw;
+
+  const { error } = await supabase.from("ai_models").update(patch).eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard/settings/app");
+  return { ok: true };
+}
+
 export async function deleteAiModel(
   id: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
+  return deleteAiModels([id]);
+}
+
+export async function deleteAiModels(
+  ids: string[],
+): Promise<{ ok: true } | { ok: false; error: string }> {
   const supabase = await createClient();
-  const { error } = await supabase.from("ai_models").delete().eq("id", id);
+  const clean = ids.map((id) => id.trim()).filter(Boolean);
+  if (clean.length === 0) return { ok: false, error: "No models selected." };
+
+  const { error } = await supabase.from("ai_models").delete().in("id", clean);
   if (error) return { ok: false, error: error.message };
+
   revalidatePath("/dashboard/settings/app");
   return { ok: true };
 }

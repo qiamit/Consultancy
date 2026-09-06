@@ -4,6 +4,12 @@ import { useState } from "react";
 import { updateAppSettings } from "@backend/actions/settings";
 import { AiSettingsPanel } from "@/components/dashboard/ai-settings-panel";
 import type { AiModelRow } from "@backend/actions/ai-models";
+import {
+  APP_THEME_OPTIONS,
+  normalizeAppTheme,
+  type AppThemeValue,
+} from "@backend/shared/constants/app-themes";
+import { applyAppThemeToDocument } from "@/lib/apply-app-theme";
 
 const STORAGE_KEY = "app_named_prefix_suffix_entries";
 
@@ -131,6 +137,14 @@ export function AppSettingsTabs({
   const [prefixEntries, setPrefixEntries] = useState<PrefixEntry[]>(() => loadEntries());
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState<PrefixEntry | null>(null);
+  const [appTheme, setAppTheme] = useState<AppThemeValue>(() =>
+    normalizeAppTheme(str(initial.app_theme)),
+  );
+
+  function selectTheme(value: AppThemeValue) {
+    setAppTheme(value);
+    applyAppThemeToDocument(value);
+  }
 
   function addEntry(entry: Omit<PrefixEntry, "id">) {
     const next = [...prefixEntries, { ...entry, id: crypto.randomUUID() }];
@@ -192,6 +206,7 @@ export function AppSettingsTabs({
       {/* App settings form (all non-AI tabs) */}
       {tab !== "ai" && (
         <form action={updateAppSettings}>
+          <input type="hidden" name="settings_tab" value={tab} />
           <div className="p-4 sm:p-6">
             {/* Prefixes & Suffixes */}
             <div className={tab === "prefixes" ? "space-y-4" : "hidden"} role="tabpanel">
@@ -256,17 +271,61 @@ export function AppSettingsTabs({
 
             {/* App Theme */}
             <div className={tab === "theme" ? "space-y-4" : "hidden"} role="tabpanel">
-              <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                Stored for this workspace. Full UI theming may still follow the device; use this value in reports and future theme wiring.
-              </p>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">App theme</label>
-                <select name="app_theme" defaultValue={str(initial.app_theme) || "system"} className={inp}>
-                  <option value="light">Light</option>
-                  <option value="dark">Dark</option>
-                  <option value="system">System default</option>
-                </select>
-              </div>
+              <fieldset className="space-y-3">
+                <legend className="text-sm font-medium text-zinc-700 dark:text-zinc-300">
+                  App theme
+                </legend>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {APP_THEME_OPTIONS.map((opt) => {
+                    const selected = appTheme === opt.value;
+                    return (
+                      <label
+                        key={opt.value}
+                        className={`relative flex cursor-pointer gap-3 rounded-xl border p-3 transition ${
+                          selected
+                            ? "border-sky-500 bg-sky-50 ring-2 ring-sky-500/30 dark:border-sky-400 dark:bg-sky-950/30"
+                            : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-700 dark:bg-zinc-950 dark:hover:border-zinc-600"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="app_theme"
+                          value={opt.value}
+                          checked={selected}
+                          onChange={() => selectTheme(opt.value)}
+                          className="sr-only"
+                        />
+                        <span
+                          className="mt-0.5 flex h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-zinc-200 shadow-sm dark:border-zinc-600"
+                          aria-hidden
+                        >
+                          <span
+                            className="w-1/2"
+                            style={{ backgroundColor: opt.swatch.bg }}
+                          />
+                          <span
+                            className="flex w-1/2 flex-col"
+                            style={{ backgroundColor: opt.swatch.fg }}
+                          >
+                            <span
+                              className="mt-auto h-2.5 w-full"
+                              style={{ backgroundColor: opt.swatch.accent }}
+                            />
+                          </span>
+                        </span>
+                        <span className="min-w-0">
+                          <span className="block text-sm font-semibold text-zinc-900 dark:text-zinc-50">
+                            {opt.label}
+                          </span>
+                          <span className="mt-0.5 block text-xs text-zinc-500 dark:text-zinc-400">
+                            {opt.description}
+                          </span>
+                        </span>
+                      </label>
+                    );
+                  })}
+                </div>
+              </fieldset>
             </div>
 
             {/* App Currency */}
@@ -346,7 +405,7 @@ export function AppSettingsTabs({
                 type="submit"
                 className="rounded-lg bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
               >
-                Save app settings
+                Save App Setting
               </button>
             </div>
           </div>

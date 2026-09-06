@@ -2,24 +2,28 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { settingsRedirect } from "@backend/shared/settings-tab-redirect";
 import { normalizeTemplateCode } from "@backend/shared/validation/template-code";
 import { createClient } from "@backend/db/client/server";
+
+const TAB = "scope";
+const BASE = "/dashboard/settings/company";
 
 function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
-function redirectForScopeDbError(code: string | undefined) {
+function redirectForScopeDbError(code: string | undefined): never {
   if (code === "23505") {
-    redirect("/dashboard/settings/company?error=scope_duplicate");
+    redirect(settingsRedirect(BASE, TAB, { error: "scope_duplicate" }));
   }
   if (code === "42P01" || code === "42703") {
-    redirect("/dashboard/settings/company?error=scope_schema");
+    redirect(settingsRedirect(BASE, TAB, { error: "scope_schema" }));
   }
   if (code === "42501") {
-    redirect("/dashboard/settings/company?error=scope_rls");
+    redirect(settingsRedirect(BASE, TAB, { error: "scope_rls" }));
   }
-  redirect("/dashboard/settings/company?error=scope_db");
+  redirect(settingsRedirect(BASE, TAB, { error: "scope_db" }));
 }
 
 export async function createCompanyScopeTemplate(formData: FormData) {
@@ -35,7 +39,7 @@ export async function createCompanyScopeTemplate(formData: FormData) {
   const code = normalizeTemplateCode(codeRaw);
 
   if (!code || !name) {
-    redirect("/dashboard/settings/company?error=scope_validate");
+    redirect(settingsRedirect(BASE, TAB, { error: "scope_validate" }));
   }
 
   const { data: maxRow } = await supabase
@@ -57,9 +61,9 @@ export async function createCompanyScopeTemplate(formData: FormData) {
 
   if (error) redirectForScopeDbError(error.code);
 
-  revalidatePath("/dashboard/settings/company");
+  revalidatePath(BASE);
   revalidatePath("/dashboard/finance", "layout");
-  redirect("/dashboard/settings/company");
+  redirect(settingsRedirect(BASE, TAB, { saved: true }));
 }
 
 export async function updateCompanyScopeTemplate(formData: FormData) {
@@ -74,7 +78,7 @@ export async function updateCompanyScopeTemplate(formData: FormData) {
   const body = String(formData.get("body") ?? "");
 
   if (!id || !name) {
-    redirect("/dashboard/settings/company?error=scope_validate");
+    redirect(settingsRedirect(BASE, TAB, { error: "scope_validate" }));
   }
 
   const { data: existing, error: fetchErr } = await supabase
@@ -84,7 +88,7 @@ export async function updateCompanyScopeTemplate(formData: FormData) {
     .maybeSingle();
 
   if (fetchErr || !existing?.code) {
-    redirect("/dashboard/settings/company?error=scope_not_found");
+    redirect(settingsRedirect(BASE, TAB, { error: "scope_not_found" }));
   }
 
   const { error } = await supabase
@@ -98,9 +102,9 @@ export async function updateCompanyScopeTemplate(formData: FormData) {
 
   if (error) redirectForScopeDbError(error.code);
 
-  revalidatePath("/dashboard/settings/company");
+  revalidatePath(BASE);
   revalidatePath("/dashboard/finance", "layout");
-  redirect("/dashboard/settings/company");
+  redirect(settingsRedirect(BASE, TAB, { saved: true }));
 }
 
 export async function deleteCompanyScopeTemplate(formData: FormData) {
@@ -111,7 +115,7 @@ export async function deleteCompanyScopeTemplate(formData: FormData) {
   if (!user) redirect("/login");
 
   const id = str(formData, "id");
-  if (!id) redirect("/dashboard/settings/company?error=scope_validate");
+  if (!id) redirect(settingsRedirect(BASE, TAB, { error: "scope_validate" }));
 
   const { data: row } = await supabase
     .from("company_scope_of_work")
@@ -119,9 +123,11 @@ export async function deleteCompanyScopeTemplate(formData: FormData) {
     .eq("id", id)
     .maybeSingle();
 
-  if (!row?.code) redirect("/dashboard/settings/company?error=scope_not_found");
+  if (!row?.code) {
+    redirect(settingsRedirect(BASE, TAB, { error: "scope_not_found" }));
+  }
   if (row.code === "default") {
-    redirect("/dashboard/settings/company?error=scope_default_delete");
+    redirect(settingsRedirect(BASE, TAB, { error: "scope_default_delete" }));
   }
 
   const { error } = await supabase
@@ -131,7 +137,7 @@ export async function deleteCompanyScopeTemplate(formData: FormData) {
 
   if (error) redirectForScopeDbError(error.code);
 
-  revalidatePath("/dashboard/settings/company");
+  revalidatePath(BASE);
   revalidatePath("/dashboard/finance", "layout");
-  redirect("/dashboard/settings/company");
+  redirect(settingsRedirect(BASE, TAB, { saved: true }));
 }

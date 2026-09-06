@@ -4,7 +4,7 @@ export default function EmailLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="-mx-3 -my-4 flex h-[calc(100dvh-3.25rem)] min-h-0 flex-col overflow-hidden sm:-mx-5 sm:-my-6 lg:-mx-8 lg:-my-8 lg:h-dvh">
+    <div className="-mx-[2mm] -mt-[2mm] -mb-4 flex h-[calc(100dvh-3.25rem)] min-h-0 flex-col overflow-hidden bg-white dark:bg-zinc-900">
       {children}
     </div>
   );

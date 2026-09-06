@@ -152,7 +152,7 @@ function buildSampleTableHtml(
   const thStack = `${thBase}width:1%;text-align:center;line-height:1.4;`;
   const tdBase =
     "padding:5px 7px;border:1px solid #e2e8f0;font-size:11px;vertical-align:top;line-height:1.45;";
-  const tdNarrow = `${tdBase}width:1%;white-space:nowrap;text-align:center;`;
+  const tdNarrow = `${tdBase}width:1%;white-space:nowrap;text-align:center;vertical-align:middle;`;
   const tdWide = `${tdBase}text-align:left;word-break:break-word;`;
   const tdWideCenter = `${tdBase}text-align:center;word-break:break-word;`;
   const tdStack = `${tdBase}width:1%;text-align:center;word-break:break-word;line-height:1.4;vertical-align:middle;`;

@@ -179,15 +179,15 @@ export function BisNewApplicationsMaster({
   }, [toggleSelectPage, paginatedRows]);
 
   function selectRow(r: BisNewApplicationMasterRow) {
-    router.replace(`/dashboard/bis-new-applications?id=${r.id}`, { scroll: false });
+    router.replace(`/dashboard/bis-new-applications/master?id=${r.id}`, { scroll: false });
   }
 
   function addNew() {
-    router.replace("/dashboard/bis-new-applications?new=1", { scroll: false });
+    router.replace("/dashboard/bis-new-applications/master?new=1", { scroll: false });
   }
 
   function closeForm() {
-    router.replace("/dashboard/bis-new-applications", { scroll: false });
+    router.replace("/dashboard/bis-new-applications/master", { scroll: false });
   }
 
   function updateField(key: string, value: string) {

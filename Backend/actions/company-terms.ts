@@ -2,24 +2,28 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { settingsRedirect } from "@backend/shared/settings-tab-redirect";
 import { normalizeTemplateCode } from "@backend/shared/validation/template-code";
 import { createClient } from "@backend/db/client/server";
+
+const TAB = "terms";
+const BASE = "/dashboard/settings/company";
 
 function str(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
-function redirectForTermsDbError(code: string | undefined) {
+function redirectForTermsDbError(code: string | undefined): never {
   if (code === "23505") {
-    redirect("/dashboard/settings/company?error=terms_duplicate");
+    redirect(settingsRedirect(BASE, TAB, { error: "terms_duplicate" }));
   }
   if (code === "42P01" || code === "42703") {
-    redirect("/dashboard/settings/company?error=terms_schema");
+    redirect(settingsRedirect(BASE, TAB, { error: "terms_schema" }));
   }
   if (code === "42501") {
-    redirect("/dashboard/settings/company?error=terms_rls");
+    redirect(settingsRedirect(BASE, TAB, { error: "terms_rls" }));
   }
-  redirect("/dashboard/settings/company?error=terms_db");
+  redirect(settingsRedirect(BASE, TAB, { error: "terms_db" }));
 }
 
 async function syncLegacyCompanyTermsColumn(supabase: Awaited<ReturnType<typeof createClient>>, body: string) {
@@ -45,7 +49,7 @@ export async function createCompanyTerm(formData: FormData) {
   const code = normalizeTemplateCode(codeRaw);
 
   if (!code || !name) {
-    redirect("/dashboard/settings/company?error=terms_validate");
+    redirect(settingsRedirect(BASE, TAB, { error: "terms_validate" }));
   }
 
   const { data: maxRow } = await supabase
@@ -71,9 +75,9 @@ export async function createCompanyTerm(formData: FormData) {
     await syncLegacyCompanyTermsColumn(supabase, body);
   }
 
-  revalidatePath("/dashboard/settings/company");
+  revalidatePath(BASE);
   revalidatePath("/dashboard/finance", "layout");
-  redirect("/dashboard/settings/company");
+  redirect(settingsRedirect(BASE, TAB, { saved: true }));
 }
 
 export async function updateCompanyTerm(formData: FormData) {
@@ -88,7 +92,7 @@ export async function updateCompanyTerm(formData: FormData) {
   const body = String(formData.get("body") ?? "");
 
   if (!id || !name) {
-    redirect("/dashboard/settings/company?error=terms_validate");
+    redirect(settingsRedirect(BASE, TAB, { error: "terms_validate" }));
   }
 
   const { data: existing, error: fetchErr } = await supabase
@@ -98,7 +102,7 @@ export async function updateCompanyTerm(formData: FormData) {
     .maybeSingle();
 
   if (fetchErr || !existing?.code) {
-    redirect("/dashboard/settings/company?error=terms_not_found");
+    redirect(settingsRedirect(BASE, TAB, { error: "terms_not_found" }));
   }
 
   const { error } = await supabase
@@ -116,9 +120,9 @@ export async function updateCompanyTerm(formData: FormData) {
     await syncLegacyCompanyTermsColumn(supabase, body);
   }
 
-  revalidatePath("/dashboard/settings/company");
+  revalidatePath(BASE);
   revalidatePath("/dashboard/finance", "layout");
-  redirect("/dashboard/settings/company");
+  redirect(settingsRedirect(BASE, TAB, { saved: true }));
 }
 
 export async function deleteCompanyTerm(formData: FormData) {
@@ -129,7 +133,7 @@ export async function deleteCompanyTerm(formData: FormData) {
   if (!user) redirect("/login");
 
   const id = str(formData, "id");
-  if (!id) redirect("/dashboard/settings/company?error=terms_validate");
+  if (!id) redirect(settingsRedirect(BASE, TAB, { error: "terms_validate" }));
 
   const { data: row } = await supabase
     .from("company_terms")
@@ -137,16 +141,18 @@ export async function deleteCompanyTerm(formData: FormData) {
     .eq("id", id)
     .maybeSingle();
 
-  if (!row?.code) redirect("/dashboard/settings/company?error=terms_not_found");
+  if (!row?.code) {
+    redirect(settingsRedirect(BASE, TAB, { error: "terms_not_found" }));
+  }
   if (row.code === "default") {
-    redirect("/dashboard/settings/company?error=terms_default_delete");
+    redirect(settingsRedirect(BASE, TAB, { error: "terms_default_delete" }));
   }
 
   const { error } = await supabase.from("company_terms").delete().eq("id", id);
 
   if (error) redirectForTermsDbError(error.code);
 
-  revalidatePath("/dashboard/settings/company");
+  revalidatePath(BASE);
   revalidatePath("/dashboard/finance", "layout");
-  redirect("/dashboard/settings/company");
+  redirect(settingsRedirect(BASE, TAB, { saved: true }));
 }

@@ -94,7 +94,7 @@ export function editorRowsFromStored(
   stored: TopManagementStored[],
 ): TopManagementRow[] {
   const rows = stored.filter(rowHasContent);
-  if (rows.length === 0) return defaultTopManagementRows();
+  if (rows.length === 0) return [];
   return rows.map((r, i) => ({
     id: `top-mgmt-loaded-${i}`,
     ...r,

@@ -575,6 +575,39 @@ export async function deleteIsCodeFile(fileId: string) {
   redirect(`/dashboard/is-code-master?id=${encodeURIComponent(isCodeId)}`);
 }
 
+/** Delete an IS code file without redirect (for modals). */
+export async function removeIsCodeFile(
+  fileId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const fid = fileId?.trim();
+  if (!fid) return { ok: false, error: "Invalid file." };
+
+  const { data: row, error: selErr } = await supabase
+    .from("is_code_files")
+    .select("id, is_code_id, storage_path")
+    .eq("id", fid)
+    .maybeSingle();
+  if (selErr) return { ok: false, error: selErr.message };
+  if (!row) return { ok: false, error: "File not found." };
+
+  const storagePath = (row as { storage_path: string }).storage_path;
+  await supabase.storage.from(IS_CODE_DOCUMENTS_BUCKET).remove([storagePath]);
+
+  const { error } = await supabase.from("is_code_files").delete().eq("id", fid);
+  if (error) return { ok: false, error: error.message };
+
+  const isCodeId = (row as { is_code_id: string }).is_code_id;
+  revalidatePath("/dashboard/is-code-master");
+  revalidatePath(`/dashboard/is-code-master?id=${encodeURIComponent(isCodeId)}`);
+  return { ok: true };
+}
+
 export async function signIsCodeFileDownload(
   fileId: string,
 ): Promise<{ ok: true; url: string } | { ok: false; error: string }> {

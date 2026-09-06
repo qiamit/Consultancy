@@ -29,6 +29,7 @@ import { downloadTechnicalStaffWord } from "@backend/modules/print/technical-sta
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  createTechnicalStaffRow,
   editorRowsFromStored,
   storedFromEditor,
   type TechnicalStaffRow,
@@ -261,9 +262,27 @@ export function TechnicalStaffModal({
     setEditingStaff(null);
   }
 
+  function handleRemoveStaff(row: TechnicalStaffRow) {
+    setRows((prev) => prev.filter((r) => r.id !== row.id));
+  }
+
+  function handleCopyStaff(row: TechnicalStaffRow) {
+    const copy: TechnicalStaffRow = {
+      ...row,
+      id: createTechnicalStaffRow().id,
+    };
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.id === row.id);
+      if (idx < 0) return [...prev, copy];
+      const next = [...prev];
+      next.splice(idx + 1, 0, copy);
+      return next;
+    });
+  }
+
   return (
     <>
-      <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
+      <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950">
         <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-800 bg-zinc-900 px-4 py-3">
           <div className="min-w-0 shrink-0 flex-1 basis-48">
             <h2 className="truncate text-sm font-semibold text-white">Technical Staff Details</h2>
@@ -368,28 +387,36 @@ export function TechnicalStaffModal({
               }`}
             >
               <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
-                <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-medium text-zinc-200">Technical Staff Details</p>
-                    <p className="mt-0.5 text-xs font-semibold text-teal-300">{isFullNumber}</p>
-                    {isTitle ? (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-zinc-500">{isTitle}</p>
+                    <p className="text-sm font-medium leading-snug text-zinc-200">
+                      Technical Staff Details of{" "}
+                      <span className="font-semibold text-teal-300">{isFullNumber}</span>
+                      {isTitle ? (
+                        <>
+                          {" "}
+                          as per{" "}
+                          <span className="text-zinc-300">{isTitle}</span>
+                        </>
+                      ) : null}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                    <TechnicalStaffAddButton theme="dark" onClick={openAddStaffForm} />
+                    {isCodeId ? (
+                      <button
+                        type="button"
+                        onClick={() => setShowIsCodeView(true)}
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                      >
+                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
+                        View IS Files
+                      </button>
                     ) : null}
                   </div>
-                  {isCodeId ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowIsCodeView(true)}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      View IS Files
-                    </button>
-                  ) : null}
                 </div>
-                <TechnicalStaffAddButton theme="dark" onClick={openAddStaffForm} />
               </div>
 
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
@@ -397,6 +424,8 @@ export function TechnicalStaffModal({
                   theme="dark"
                   rows={rows}
                   onEdit={openEditStaffForm}
+                  onCopy={handleCopyStaff}
+                  onRemove={handleRemoveStaff}
                 />
               </div>
             </div>

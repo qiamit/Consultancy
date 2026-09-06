@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
 import { IsCodeMasterForm } from "@/components/modules/is-code-master/form";
 import { rowToForm } from "@/components/modules/is-code-master/constants";
 import {
@@ -93,7 +92,6 @@ export function IsCodeEditModal({
   onClose: () => void;
   onUpdated?: (isCode: IsCodeEditSummary) => void;
 }) {
-  const { open: sidebarOpen } = useSidebarLayout();
   const [formValues, setFormValues] = useState<Record<string, string> | null>(null);
   const [existingFiles, setExistingFiles] = useState<IsCodeFileRow[]>([]);
   const [aspectOptions, setAspectOptions] = useState<AppDropdownOptionRow[]>([]);
@@ -149,9 +147,7 @@ export function IsCodeEditModal({
 
   return (
     <div
-      className={`fixed inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55 ${
-        sidebarOpen ? "lg:left-64" : "lg:left-0"
-      }`}
+      className="absolute inset-0 z-[300] flex items-start justify-center overflow-y-auto bg-zinc-950/50 p-4 pt-10 sm:pt-16 dark:bg-black/55"
       role="presentation"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();

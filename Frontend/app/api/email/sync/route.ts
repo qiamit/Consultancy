@@ -46,6 +46,8 @@ function toUpsertRow(accountId: string, imapFolder: string, m: ParsedMessage) {
   };
 }
 
+const UPSERT_CHUNK = 40;
+
 async function upsertFolderMessages(
   supabase: Awaited<ReturnType<typeof createClient>>,
   accountId: string,
@@ -55,30 +57,14 @@ async function upsertFolderMessages(
   if (messages.length === 0) return;
 
   const upserts = messages.map((m) => toUpsertRow(accountId, imapFolder, m));
-  const { error: upErr } = await supabase.from("email_messages").upsert(upserts, {
-    onConflict: "account_id,folder,uid",
-  });
-  if (upErr) throw new Error(upErr.message);
-
-  const syncedUids = new Set(messages.map((m) => m.uid));
-  const { data: existing } = await supabase
-    .from("email_messages")
-    .select("uid")
-    .eq("account_id", accountId)
-    .eq("folder", imapFolder);
-
-  const staleUids = (existing ?? [])
-    .filter((row) => !syncedUids.has(row.uid))
-    .map((row) => row.uid);
-
-  if (staleUids.length > 0) {
-    await supabase
-      .from("email_messages")
-      .delete()
-      .eq("account_id", accountId)
-      .eq("folder", imapFolder)
-      .in("uid", staleUids);
+  for (let i = 0; i < upserts.length; i += UPSERT_CHUNK) {
+    const chunk = upserts.slice(i, i + UPSERT_CHUNK);
+    const { error: upErr } = await supabase.from("email_messages").upsert(chunk, {
+      onConflict: "account_id,folder,uid",
+    });
+    if (upErr) throw new Error(upErr.message);
   }
+  // Capped sync: never prune older/local rows — only upsert recent mail.
 }
 
 async function syncOneFolder(
@@ -91,7 +77,7 @@ async function syncOneFolder(
       ? resolveImapFolder(row.provider, "inbox")
       : resolveImapFolder(row.provider, folderKey);
 
-  const messages = await syncFolderMessages(row, imapFolder, 0);
+  const messages = await syncFolderMessages(row, imapFolder);
 
   if (folderKey !== "starred") {
     await upsertFolderMessages(supabase, row.id, imapFolder, messages);
@@ -144,10 +130,21 @@ export async function POST(req: Request) {
     let totalCount = 0;
     const synced: { folder: string; count: number }[] = [];
 
+    const folderErrors: { folder: string; error: string }[] = [];
+
     for (const folderKey of foldersToSync) {
-      const result = await syncOneFolder(supabase, row, folderKey);
-      totalCount += result.count;
-      synced.push({ folder: result.folder, count: result.count });
+      try {
+        const result = await syncOneFolder(supabase, row, folderKey);
+        totalCount += result.count;
+        synced.push({ folder: result.folder, count: result.count });
+      } catch (folderErr) {
+        const msg = formatImapError(folderErr, row.provider).message;
+        // Inbox must succeed; other folders are best-effort on full sync.
+        if (folderKey === "inbox" || foldersToSync.length === 1) {
+          throw folderErr;
+        }
+        folderErrors.push({ folder: folderKey, error: msg });
+      }
     }
 
     await supabase
@@ -160,10 +157,11 @@ export async function POST(req: Request) {
       count: totalCount,
       synced,
       allFolders: Boolean(body.allFolders),
+      folderErrors: folderErrors.length ? folderErrors : undefined,
     });
   } catch (e) {
     return NextResponse.json(
-      { error: formatImapError(e).message },
+      { error: formatImapError(e, row.provider).message },
       { status: 500 },
     );
   }

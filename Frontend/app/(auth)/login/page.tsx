@@ -9,7 +9,9 @@ export default async function LoginPage({
   const error =
     typeof params.error === "string" ? params.error : null;
   const next =
-    typeof params.next === "string" && params.next.startsWith("/")
+    typeof params.next === "string" &&
+    params.next.startsWith("/") &&
+    !params.next.startsWith("//")
       ? params.next
       : "/dashboard";
 

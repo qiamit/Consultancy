@@ -56,7 +56,8 @@ export const EMAIL_PROVIDER_PRESETS: Record<Exclude<EmailProvider, "custom">, Pr
   zoho: {
     label: "Zoho Mail",
     imap: { host: "imappro.zoho.in", port: 993, secure: true },
-    smtp: { host: "smtppro.zoho.in", port: 587, secure: false },
+    // Matches Zoho Mail India org settings: smtppro.zoho.in:465 SSL
+    smtp: { host: "smtppro.zoho.in", port: 465, secure: true },
     folders: {
       inbox: "INBOX",
       sent: "Sent",

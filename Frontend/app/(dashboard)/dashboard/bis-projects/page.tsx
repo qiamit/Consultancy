@@ -5,11 +5,15 @@ import { loadClientMasterDropdownOptions } from "@backend/shared/data/client-mas
 import { loadIsCodeFormDropdownOptions } from "@backend/shared/data/is-code-form-dropdowns";
 import type { BisProjectMasterRow } from "@backend/shared/types/bis-project-master";
 import { createClient } from "@backend/db/client/server";
+import {
+  applicationProjectKindDbValues,
+  inFilter,
+} from "@backend/modules/bis/bis-project-kind";
 
 function MasterFallback() {
   return (
     <div className="w-full max-w-none animate-pulse rounded-lg border border-zinc-200 bg-zinc-100 p-8 text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900">
-      Loading BIS Existing Licenses…
+      Loading All BIS Licenses…
     </div>
   );
 }
@@ -44,6 +48,8 @@ export default async function BisProjectsPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
+  const applicationKinds = await applicationProjectKindDbValues(supabase);
+  const applicationKindFilter = inFilter(applicationKinds);
 
   const [
     { data: bisRaw, error: bisError },
@@ -55,10 +61,11 @@ export default async function BisProjectsPage({
       .select(
         `id, client_id, project_kind, title, status, license_number, start_date, target_date, notes,
         is_code_id, cm_l_digits, license_validity_date, case_handled_by, case_referred_by,
-        billing_amount, billing_frequency, portal_user_id, portal_password,
+        billing_amount, billing_frequency, portal_user_id, portal_password, is_qe_managed,
         created_at, updated_at,
         clients(name, company_name)`,
       )
+      .not("project_kind", "in", applicationKindFilter)
       .order("created_at", { ascending: false }),
     supabase
       .from("clients")
@@ -108,6 +115,7 @@ export default async function BisProjectsPage({
 
   const rows: BisProjectMasterRow[] = bisRows.map((r) => ({
     ...r,
+    is_qe_managed: Boolean(r.is_qe_managed),
     license_validity_date: toYmdOrNull(r.license_validity_date),
     start_date: toYmdOrNull(r.start_date),
     target_date: toYmdOrNull(r.target_date),

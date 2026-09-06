@@ -13,6 +13,93 @@
   --foreground: #fafafa;
 }
 
+/* Named themes: remap sky + zinc so existing bg-sky-* / bg-zinc-* pick up accents & surfaces */
+html[data-theme="ocean"] {
+  --color-sky-300: #67e8f9;
+  --color-sky-400: #22d3ee;
+  --color-sky-500: #06b6d4;
+  --color-sky-600: #0891b2;
+  --color-sky-700: #0e7490;
+  --color-sky-800: #155e75;
+  --color-sky-950: #083344;
+}
+
+html[data-theme="forest"] {
+  --color-sky-300: #6ee7b7;
+  --color-sky-400: #34d399;
+  --color-sky-500: #10b981;
+  --color-sky-600: #059669;
+  --color-sky-700: #047857;
+  --color-sky-800: #065f46;
+  --color-sky-950: #022c22;
+}
+
+html[data-theme="violet"] {
+  --color-sky-300: #c4b5fd;
+  --color-sky-400: #a78bfa;
+  --color-sky-500: #8b5cf6;
+  --color-sky-600: #7c3aed;
+  --color-sky-700: #6d28d9;
+  --color-sky-800: #5b21b6;
+  --color-sky-950: #2e1065;
+}
+
+html[data-theme="sunrise"] {
+  --background: #fffbeb;
+  --foreground: #1c1917;
+  --color-sky-300: #fcd34d;
+  --color-sky-400: #fbbf24;
+  --color-sky-500: #f59e0b;
+  --color-sky-600: #d97706;
+  --color-sky-700: #b45309;
+  --color-sky-800: #92400e;
+  --color-sky-950: #451a03;
+  --color-zinc-50: #fffbeb;
+  --color-zinc-100: #fef3c7;
+  --color-zinc-200: #fde68a;
+  --color-zinc-300: #fcd34d;
+  --color-zinc-800: #44403c;
+  --color-zinc-900: #292524;
+  --color-zinc-950: #1c1917;
+}
+
+html[data-theme="midnight"].dark {
+  --background: #050508;
+  --foreground: #f4f4f5;
+  --color-zinc-800: #18181b;
+  --color-zinc-900: #0c0c0e;
+  --color-zinc-950: #050508;
+}
+
+html[data-theme="midnight"].dark table {
+  background-color: rgba(9, 9, 11, 0.85) !important;
+  border-color: rgba(24, 24, 27, 0.95) !important;
+}
+
+html[data-theme="ocean"].dark {
+  --background: #0c1222;
+  --foreground: #ecfeff;
+  --color-zinc-800: #1e293b;
+  --color-zinc-900: #111827;
+  --color-zinc-950: #0c1222;
+}
+
+html[data-theme="forest"].dark {
+  --background: #0a140f;
+  --foreground: #ecfdf5;
+  --color-zinc-800: #1a2e24;
+  --color-zinc-900: #0f1a14;
+  --color-zinc-950: #0a140f;
+}
+
+html[data-theme="violet"].dark {
+  --background: #120f1a;
+  --foreground: #f5f3ff;
+  --color-zinc-800: #2e1065;
+  --color-zinc-900: #1a1525;
+  --color-zinc-950: #120f1a;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

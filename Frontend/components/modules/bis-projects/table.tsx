@@ -10,27 +10,40 @@ import {
 } from "@backend/modules/bis/bis-project-license-status";
 import {
   MANAK_ONLINE_APPLICATION_LICENCE_REPORT_URL,
-  manakOnlineEbisLoginHref,
   manakRenewalLinkAriaLabel,
   manakRenewalLinkNativeTitle,
 } from "@backend/modules/bis/manak-online-portal";
 import { bisStandardsWebsiteSearchUrl } from "@backend/modules/bis/bis-standards-portal";
 import type { BisProjectMasterRow } from "@backend/shared/types/bis-project-master";
 import { bisIsCodeDisplayLabel } from "@backend/modules/bis/bis-project-is-code-label";
-import { projectKindLabel } from "./constants";
 import { LicenseScopeViewModal } from "./license-scope-view-modal";
+import { openManakEbisAssist } from "./manak-ebis-assist";
 import {
   BisProjectsMasterFooterBar,
   BIS_PROJECTS_TABLE_COL_COUNT,
 } from "./footer-bar";
 
-/** User ID is passed via `?userId=` on the link; clipboard carries password only. */
-function copyManakPortalPasswordOnly(
-  portalPassword: string | null | undefined,
-): void {
-  const pass = String(portalPassword ?? "").trim();
-  if (!pass) return;
-  void navigator.clipboard.writeText(pass).catch(() => {});
+/** Copy CM/L as exactly 10 digits for pasting into Manak Online search. */
+function copyCmLTenDigits(cmLDigits: string | null | undefined): void {
+  const digits = String(cmLDigits ?? "").replace(/\D/g, "");
+  if (!digits) return;
+  const ten = digits.length >= 10 ? digits.slice(-10) : digits.padStart(10, "0");
+  try {
+    const el = document.createElement("textarea");
+    el.value = ten;
+    el.setAttribute("readonly", "");
+    el.style.position = "fixed";
+    el.style.left = "-9999px";
+    document.body.appendChild(el);
+    el.select();
+    el.setSelectionRange(0, ten.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(el);
+    if (ok) return;
+  } catch {
+    // fall through to Clipboard API
+  }
+  void navigator.clipboard?.writeText(ten).catch(() => {});
 }
 
 const chk =
@@ -127,6 +140,9 @@ export function BisProjectsMasterTable({
   matchedCount,
   grandCount,
   searchActive,
+  page,
+  totalPages,
+  onPageChange,
   onImportFile,
   onExport,
   onPrintList,
@@ -143,6 +159,9 @@ export function BisProjectsMasterTable({
   matchedCount: number;
   grandCount: number;
   searchActive: boolean;
+  page: number;
+  totalPages: number;
+  onPageChange: (p: number) => void;
   onImportFile: (file: File) => void | Promise<void>;
   onExport: () => void;
   onPrintList: () => void;
@@ -164,8 +183,8 @@ export function BisProjectsMasterTable({
       <table className="w-full table-fixed divide-y divide-zinc-200 text-sm dark:divide-zinc-800">
         <colgroup>
           <col className="w-11" />
-          <col className="w-[17%]" />
           <col />
+          <col className="w-[17%]" />
           <col className="w-[14%]" />
           <col className="w-[13%]" />
           <col className="w-[11%]" />
@@ -182,10 +201,10 @@ export function BisProjectsMasterTable({
                 />
               </div>
             </th>
-            <th className="whitespace-nowrap px-3 py-2">IS Code & Type</th>
-            <th className="whitespace-nowrap px-3 py-2 text-center">
+            <th className="whitespace-nowrap px-3 py-2">
               Name of the Client
             </th>
+            <th className="whitespace-nowrap px-3 py-2">IS Code</th>
             <th className="whitespace-nowrap px-3 py-2 text-center">CM/L Number</th>
             <th className="whitespace-nowrap px-3 py-2 text-center">
               License Validity
@@ -252,6 +271,11 @@ export function BisProjectsMasterTable({
                       />
                     </div>
                   </td>
+                  <td className="align-top px-3 py-2 text-zinc-700 dark:text-zinc-300">
+                    <div className="break-words leading-snug">
+                      {clientLabel(r)}
+                    </div>
+                  </td>
                   <td className="align-top px-3 py-2 text-zinc-800 dark:text-zinc-200">
                     <div className="space-y-1 break-words leading-snug">
                       {r.is_codes ? (
@@ -268,26 +292,20 @@ export function BisProjectsMasterTable({
                           {isLabel(r)}
                         </div>
                       )}
-                      <div className="text-xs text-zinc-600 dark:text-zinc-400">
-                        {projectKindLabel(r.project_kind)}
-                      </div>
                     </div>
                   </td>
                   <td className="align-top px-3 py-2 text-center text-zinc-700 dark:text-zinc-300">
-                    <div className="break-words leading-snug">
-                      {clientLabel(r)}
-                    </div>
-                  </td>
-                  <td className="align-top px-3 py-2 text-center text-zinc-700 dark:text-zinc-300">
-                    <div className="space-y-1 whitespace-nowrap text-center leading-snug">
+                    <div className="flex flex-col items-center gap-0.5 whitespace-nowrap leading-snug">
                       {cmLicenceLinkable ? (
                         <a
                           href={MANAK_ONLINE_APPLICATION_LICENCE_REPORT_URL}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-block font-mono text-xs tabular-nums text-sky-700 underline-offset-2 hover:underline dark:text-sky-400"
-                          title="Open BIS Manakonline — Application/Licence related reports (new tab)"
-                          aria-label="Open BIS Manakonline Application and Licence related reports in a new tab"
+                          onClick={() => copyCmLTenDigits(r.cm_l_digits)}
+                          onMouseDown={() => copyCmLTenDigits(r.cm_l_digits)}
+                          className="font-mono text-xs tabular-nums text-sky-700 underline-offset-2 hover:underline dark:text-sky-400"
+                          title="Copies 10-digit CM/L, then opens BIS Manakonline reports"
+                          aria-label="Copy 10-digit CM/L number and open BIS Manakonline Application and Licence related reports in a new tab"
                         >
                           {cmDisplay}
                         </a>
@@ -296,9 +314,33 @@ export function BisProjectsMasterTable({
                           {cmDisplay}
                         </div>
                       )}
-                      <div className={`text-xs ${licenseStatusLineClass(lic)}`}>
-                        {lic}
-                      </div>
+                      {lic === "Operative" ||
+                      lic === "Deferred" ||
+                      lic === "Expired" ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            openManakEbisAssist({
+                              userId: r.portal_user_id,
+                              password: r.portal_password,
+                              clientName: clientLabel(r),
+                              isLabel: isLabel(r),
+                            })
+                          }
+                          className={`text-xs underline-offset-2 hover:underline ${licenseStatusLineClass(lic)}`}
+                          title={manakRenewalLinkNativeTitle(
+                            r.portal_user_id,
+                            r.portal_password,
+                          )}
+                          aria-label={`${lic} status — open Manak eBIS login and copy password`}
+                        >
+                          {lic}
+                        </button>
+                      ) : (
+                        <div className={`text-xs ${licenseStatusLineClass(lic)}`}>
+                          {lic}
+                        </div>
+                      )}
                     </div>
                   </td>
                   <td className="align-top px-3 py-2 text-center text-zinc-700 dark:text-zinc-300">
@@ -310,17 +352,22 @@ export function BisProjectsMasterTable({
                           {renewalWindow.main}
                         </div>
                         {isRenewalWindowActive(r.license_validity_date, r.status) ? (
-                          <a
-                            href={manakOnlineEbisLoginHref(r.portal_user_id)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => copyManakPortalPasswordOnly(r.portal_password)}
-                            className="inline-block font-medium text-red-600 underline-offset-2 hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
+                          <button
+                            type="button"
+                            onClick={() =>
+                              openManakEbisAssist({
+                                userId: r.portal_user_id,
+                                password: r.portal_password,
+                                clientName: clientLabel(r),
+                                isLabel: isLabel(r),
+                              })
+                            }
+                            className="inline-flex font-medium text-red-600 underline-offset-2 hover:text-red-700 hover:underline dark:text-red-400 dark:hover:text-red-300"
                             title={manakRenewalLinkNativeTitle(r.portal_user_id, r.portal_password)}
                             aria-label={manakRenewalLinkAriaLabel(r.portal_user_id, r.portal_password)}
                           >
                             Apply for Renewal
-                          </a>
+                          </button>
                         ) : lic === "Stop Marking" ? (
                           <span className="inline-block rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-semibold text-orange-700 dark:bg-orange-950/40 dark:text-orange-400">
                             Restore Compliance
@@ -388,6 +435,9 @@ export function BisProjectsMasterTable({
           grandCount={grandCount}
           searchActive={searchActive}
           selectedCount={selectedIds.size}
+          page={page}
+          totalPages={totalPages}
+          onPageChange={onPageChange}
           onImportFile={onImportFile}
           onExport={onExport}
           onPrintList={onPrintList}

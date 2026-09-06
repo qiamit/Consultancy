@@ -14,7 +14,8 @@ function loginRedirect(
 
 export async function loginAction(formData: FormData) {
   const nextRaw = String(formData.get("next") ?? "/dashboard");
-  const next = nextRaw.startsWith("/") ? nextRaw : "/dashboard";
+  const next =
+    nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/dashboard";
 
   if (!isDatabaseConfigured()) {
     loginRedirect(next, "config");

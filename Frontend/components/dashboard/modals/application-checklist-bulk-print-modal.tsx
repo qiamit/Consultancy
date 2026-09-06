@@ -83,7 +83,7 @@ export function ApplicationChecklistBulkPrintModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[500] flex flex-col bg-black/60 backdrop-blur-sm lg:left-64">
+    <div className="absolute inset-0 z-[500] flex flex-col bg-black/60 backdrop-blur-sm">
       <div
         role="dialog"
         aria-modal="true"
