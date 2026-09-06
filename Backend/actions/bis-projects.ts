@@ -417,9 +417,9 @@ export async function deletePendingApplicationsAsAdmin(
     return { ok: false, error: "Select at least one application to delete." };
   }
 
-  const { error, count } = await supabase
+  const { error } = await supabase
     .from("bis_projects")
-    .delete({ count: "exact" })
+    .delete()
     .in("id", trimmed);
 
   if (error) return { ok: false, error: error.message };
@@ -428,7 +428,7 @@ export async function deletePendingApplicationsAsAdmin(
   revalidatePath("/dashboard/bis-projects");
   revalidatePath("/dashboard/bis-new-applications");
   revalidatePath("/dashboard/expired-licenses");
-  return { ok: true, deleted: count ?? trimmed.length };
+  return { ok: true, deleted: trimmed.length };
 }
 
 type ClientRef = { id: string; name: string; company_name: string | null };
