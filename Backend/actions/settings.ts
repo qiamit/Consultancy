@@ -7,6 +7,7 @@ import {
   companyAssetBucketPath,
 } from "@backend/modules/storage/documents";
 import { createClient } from "@backend/db/client/server";
+import { requireAdminProfile } from "@backend/modules/auth/profile";
 import { normalizeAppTheme } from "@backend/shared/constants/app-themes";
 import { settingsRedirect } from "@backend/shared/settings-tab-redirect";
 
@@ -60,6 +61,11 @@ export async function updateCompanySettings(formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  try {
+    await requireAdminProfile(supabase);
+  } catch {
+    redirect("/dashboard?error=admin_required");
+  }
 
   const { data: existing } = await supabase
     .from("company_settings")
@@ -193,6 +199,11 @@ export async function updateAppSettings(formData: FormData) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  try {
+    await requireAdminProfile(supabase);
+  } catch {
+    redirect("/dashboard?error=admin_required");
+  }
 
   const site_title = str(formData, "site_title") || "Technical Consultancy";
   const document_number_prefix = str(formData, "document_number_prefix");
