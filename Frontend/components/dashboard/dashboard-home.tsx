@@ -308,9 +308,7 @@ export function DashboardHome({
   const opsCards = OPS_CARDS.filter((c) => canSee(allowed, c.module));
 
   const quickLinks = DASHBOARD_MODULES.filter(
-    (m) =>
-      canSee(allowed, m.key) &&
-      (m.inMainNav || m.key === "email" || m.key === "finance"),
+    (m) => canSee(allowed, m.key) && (m.inMainNav || m.key === "email"),
   );
 
   const showFinanceCta = canSee(allowed, "finance");
