@@ -7,6 +7,9 @@ import dynamic from "next/dynamic";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
 import {
+  DocumentModalNavProvider,
+} from "@/components/dashboard/modals/document-modal-subtitle";
+import {
   isPreparationDocKey,
   PREPARATION_DOC_QUERY,
   PREPARATION_QUERY,
@@ -884,6 +887,55 @@ function ApplicationFormModal({
     applyDocKey(null);
     onDocChange?.(null);
   }, [applyDocKey, onDocChange]);
+
+  const hasPreparationDocOpen =
+    showLicenseScopeEditor ||
+    showOslSampleRequirements ||
+    showPiSampleRequirements ||
+    showApplicationDetails ||
+    showTopManagement ||
+    showTechnicalStaff ||
+    showFactoryTestReport ||
+    showSubcontractedTests ||
+    showCmpf305 ||
+    showCmpf306 ||
+    showRawMaterialDetails ||
+    showCertifiedReferenceMaterials ||
+    showCmpf307 ||
+    showCmpf310 ||
+    showCmpf311 ||
+    showUndertakingOption2 ||
+    showUndertakingLongDurationTest ||
+    showUndertakingMinimumMarkingFee ||
+    showAuthorizationLetter ||
+    showLocationMap ||
+    showPlantLayout ||
+    showProcessFlowChart ||
+    showProcessDescription ||
+    showUpdatedSchemeOfInspection ||
+    showSelfEvaluationForm ||
+    showUndertakingGeneralIss ||
+    showChecklistBulkPrint;
+
+  const openClientFromDocLink = useCallback(() => {
+    if (!row.client_id) return;
+    setShowClientEdit(true);
+  }, [row.client_id]);
+
+  const openIsCodeFromDocLink = useCallback(() => {
+    if (!row.is_code_id) return;
+    setShowIsCodeEdit(true);
+  }, [row.is_code_id]);
+
+  const closeClientEdit = useCallback(() => {
+    setShowClientEdit(false);
+    if (!hasPreparationDocOpen) clearDoc();
+  }, [clearDoc, hasPreparationDocOpen]);
+
+  const closeIsCodeEdit = useCallback(() => {
+    setShowIsCodeEdit(false);
+    if (!hasPreparationDocOpen) clearDoc();
+  }, [clearDoc, hasPreparationDocOpen]);
 
   useEffect(() => {
     applyDocKey(isPreparationDocKey(initialDoc) ? initialDoc : null);
@@ -1907,6 +1959,10 @@ function ApplicationFormModal({
   if (!portalReady) return null;
 
   return createPortal(
+    <DocumentModalNavProvider
+      onOpenClient={row.client_id ? openClientFromDocLink : undefined}
+      onOpenIsCode={row.is_code_id ? openIsCodeFromDocLink : undefined}
+    >
     <div
       className={`fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm ${
         sidebarOpen ? "lg:left-64" : "lg:left-0"
@@ -2200,7 +2256,7 @@ function ApplicationFormModal({
         <ClientEditModal
           clientId={row.client_id}
           onUpdated={syncClientFromSaved}
-          onClose={clearDoc}
+          onClose={closeClientEdit}
         />
       )}
 
@@ -2208,7 +2264,7 @@ function ApplicationFormModal({
         <IsCodeEditModal
           isCodeId={row.is_code_id}
           onUpdated={syncIsCodeFromSaved}
-          onClose={clearDoc}
+          onClose={closeIsCodeEdit}
         />
       )}
 
@@ -2602,7 +2658,8 @@ function ApplicationFormModal({
         />
       )}
 
-    </div>,
+    </div>
+    </DocumentModalNavProvider>,
     document.body,
   );
 }

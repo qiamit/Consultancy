@@ -175,39 +175,13 @@ export async function buildNoLogoLetterheadBlocks(
   if (!settings.show_letterhead) return [];
 
   const color = primaryColorHex(settings);
-  const width = contentWidthTwip(settings);
   const addressLine = settings.letterhead_show_address
     ? companyAddressLine(company)
     : "";
   const contactLine = buildLetterheadContactLine(company, settings);
   const tagline = settings.letterhead_tagline.trim();
 
-  const upperImg = await loadImageFromUrl(company.letterhead_upper_url);
-  if (upperImg) {
-    return [
-      new Paragraph({
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 40 },
-        children: [
-          new ImageRun({
-            type: upperImg.type,
-            data: upperImg.data,
-            transformation: {
-              width: twipToPx(width),
-              height: 110,
-            },
-            altText: {
-              title: "Letterhead",
-              description: "Company letterhead",
-              name: "letterhead_upper",
-            },
-          }),
-        ],
-      }),
-      letterheadBottomRule(color),
-    ];
-  }
-
+  // Text-only letterhead from applicant company fields — never consultant image banners.
   const out: Paragraph[] = [
     new Paragraph({
       alignment: AlignmentType.CENTER,

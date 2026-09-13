@@ -4,9 +4,9 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useState,
-  useSyncExternalStore,
   type ReactNode,
 } from "react";
 
@@ -18,27 +18,52 @@ type SidebarLayoutValue = {
 
 const SidebarLayoutContext = createContext<SidebarLayoutValue | null>(null);
 
-function subscribeViewport(onStoreChange: () => void) {
-  window.addEventListener("resize", onStoreChange);
-  return () => window.removeEventListener("resize", onStoreChange);
+const DESKTOP_MIN_WIDTH = 1024;
+
+/** SSR + hydrate always assume desktop sidebar open so markup matches. */
+const SSR_OPEN = true;
+
+function isDesktopViewport() {
+  return window.innerWidth >= DESKTOP_MIN_WIDTH;
 }
 
-function getDesktopOpen() {
-  return window.innerWidth >= 1024;
-}
-
+/**
+ * Returns sidebar layout state. `open` stays at the SSR value until *this*
+ * consumer has mounted — required because a parent viewport effect can run
+ * before Suspense children hydrate, which would otherwise mismatch aria/class.
+ */
 export function useSidebarLayout() {
   const ctx = useContext(SidebarLayoutContext);
   if (!ctx) {
     throw new Error("useSidebarLayout must be used within SidebarLayoutProvider");
   }
-  return ctx;
+
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  return useMemo(
+    () => ({
+      open: mounted ? ctx.open : SSR_OPEN,
+      toggle: ctx.toggle,
+      setOpen: ctx.setOpen,
+    }),
+    [mounted, ctx.open, ctx.toggle, ctx.setOpen],
+  );
 }
 
 export function SidebarLayoutProvider({ children }: { children: ReactNode }) {
-  const desktopOpen = useSyncExternalStore(subscribeViewport, getDesktopOpen, () => true);
+  const [desktopOpen, setDesktopOpen] = useState(SSR_OPEN);
   const [manualOpen, setManualOpen] = useState<boolean | null>(null);
   const open = manualOpen ?? desktopOpen;
+
+  useEffect(() => {
+    const syncViewport = () => setDesktopOpen(isDesktopViewport());
+    syncViewport();
+    window.addEventListener("resize", syncViewport);
+    return () => window.removeEventListener("resize", syncViewport);
+  }, []);
 
   const toggle = useCallback(() => {
     setManualOpen((prev) => !(prev ?? desktopOpen));

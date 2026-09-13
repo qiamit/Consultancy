@@ -259,6 +259,9 @@ export function buildTopManagementCompany(
     ...assets,
     // Top Management letterhead is text-only — never show company logo.
     logo_url: null,
+    letterhead_upper_url: null,
+    letterhead_lower_url: null,
+    seal_sign_url: null,
   };
 }
 

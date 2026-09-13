@@ -636,6 +636,29 @@ export function resizeRectangle(
   return { ...shape, x, y, width, height };
 }
 
+const legacyImageCache = new Map<string, HTMLImageElement | Promise<HTMLImageElement | null>>();
+
+function loadLegacyImage(dataUrl: string): Promise<HTMLImageElement | null> {
+  const cached = legacyImageCache.get(dataUrl);
+  if (cached instanceof HTMLImageElement) return Promise.resolve(cached);
+  if (cached) return cached;
+
+  const pending = new Promise<HTMLImageElement | null>((resolve) => {
+    const image = new Image();
+    image.onload = () => {
+      legacyImageCache.set(dataUrl, image);
+      resolve(image);
+    };
+    image.onerror = () => {
+      legacyImageCache.delete(dataUrl);
+      resolve(null);
+    };
+    image.src = dataUrl;
+  });
+  legacyImageCache.set(dataUrl, pending);
+  return pending;
+}
+
 export async function renderPlantLayoutScene(
   ctx: CanvasRenderingContext2D,
   width: number,
@@ -647,15 +670,8 @@ export async function renderPlantLayoutScene(
 
   for (const shape of shapes) {
     if (shape.type === "legacy") {
-      await new Promise<void>((resolve) => {
-        const image = new Image();
-        image.onload = () => {
-          ctx.drawImage(image, 0, 0, width, height);
-          resolve();
-        };
-        image.onerror = () => resolve();
-        image.src = shape.dataUrl;
-      });
+      const image = await loadLegacyImage(shape.dataUrl);
+      if (image) ctx.drawImage(image, 0, 0, width, height);
       continue;
     }
     drawShape(ctx, shape);

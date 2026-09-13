@@ -34,7 +34,8 @@ function pageSizeCss(s: PrintSettings): string {
 export function buildLetterheadHtml(c: PrintCompanyInfo, s: PrintSettings): string {
   if (!s.show_letterhead) return "";
 
-  if (c.letterhead_upper_url) {
+  // logo-na = text letterhead from company info (applicant). Do not override with image banners.
+  if (c.letterhead_upper_url && s.letterhead_layout !== "logo-na") {
     return `<div class="lh-wrap"><img src="${esc(c.letterhead_upper_url)}" alt="Letterhead" style="width:100%;max-height:110px;object-fit:contain;display:block;"/></div>`;
   }
 
@@ -267,7 +268,7 @@ ${s.show_watermark && s.watermark_text ? `<div class="watermark">${esc(s.waterma
 <div class="doc-page">
   ${letterheadHtml}
   ${bodyHtml}
-  ${s.show_letterhead && c.letterhead_lower_url ? `<div style="margin-top:16px;"><img src="${esc(c.letterhead_lower_url)}" alt="Footer letterhead" style="width:100%;max-height:80px;object-fit:contain;"/></div>` : ""}
+  ${s.show_letterhead && s.letterhead_layout !== "logo-na" && c.letterhead_lower_url ? `<div style="margin-top:16px;"><img src="${esc(c.letterhead_lower_url)}" alt="Footer letterhead" style="width:100%;max-height:80px;object-fit:contain;"/></div>` : ""}
 </div>
 ${footerHtml}
 </body>

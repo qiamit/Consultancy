@@ -240,6 +240,9 @@ export function buildAppointmentLetterCompany(
     }),
     ...assets,
     logo_url: null,
+    letterhead_upper_url: null,
+    letterhead_lower_url: null,
+    seal_sign_url: null,
   };
 }
 

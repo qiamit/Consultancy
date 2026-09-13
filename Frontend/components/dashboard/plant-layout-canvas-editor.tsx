@@ -1,6 +1,13 @@
 "use client";
 
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 import {
   cloneShapes,
   createShapeId,
@@ -43,22 +50,27 @@ export type PlantLayoutCanvasEditorHandle = {
 
 function getCanvasPoint(canvas: HTMLCanvasElement, clientX: number, clientY: number): PlantLayoutPoint {
   const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
+  const scaleX = canvas.width / Math.max(1, rect.width);
+  const scaleY = canvas.height / Math.max(1, rect.height);
   return {
     x: (clientX - rect.left) * scaleX,
     y: (clientY - rect.top) * scaleY,
   };
 }
 
-function isRectangle(shape: PlantLayoutShape | null | undefined): shape is Extract<PlantLayoutShape, { type: "rectangle" }> {
+function isRectangle(
+  shape: PlantLayoutShape | null | undefined,
+): shape is Extract<PlantLayoutShape, { type: "rectangle" }> {
   return shape?.type === "rectangle";
 }
 
 export const PlantLayoutCanvasEditor = forwardRef<
   PlantLayoutCanvasEditorHandle,
   PlantLayoutCanvasEditorProps
->(function PlantLayoutCanvasEditor({ storeKey, initialShapes, onChange, variant = "plant-layout" }, ref) {
+>(function PlantLayoutCanvasEditor(
+  { storeKey, initialShapes, onChange, variant = "plant-layout" },
+  ref,
+) {
   const isProcessFlow = variant === "process-flow";
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const shapesRef = useRef<PlantLayoutShape[]>(cloneShapes(initialShapes));
@@ -71,62 +83,100 @@ export const PlantLayoutCanvasEditor = forwardRef<
     handle?: RectHandle;
   } | null>(null);
   const skipLabelApplyRef = useRef(false);
+  const onChangeRef = useRef(onChange);
+  const initialShapesRef = useRef(initialShapes);
+  const selectedIdRef = useRef<string | null>(null);
+  const previewRef = useRef<PlantLayoutShape | null>(null);
+  const readyRef = useRef(false);
+  const rafRef = useRef<number | null>(null);
+  const redrawGenRef = useRef(0);
+
+  onChangeRef.current = onChange;
+  initialShapesRef.current = initialShapes;
 
   const [ready, setReady] = useState(false);
   const [tool, setTool] = useState<PlantLayoutTool>("draw");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [previewShape, setPreviewShape] = useState<PlantLayoutShape | null>(null);
   const [boxText, setBoxText] = useState("");
   const [hierarchyType, setHierarchyType] = useState<string>(DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE);
+  /** Bumps when selection changes so label UI re-reads shapesRef without tracking every drag. */
+  const [selectionTick, setSelectionTick] = useState(0);
 
-  const selectedShape = shapesRef.current.find((shape) => shape.id === selectedId) ?? null;
+  selectedIdRef.current = selectedId;
+
+  const selectedShape =
+    shapesRef.current.find((shape) => shape.id === selectedId) ?? null;
   const selectedRectangle = isRectangle(selectedShape) ? selectedShape : null;
+  void selectionTick;
 
-  const emitChange = useCallback(
-    (shapes: PlantLayoutShape[]) => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
-      onChange({ drawing_data_url: canvas.toDataURL("image/png"), shapes: cloneShapes(shapes) });
-    },
-    [onChange],
-  );
+  const emitChange = useCallback((shapes: PlantLayoutShape[]) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    onChangeRef.current({
+      drawing_data_url: canvas.toDataURL("image/png"),
+      shapes: cloneShapes(shapes),
+    });
+  }, []);
 
   const pushHistory = useCallback((shapes: PlantLayoutShape[]) => {
     historyRef.current = [...historyRef.current.slice(-19), cloneShapes(shapes)];
   }, []);
 
   const redraw = useCallback(
-    async (shapes: PlantLayoutShape[], selection: string | null, preview: PlantLayoutShape | null) => {
+    async (
+      shapes: PlantLayoutShape[],
+      selection: string | null,
+      preview: PlantLayoutShape | null,
+    ) => {
       const canvas = canvasRef.current;
       if (!canvas) return;
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
+      const gen = ++redrawGenRef.current;
       const scene = preview ? [...shapes, preview] : shapes;
       await renderPlantLayoutScene(ctx, canvas.width, canvas.height, scene, selection);
-      setReady(true);
+      // Drop stale frames if a newer redraw started while we awaited image load.
+      if (gen !== redrawGenRef.current) return;
+      if (!readyRef.current) {
+        readyRef.current = true;
+        setReady(true);
+      }
     },
     [],
   );
 
+  const scheduleRedraw = useCallback(() => {
+    if (rafRef.current != null) return;
+    rafRef.current = window.requestAnimationFrame(() => {
+      rafRef.current = null;
+      void redraw(shapesRef.current, selectedIdRef.current, previewRef.current);
+    });
+  }, [redraw]);
+
   const commitShapes = useCallback(
-    async (shapes: PlantLayoutShape[], selection: string | null = selectedId) => {
+    async (shapes: PlantLayoutShape[], selection: string | null = selectedIdRef.current) => {
       shapesRef.current = shapes;
+      previewRef.current = null;
       await redraw(shapes, selection, null);
-      setPreviewShape(null);
       emitChange(shapes);
     },
-    [emitChange, redraw, selectedId],
+    [emitChange, redraw],
   );
 
   const updateShapes = useCallback(
-    async (updater: (shapes: PlantLayoutShape[]) => PlantLayoutShape[], recordHistory = true) => {
+    async (
+      updater: (shapes: PlantLayoutShape[]) => PlantLayoutShape[],
+      recordHistory = true,
+    ) => {
       const next = updater(shapesRef.current);
       shapesRef.current = next;
-      await redraw(next, selectedId, previewShape);
+      previewRef.current = null;
+      await redraw(next, selectedIdRef.current, null);
       if (recordHistory) pushHistory(next);
       emitChange(next);
+      setSelectionTick((n) => n + 1);
     },
-    [emitChange, previewShape, pushHistory, redraw, selectedId],
+    [emitChange, pushHistory, redraw],
   );
 
   useImperativeHandle(
@@ -139,6 +189,7 @@ export const PlantLayoutCanvasEditor = forwardRef<
     [updateShapes],
   );
 
+  // Reset canvas only when the application/document key changes — not on every parent re-render.
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -147,38 +198,52 @@ export const PlantLayoutCanvasEditor = forwardRef<
     lastPointRef.current = null;
     shapeStartRef.current = null;
     dragRef.current = null;
+    previewRef.current = null;
+    if (rafRef.current != null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
 
-    const shapes = cloneShapes(initialShapes);
+    const shapes = cloneShapes(initialShapesRef.current);
     shapesRef.current = shapes;
     historyRef.current = [shapes];
+    selectedIdRef.current = null;
     setSelectedId(null);
-    setPreviewShape(null);
     setBoxText("");
     setHierarchyType(DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE);
     setTool("draw");
+    readyRef.current = false;
+    setReady(false);
+    setSelectionTick((n) => n + 1);
 
     void redraw(shapes, null, null).then(() => emitChange(shapes));
-  }, [storeKey, initialShapes, redraw, emitChange]);
 
-  useEffect(() => {
-    void redraw(shapesRef.current, selectedId, previewShape);
-  }, [selectedId, previewShape, redraw]);
+    return () => {
+      if (rafRef.current != null) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+    };
+  }, [storeKey, redraw, emitChange]);
 
   const applyFieldsToSelected = useCallback(
     (label: string, nextHierarchyType?: string) => {
-      if (!selectedId) return;
+      if (!selectedIdRef.current) return;
+      const id = selectedIdRef.current;
       void updateShapes((shapes) =>
         shapes.map((shape) => {
-          if (shape.id !== selectedId || shape.type !== "rectangle") return shape;
+          if (shape.id !== id || shape.type !== "rectangle") return shape;
           return {
             ...shape,
             label,
-            ...(isProcessFlow ? { hierarchyType: nextHierarchyType ?? shape.hierarchyType } : {}),
+            ...(isProcessFlow
+              ? { hierarchyType: nextHierarchyType ?? shape.hierarchyType }
+              : {}),
           };
         }),
       );
     },
-    [isProcessFlow, selectedId, updateShapes],
+    [isProcessFlow, updateShapes],
   );
 
   useEffect(() => {
@@ -188,7 +253,8 @@ export const PlantLayoutCanvasEditor = forwardRef<
     }
     if (!selectedRectangle) return;
     const hierarchyChanged =
-      isProcessFlow && hierarchyType !== (selectedRectangle.hierarchyType ?? DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE);
+      isProcessFlow &&
+      hierarchyType !== (selectedRectangle.hierarchyType ?? DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE);
     if (boxText !== selectedRectangle.label || hierarchyChanged) {
       applyFieldsToSelected(boxText, hierarchyType);
     }
@@ -199,25 +265,29 @@ export const PlantLayoutCanvasEditor = forwardRef<
     options?: { switchToEdit?: boolean },
   ) {
     skipLabelApplyRef.current = true;
+    selectedIdRef.current = shape.id;
     setSelectedId(shape.id);
     setBoxText(shape.label);
     if (isProcessFlow) {
       setHierarchyType(shape.hierarchyType ?? DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE);
     }
     if (options?.switchToEdit) setTool("select");
+    setSelectionTick((n) => n + 1);
+    scheduleRedraw();
   }
 
   const handlePointerDown = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
-    if (!canvas || !ready) return;
+    if (!canvas || !readyRef.current) return;
     const point = getCanvasPoint(canvas, clientX, clientY);
     lastPointRef.current = point;
 
     if (tool === "select") {
-      if (selectedRectangle) {
-        const handle = hitTestRectHandle(selectedRectangle, point);
+      const selected = shapesRef.current.find((s) => s.id === selectedIdRef.current);
+      if (isRectangle(selected)) {
+        const handle = hitTestRectHandle(selected, point);
         if (handle) {
-          dragRef.current = { shapeId: selectedRectangle.id, start: point, handle };
+          dragRef.current = { shapeId: selected.id, start: point, handle };
           return;
         }
       }
@@ -229,23 +299,34 @@ export const PlantLayoutCanvasEditor = forwardRef<
         return;
       }
 
+      selectedIdRef.current = null;
       setSelectedId(null);
       skipLabelApplyRef.current = true;
       setBoxText("");
+      setSelectionTick((n) => n + 1);
+      scheduleRedraw();
       return;
     }
 
     if (tool === "draw") {
+      selectedIdRef.current = null;
       setSelectedId(null);
       skipLabelApplyRef.current = true;
       setBoxText("");
+      setSelectionTick((n) => n + 1);
       shapeStartRef.current = point;
     }
   };
 
   const handlePointerMove = (clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    if (!canvas || !readyRef.current) return;
+
+    // Idle hover — do not redraw / setState.
+    if (!dragRef.current && !(shapeStartRef.current && tool === "draw")) {
+      return;
+    }
+
     const point = getCanvasPoint(canvas, clientX, clientY);
 
     if (dragRef.current) {
@@ -259,21 +340,22 @@ export const PlantLayoutCanvasEditor = forwardRef<
       });
       shapesRef.current = shapes;
       dragRef.current = { shapeId, start: point, handle };
-      void redraw(shapes, selectedId, null);
+      scheduleRedraw();
       return;
     }
 
     if (shapeStartRef.current && tool === "draw") {
       const rect = normalizeRect(shapeStartRef.current, point);
-      setPreviewShape({
+      previewRef.current = {
         id: "__preview__",
         type: "rectangle",
         ...rect,
         strokeColor: PLANT_LAYOUT_BOX_STROKE_COLOR,
         strokeWidth: PLANT_LAYOUT_BOX_STROKE_WIDTH,
         label: "",
-      });
+      };
       lastPointRef.current = point;
+      scheduleRedraw();
     }
   };
 
@@ -283,6 +365,7 @@ export const PlantLayoutCanvasEditor = forwardRef<
       pushHistory(shapesRef.current);
       emitChange(shapesRef.current);
       lastPointRef.current = null;
+      setSelectionTick((n) => n + 1);
       return;
     }
 
@@ -291,7 +374,7 @@ export const PlantLayoutCanvasEditor = forwardRef<
       const end = lastPointRef.current ?? start;
       const rect = normalizeRect(start, end);
       shapeStartRef.current = null;
-      setPreviewShape(null);
+      previewRef.current = null;
 
       if (rect.width > 8 && rect.height > 8) {
         const shape: PlantLayoutShape = {
@@ -305,10 +388,11 @@ export const PlantLayoutCanvasEditor = forwardRef<
         };
         void updateShapes((shapes) => [...shapes, shape]);
         skipLabelApplyRef.current = true;
+        selectedIdRef.current = shape.id;
         setSelectedId(shape.id);
         setBoxText("");
       } else {
-        void redraw(shapesRef.current, selectedId, null);
+        scheduleRedraw();
       }
       lastPointRef.current = null;
       return;
@@ -318,8 +402,10 @@ export const PlantLayoutCanvasEditor = forwardRef<
   };
 
   function deleteSelected() {
-    if (!selectedId) return;
-    void updateShapes((shapes) => shapes.filter((shape) => shape.id !== selectedId));
+    if (!selectedIdRef.current) return;
+    const id = selectedIdRef.current;
+    void updateShapes((shapes) => shapes.filter((shape) => shape.id !== id));
+    selectedIdRef.current = null;
     setSelectedId(null);
     skipLabelApplyRef.current = true;
     setBoxText("");
@@ -329,8 +415,9 @@ export const PlantLayoutCanvasEditor = forwardRef<
   function clearCanvas() {
     shapesRef.current = [];
     historyRef.current = [[]];
+    selectedIdRef.current = null;
     setSelectedId(null);
-    setPreviewShape(null);
+    previewRef.current = null;
     setBoxText("");
     setHierarchyType(DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE);
     void commitShapes([]);
@@ -339,14 +426,15 @@ export const PlantLayoutCanvasEditor = forwardRef<
   function undo() {
     if (historyRef.current.length <= 1) {
       clearCanvas();
-      onChange({ drawing_data_url: "", shapes: [] });
+      onChangeRef.current({ drawing_data_url: "", shapes: [] });
       return;
     }
     historyRef.current = historyRef.current.slice(0, -1);
     const previous = historyRef.current[historyRef.current.length - 1] ?? [];
     shapesRef.current = cloneShapes(previous);
+    selectedIdRef.current = null;
     setSelectedId(null);
-    setPreviewShape(null);
+    previewRef.current = null;
     setBoxText("");
     setHierarchyType(DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE);
     void commitShapes(shapesRef.current, null);
@@ -374,7 +462,9 @@ export const PlantLayoutCanvasEditor = forwardRef<
               skipLabelApplyRef.current = true;
               setBoxText(selectedRectangle.label);
               if (isProcessFlow) {
-                setHierarchyType(selectedRectangle.hierarchyType ?? DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE);
+                setHierarchyType(
+                  selectedRectangle.hierarchyType ?? DEFAULT_PROCESS_FLOW_HIERARCHY_TYPE,
+                );
               }
             }
           }}

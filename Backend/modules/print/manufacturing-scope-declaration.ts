@@ -231,12 +231,12 @@ export function buildManufacturingScopeCompany(
     phone: data.phone,
     contact_person: data.contactPerson,
     website: "",
+    ...assets,
+    // Applicant letterhead only — never consultant letterhead / logo / seal images.
+    logo_url: null,
     letterhead_upper_url: null,
     letterhead_lower_url: null,
     seal_sign_url: null,
-    ...assets,
-    // Manufacturing Scope letterhead matches Top Management — text-only / no logo tile.
-    logo_url: null,
   };
 }
 

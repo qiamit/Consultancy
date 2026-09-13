@@ -132,6 +132,9 @@ export function buildUndertakingGeneralIssCompany(
     ...assets,
     // Letterhead matches Top Management / Plant & Machinery — text-only / no logo tile.
     logo_url: null,
+    letterhead_upper_url: null,
+    letterhead_lower_url: null,
+    seal_sign_url: null,
   };
 }
 

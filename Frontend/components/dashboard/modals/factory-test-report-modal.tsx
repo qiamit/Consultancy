@@ -48,6 +48,8 @@ import {
   type FtrTestParameterSeed,
 } from "@backend/modules/bis/factory-test-report";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
+import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
+import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
 
 const headerInp =
   "block w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40";
@@ -504,15 +506,12 @@ export function FactoryTestReportModal({
 
   return (
     <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
-      <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-800 bg-zinc-900 px-4 py-3">
-        <div className="min-w-0 shrink-0 flex-1 basis-48">
+      <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 bg-zinc-900 px-4 py-3">
+        <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-white">Factory Test Report (FTR)</h2>
-          <p className="truncate text-xs text-zinc-400">
-            {letterData.companyName}
-            {isReference !== "—" ? ` · ${isReference}` : ""}
-          </p>
+          <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isReference} />
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+          <ModalToolbarActions onClose={onClose}>
           {savedFlash && (
             <span className="text-xs font-semibold text-emerald-400">Saved ✓</span>
           )}
@@ -587,17 +586,7 @@ export function FactoryTestReportModal({
           >
             Page Settings
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+          </ModalToolbarActions>
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">

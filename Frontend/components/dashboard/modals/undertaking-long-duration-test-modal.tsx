@@ -31,6 +31,8 @@ import {
   type UndertakingLongDurationTestStored,
 } from "@backend/modules/bis/undertaking-long-duration-test";
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
+import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
+import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
 
 export function UndertakingLongDurationTestModal({
   letterData,
@@ -244,17 +246,14 @@ export function UndertakingLongDurationTestModal({
 
   return (
     <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
-      <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-800 bg-zinc-900 px-4 py-3">
-        <div className="min-w-0 shrink-0 flex-1 basis-48">
+      <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 bg-zinc-900 px-4 py-3">
+        <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-white">
             Undertaking for Long Duration Test
           </h2>
-          <p className="truncate text-xs text-zinc-400">
-            {letterData.companyName}
-            {isFullNumber !== "—" ? ` · ${isFullNumber}` : ""}
-          </p>
+          <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isFullNumber} />
         </div>
-        <div className="ml-auto flex shrink-0 items-center gap-2">
+        <ModalToolbarActions onClose={onClose}>
           {savedFlash && <span className="text-xs font-semibold text-emerald-400">Saved ✓</span>}
           {saving && <span className="text-xs text-zinc-400">Saving…</span>}
           <button
@@ -327,58 +326,47 @@ export function UndertakingLongDurationTestModal({
           >
             Page Settings
           </button>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
+        </ModalToolbarActions>
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
-        <div
-          className={`flex min-h-0 min-w-0 flex-col bg-zinc-900 ${
-            settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
-          } ${showPrintPreview ? "shrink-0" : "flex-1"}`}
-        >
+        {!showPrintPreview && (
           <div
-            className={`border-b border-zinc-800 px-4 py-3 ${
-              showPrintPreview ? "" : "min-h-0 flex-1 overflow-y-auto"
+            className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
+              settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
             }`}
           >
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-              Long Duration Test Details
-            </p>
-            <LongDurationTestUndertakingTableEditor
-              rows={document.test_rows}
-              onChange={(test_rows) => setDocument((prev) => ({ ...prev, test_rows }))}
-            />
-          </div>
-
-          {showPrintPreview && (
-            <div className="flex min-h-0 flex-1 flex-col bg-zinc-600">
-              <div className="border-b border-zinc-700/80 px-4 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-                  Form Preview — Undertaking for Long Duration Test
-                </p>
-              </div>
-              <div className="flex-1 overflow-y-auto p-3 sm:p-6">
-                <iframe
-                  ref={iframeRef}
-                  title="Undertaking for Long Duration Test form preview"
-                  className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  scrolling="no"
-                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
-                />
-              </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <LongDurationTestUndertakingTableEditor
+                rows={document.test_rows}
+                onChange={(test_rows) => setDocument((prev) => ({ ...prev, test_rows }))}
+              />
             </div>
-          )}
-        </div>
+          </div>
+        )}
+
+        {showPrintPreview && (
+          <div
+            className={`flex min-w-0 flex-1 flex-col bg-zinc-600 ${
+              settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+            }`}
+          >
+            <div className="border-b border-zinc-700/80 px-4 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
+                Form Preview — Undertaking for Long Duration Test
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+              <iframe
+                ref={iframeRef}
+                title="Undertaking for Long Duration Test form preview"
+                className="mx-auto max-w-full border-0 bg-white shadow-2xl"
+                scrolling="no"
+                style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
+              />
+            </div>
+          </div>
+        )}
 
         {settingsPanel && (
           <div className={splitModalSettingsPaneClass()}>

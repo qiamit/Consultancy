@@ -41,6 +41,8 @@ import {
   type TopManagementRow,
   type TopManagementStored,
 } from "@backend/modules/bis/top-management";
+import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
+import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
 
 const TOP_MGMT_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Top Management details for BIS licence applications:
@@ -306,15 +308,12 @@ export function TopManagementModal({
   return (
     <>
       <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950">
-        <div className="flex shrink-0 items-center gap-2 overflow-x-auto border-b border-zinc-800 bg-zinc-900 px-4 py-3">
-          <div className="min-w-0 shrink-0 flex-1 basis-48">
+        <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 bg-zinc-900 px-4 py-3">
+          <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-white">Top Management Details</h2>
-            <p className="truncate text-xs text-zinc-400">
-              {letterData.companyName}
-              {isFullNumber !== "—" ? ` · ${isFullNumber}` : ""}
-            </p>
+            <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isFullNumber} />
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          <ModalToolbarActions onClose={onClose}>
             {savedFlash && (
               <span className="text-xs font-semibold text-emerald-400">Saved ✓</span>
             )}
@@ -389,17 +388,7 @@ export function TopManagementModal({
             >
               QE Assistant
             </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-              aria-label="Close"
-            >
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
+          </ModalToolbarActions>
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
@@ -410,20 +399,7 @@ export function TopManagementModal({
               }`}
             >
               <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <p className="min-w-0 text-sm font-medium leading-snug text-zinc-200">
-                    Top Management persons for{" "}
-                    <span className="font-semibold text-teal-300">
-                      {letterData.companyName}
-                    </span>
-                    {isFullNumber !== "—" ? (
-                      <>
-                        {" "}
-                        ·{" "}
-                        <span className="text-zinc-300">{isFullNumber}</span>
-                      </>
-                    ) : null}
-                  </p>
+                <div className="flex flex-wrap items-center justify-end gap-3">
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <TopManagementAddPersonButton
                       theme="dark"
