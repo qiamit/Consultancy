@@ -27,11 +27,13 @@ function readNodeText(node: ReactNode): string {
   if (node == null || typeof node === "boolean") return "";
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(readNodeText).join("");
-  if (isValidElement(node)) return readNodeText(node.props.children);
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return readNodeText(node.props.children);
+  }
   return "";
 }
 
-function isSaveButton(child: ReactElement): boolean {
+function isSaveButton(child: ReactElement<{ children?: ReactNode }>): boolean {
   const label = readNodeText(child.props.children).trim();
   return /^saving/i.test(label) || /^save\b/i.test(label);
 }
@@ -94,10 +96,11 @@ export function ModalToolbarActions({
   }
 
   const saveNodes = actionNodes.filter(
-    (node) => isValidElement(node) && isSaveButton(node),
+    (node) => isValidElement<{ children?: ReactNode }>(node) && isSaveButton(node),
   );
   const menuActionNodes = actionNodes.filter(
-    (node) => !(isValidElement(node) && isSaveButton(node)),
+    (node) =>
+      !(isValidElement<{ children?: ReactNode }>(node) && isSaveButton(node)),
   );
 
   const recompute = useCallback(() => {
