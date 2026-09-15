@@ -44,6 +44,10 @@ export async function loadCompanyPrintContext(): Promise<{
     font_family: fromDb.font_family || defaults.font_family,
     show_letterhead: fromDb.show_letterhead ?? defaults.show_letterhead,
     letterhead_layout: fromDb.letterhead_layout || defaults.letterhead_layout,
+    letterhead_show_mobile:
+      fromDb.letterhead_show_mobile ?? fromDb.letterhead_show_contact,
+    letterhead_show_email:
+      fromDb.letterhead_show_email ?? fromDb.letterhead_show_contact,
     show_footer_line: defaults.show_footer_line,
     show_page_numbers: fromDb.show_page_numbers ?? defaults.show_page_numbers,
     // Strip consultant firm branding — applicant name/GST/address come from letter data.

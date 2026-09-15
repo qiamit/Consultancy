@@ -230,14 +230,31 @@ export function DocumentPrintSettingsPanel({
           onChange={(v) => onChange({ letterhead_show_address: v })}
         />
         <CheckboxField
-          label="Show contact info"
-          checked={settings.letterhead_show_contact}
-          onChange={(v) => onChange({ letterhead_show_contact: v })}
-        />
-        <CheckboxField
           label="Show GST number"
           checked={settings.letterhead_show_gst}
           onChange={(v) => onChange({ letterhead_show_gst: v })}
+        />
+        <CheckboxField
+          label="Show Mobile"
+          checked={settings.letterhead_show_mobile ?? settings.letterhead_show_contact}
+          onChange={(v) => {
+            const emailOn = settings.letterhead_show_email ?? settings.letterhead_show_contact;
+            onChange({
+              letterhead_show_mobile: v,
+              letterhead_show_contact: v || emailOn,
+            });
+          }}
+        />
+        <CheckboxField
+          label="Show Email"
+          checked={settings.letterhead_show_email ?? settings.letterhead_show_contact}
+          onChange={(v) => {
+            const mobileOn = settings.letterhead_show_mobile ?? settings.letterhead_show_contact;
+            onChange({
+              letterhead_show_email: v,
+              letterhead_show_contact: mobileOn || v,
+            });
+          }}
         />
       </div>
 

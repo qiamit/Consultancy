@@ -32,6 +32,16 @@ import {
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import {
+  ApplicationMetaDropdown,
+  ApplicationWeeklyOffSelector,
+} from "@/components/dashboard/application-details-form";
+import type { ApplicationMeta } from "@backend/modules/bis/application-checklist-notes";
+import {
+  DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE,
+  DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE,
+} from "@backend/shared/dropdown-keys";
+import { type AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 
 const UNDERTAKING_GENERAL_ISS_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with the Undertaking for General & ISS submitted with BIS licence applications:
@@ -58,6 +68,9 @@ export function UndertakingGeneralIssModal({
   weeklyOff,
   topManagement,
   storedDocument,
+  appDropdownOptions,
+  onReloadDropdowns,
+  onUpdateMeta,
   onSave,
   onClose,
 }: {
@@ -73,6 +86,9 @@ export function UndertakingGeneralIssModal({
   weeklyOff: string[];
   topManagement: TopManagementStored[];
   storedDocument: UndertakingGeneralIssStored;
+  appDropdownOptions: Record<string, AppDropdownOptionRow[]>;
+  onReloadDropdowns: () => void;
+  onUpdateMeta: (patch: Partial<ApplicationMeta>) => void;
   onSave: (document: UndertakingGeneralIssStored) => void;
   onClose: () => void;
 }) {
@@ -382,6 +398,34 @@ export function UndertakingGeneralIssModal({
             }`}
           >
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                <ApplicationMetaDropdown
+                  label="Marking Clause"
+                  optionKey={DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE}
+                  dialogTitle="Manage Marking Clauses"
+                  addPlaceholder="Add marking clause…"
+                  manageAriaLabel="Add or remove marking clauses"
+                  value={markingClause}
+                  onChange={(v) => onUpdateMeta({ marking_clause: v })}
+                  options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE] ?? []}
+                  onOptionsChanged={onReloadDropdowns}
+                />
+                <ApplicationMetaDropdown
+                  label="Packaging Clause"
+                  optionKey={DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE}
+                  dialogTitle="Manage Packaging Clauses"
+                  addPlaceholder="Add packaging clause…"
+                  manageAriaLabel="Add or remove packaging clauses"
+                  value={packagingClause}
+                  onChange={(v) => onUpdateMeta({ packaging_clause: v })}
+                  options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE] ?? []}
+                  onOptionsChanged={onReloadDropdowns}
+                />
+                <ApplicationWeeklyOffSelector
+                  value={weeklyOff}
+                  onChange={(weekly_off) => onUpdateMeta({ weekly_off })}
+                />
+              </div>
               <UndertakingGeneralIssTableEditor
                 rows={document.undertaking_points}
                 onChange={handleUndertakingPointsChange}

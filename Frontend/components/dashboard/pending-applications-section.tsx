@@ -272,6 +272,7 @@ import {
   normalizeBisApplicationStage,
   type BisApplicationStage,
 } from "@backend/modules/bis/application-stage";
+import { resolveSampleOfferLetterDate } from "@backend/modules/bis/sample-offer-letter-date";
 import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff";
 import type { FactoryTestReportStored, FtrSampleSource } from "@backend/modules/bis/factory-test-report";
 import type { SubcontractedTestStored, SubcontractedTestsDocumentStored } from "@backend/modules/bis/subcontracted-tests";
@@ -314,6 +315,7 @@ type ClientDetail = {
   contact_person_name: string | null;
   email: string | null;
   phone: string | null;
+  phone_country_code: string | null;
   address: string | null;
   city: string | null;
   state: string | null;
@@ -1015,6 +1017,8 @@ function ApplicationFormModal({
     initialNotes.selfEvaluationForm,
   );
   const [applicationMeta, setApplicationMeta] = useState<ApplicationMeta>(initialNotes.meta);
+  const applicationMetaRef = useRef(applicationMeta);
+  applicationMetaRef.current = applicationMeta;
   const [legalDocumentRows, setLegalDocumentRows] = useState<LegalDocumentRow[]>(() =>
     editorRowsFromStored(initialNotes.legalDocuments),
   );
@@ -1100,7 +1104,7 @@ function ApplicationFormModal({
           overrides.updatedSchemeOfInspection ?? updatedSchemeOfInspection,
         selfEvaluationForm: overrides.selfEvaluationForm ?? selfEvaluationForm,
         legalDocuments: overrides.legalDocuments ?? storedFromEditor(legalDocumentRows),
-        meta: overrides.meta ?? applicationMeta,
+        meta: overrides.meta ?? applicationMetaRef.current,
       });
 
       // Merge with existing DB notes so a partial/stale local state cannot wipe
@@ -1223,6 +1227,15 @@ function ApplicationFormModal({
         ...pendingNotesSaveRef.current,
         ...overrides,
       };
+      // Always keep the latest meta snapshot from the live ref when a meta
+      // override is queued, so rapid field edits cannot drop earlier values.
+      if (overrides?.meta) {
+        pendingNotesSaveRef.current.meta = {
+          ...applicationMetaRef.current,
+          ...overrides.meta,
+        };
+        applicationMetaRef.current = pendingNotesSaveRef.current.meta;
+      }
       // Wait until notes are hydrated from DB so an early save cannot wipe data.
       if (!notesHydratedRef.current) return;
       if (saveNotesTimerRef.current) {
@@ -1375,11 +1388,17 @@ function ApplicationFormModal({
             setSelfEvaluationForm(parsed.selfEvaluationForm);
             setLegalDocumentRows(editorRowsFromStored(parsed.legalDocuments));
             setApplicationMeta(() => {
-              const meta = parsed.meta;
+              const pendingMeta = pendingNotesSaveRef.current.meta;
+              // Prefer in-flight edits over freshly loaded notes so a slow hydrate
+              // cannot wipe fields the user already typed.
+              let meta: ApplicationMeta = pendingMeta
+                ? { ...parsed.meta, ...pendingMeta }
+                : parsed.meta;
               const scaleFromClient = clientRef.current?.company_scale?.trim() ?? "";
               if (!meta.firm_scale.trim() && scaleFromClient) {
-                return { ...meta, firm_scale: scaleFromClient };
+                meta = { ...meta, firm_scale: scaleFromClient };
               }
+              applicationMetaRef.current = meta;
               return meta;
             });
             notesHydratedRef.current = true;
@@ -1399,7 +1418,7 @@ function ApplicationFormModal({
         tasks.push(
           supabase
             .from("clients")
-            .select("name, company_name, contact_person_name, email, phone, address, city, state, country, pin_code, gst_number, company_type, company_scale, opening_balance, balance_type, payment_term")
+            .select("name, company_name, contact_person_name, email, phone, phone_country_code, address, city, state, country, pin_code, gst_number, company_type, company_scale, opening_balance, balance_type, payment_term")
             .eq("id", row.client_id)
             .single()
             .then(({ data }) => {
@@ -1408,11 +1427,13 @@ function ApplicationFormModal({
                 setClient(detail);
                 const scale = detail?.company_scale?.trim() ?? "";
                 if (scale) {
-                  setApplicationMeta((prev) =>
-                    prev.firm_scale.trim()
-                      ? prev
-                      : { ...prev, firm_scale: scale },
-                  );
+                  setApplicationMeta((prev) => {
+                    if (prev.firm_scale.trim()) return prev;
+                    const next = { ...prev, firm_scale: scale };
+                    applicationMetaRef.current = next;
+                    saveNotesToDb({ meta: next });
+                    return next;
+                  });
                 }
               }
             }),
@@ -1448,7 +1469,8 @@ function ApplicationFormModal({
   const total = items.length;
 
   function updateMeta(patch: Partial<ApplicationMeta>) {
-    const next = { ...applicationMeta, ...patch };
+    const next = { ...applicationMetaRef.current, ...patch };
+    applicationMetaRef.current = next;
     setApplicationMeta(next);
     saveNotesToDb({ meta: next });
   }
@@ -1458,8 +1480,23 @@ function ApplicationFormModal({
     saveNotesToDb({ legalDocuments: storedFromEditor(rows) });
   }
 
+  /** Immediate DB write (skips auto-save debounce) — Application Details Save button. */
+  function saveApplicationDetailsNow() {
+    if (saveNotesTimerRef.current) {
+      clearTimeout(saveNotesTimerRef.current);
+      saveNotesTimerRef.current = null;
+    }
+    pendingNotesSaveRef.current = {
+      ...pendingNotesSaveRef.current,
+      meta: applicationMetaRef.current,
+      legalDocuments: storedFromEditor(legalDocumentRows),
+    };
+    flushNotesSave();
+  }
+
   function updateFirmScale(value: string) {
-    const next = { ...applicationMeta, firm_scale: value };
+    const next = { ...applicationMetaRef.current, firm_scale: value };
+    applicationMetaRef.current = next;
     setApplicationMeta(next);
     saveNotesToDb({ meta: next });
 
@@ -1490,16 +1527,17 @@ function ApplicationFormModal({
   useEffect(() => {
     const fromClient = client?.company_scale?.trim() ?? "";
     if (!fromClient) return;
-    if (applicationMeta.firm_scale.trim()) return;
-    const next = { ...applicationMeta, firm_scale: fromClient };
+    if (applicationMetaRef.current.firm_scale.trim()) return;
+    const next = { ...applicationMetaRef.current, firm_scale: fromClient };
+    applicationMetaRef.current = next;
     setApplicationMeta(next);
     saveNotesToDb({ meta: next });
-  }, [client?.company_scale, applicationMeta.firm_scale]);
+  }, [client?.company_scale, applicationMeta.firm_scale, saveNotesToDb]);
 
   useEffect(() => {
     if (productManualPrefilledRef.current) return;
     const fromIs = isCode?.product_manual_number?.trim() ?? "";
-    if (applicationMeta.product_manual_number.trim()) {
+    if (applicationMetaRef.current.product_manual_number.trim()) {
       productManualPrefilledRef.current = true;
       return;
     }
@@ -1699,12 +1737,17 @@ function ApplicationFormModal({
       pin_code: client?.pin_code,
       state: client?.state,
     });
+    const phoneDigits = (client?.phone ?? "").trim();
+    const phoneCode = (client?.phone_country_code ?? "").trim();
+    const mobile = phoneDigits
+      ? [phoneCode, phoneDigits].filter(Boolean).join(" ")
+      : "";
     return {
       companyName: client?.company_name ?? row.client_name,
       address,
       city: client?.city ?? "",
       contactPerson: client?.contact_person_name ?? "",
-      phone: client?.phone ?? "",
+      phone: mobile,
       email: client?.email ?? "",
       gstNumber: client?.gst_number ?? "",
       isNumber: isFullNumber !== "—" ? isFullNumber : "",
@@ -1714,6 +1757,16 @@ function ApplicationFormModal({
       bisBranchCountry: client?.country ?? "India",
       inspectionDate: row.target_date ?? "",
       applicationNumber: applicationMeta.application_number,
+    };
+  }
+
+  function buildSampleOfferLetterData() {
+    return {
+      ...buildDeclarationData(),
+      inspectionDate: resolveSampleOfferLetterDate(
+        row.application_stage,
+        applicationMeta.date_of_inspection,
+      ),
     };
   }
 
@@ -1749,6 +1802,7 @@ function ApplicationFormModal({
       applicationNumber: applicationMeta.application_number,
       dateOfApplication: applicationMeta.date_of_application,
       dateOfInspection: applicationMeta.date_of_inspection,
+      applicationStage: row.application_stage,
       markingClause: applicationMeta.marking_clause,
       packagingClause: applicationMeta.packaging_clause,
       weeklyOff: applicationMeta.weekly_off,
@@ -1920,6 +1974,7 @@ function ApplicationFormModal({
       contact_person_name: updated.contact_person_name,
       email: updated.email,
       phone: updated.phone,
+      phone_country_code: client?.phone_country_code ?? null,
       address: updated.address,
       city: updated.city,
       state: updated.state,
@@ -2286,7 +2341,7 @@ function ApplicationFormModal({
       {showOslSampleRequirements && (
         <OslSampleRequirementsModal
           variant="osl"
-          letterData={buildDeclarationData()}
+          letterData={buildSampleOfferLetterData()}
           topManagement={topManagement}
           isCodeNumber={isCode?.is_number ?? row.is_number}
           isCodeId={row.is_code_id}
@@ -2301,7 +2356,7 @@ function ApplicationFormModal({
       {showPiSampleRequirements && (
         <OslSampleRequirementsModal
           variant="pi"
-          letterData={buildDeclarationData()}
+          letterData={buildSampleOfferLetterData()}
           topManagement={topManagement}
           isCodeNumber={isCode?.is_number ?? row.is_number}
           isCodeId={row.is_code_id}
@@ -2395,6 +2450,14 @@ function ApplicationFormModal({
           licenseScopeFormat={licenseScopeFormat}
           licenseScopeRows={licenseScopeRows}
           rows={cmpf305Machinery}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveCmpf305Machinery}
           onClose={clearDoc}
         />
@@ -2417,6 +2480,14 @@ function ApplicationFormModal({
           licenseScopeFormat={licenseScopeFormat}
           licenseScopeRows={licenseScopeRows}
           document={cmpf306}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveCmpf306}
           onClose={clearDoc}
         />
@@ -2468,8 +2539,13 @@ function ApplicationFormModal({
           dateOfApplication={applicationMeta.date_of_application}
           dateOfInspection={applicationMeta.date_of_inspection}
           isCode={isCode}
-          companyScale={client?.company_scale ?? null}
+          companyScale={
+            applicationMeta.firm_scale.trim() || client?.company_scale || null
+          }
           topManagement={topManagement}
+          appDropdownOptions={appDropdownOptions}
+          onReloadDropdowns={reloadApplicationDropdowns}
+          onFirmScaleChange={updateFirmScale}
           onSave={saveCmpf310}
           onClose={clearDoc}
         />
@@ -2481,12 +2557,10 @@ function ApplicationFormModal({
           applicationNumber={applicationMeta.application_number}
           dateOfApplication={applicationMeta.date_of_application}
           dateOfInspection={applicationMeta.date_of_inspection}
-          productManualNumber={
-            applicationMeta.product_manual_number.trim() ||
-            isCode?.product_manual_number?.trim() ||
-            ""
-          }
+          productManualNumber={applicationMeta.product_manual_number}
+          isCodeProductManualNumber={isCode?.product_manual_number}
           topManagement={topManagement}
+          onUpdateMeta={updateMeta}
           onSave={saveCmpf311}
           onClose={clearDoc}
         />
@@ -2512,11 +2586,11 @@ function ApplicationFormModal({
           onUpdateMeta={updateMeta}
           appDropdownOptions={appDropdownOptions}
           onReloadDropdowns={reloadApplicationDropdowns}
-          isCodeProductManualNumber={isCode?.product_manual_number}
-          onFirmScaleChange={updateFirmScale}
           projectId={row.id}
           legalDocumentRows={legalDocumentRows}
           onLegalDocumentsChange={updateLegalDocuments}
+          onSave={saveApplicationDetailsNow}
+          saving={saving}
           onClose={clearDoc}
         />
       )}
@@ -2532,6 +2606,9 @@ function ApplicationFormModal({
           weeklyOff={applicationMeta.weekly_off}
           topManagement={topManagement}
           storedDocument={undertakingGeneralIss}
+          appDropdownOptions={appDropdownOptions}
+          onReloadDropdowns={reloadApplicationDropdowns}
+          onUpdateMeta={updateMeta}
           onSave={saveUndertakingGeneralIss}
           onClose={clearDoc}
         />
@@ -2594,6 +2671,14 @@ function ApplicationFormModal({
           dateOfApplication={applicationMeta.date_of_application}
           topManagement={topManagement}
           storedDocument={plantLayout}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={savePlantLayout}
           onClose={clearDoc}
         />
@@ -2606,6 +2691,14 @@ function ApplicationFormModal({
           dateOfApplication={applicationMeta.date_of_application}
           topManagement={topManagement}
           storedDocument={processFlowChart}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveProcessFlowChart}
           onClose={clearDoc}
         />

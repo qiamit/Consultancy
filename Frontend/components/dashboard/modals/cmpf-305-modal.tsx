@@ -30,6 +30,7 @@ import type { PrintSettings } from "@backend/modules/print/types";
 import {
   editorRowsFromStored,
   storedFromEditor,
+  documentHasContent as cmpf305HasContent,
   type Cmpf305MachineryStored,
 } from "@backend/modules/bis/cmpf-305";
 import { editorRowsFromImported, importCmpf305MachineryFromXlsx } from "@backend/modules/bis/cmpf-305-import";
@@ -39,8 +40,10 @@ import {
   type TopManagementStored,
 } from "@backend/modules/bis/top-management";
 import type { LicenseScopeFormat, StoredLicenseScopeRow } from "@backend/modules/bis/license-scope-format";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 export function Cmpf305Modal({
   letterData,
@@ -57,6 +60,8 @@ export function Cmpf305Modal({
   licenseScopeFormat,
   licenseScopeRows,
   rows: initialStored,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -77,6 +82,8 @@ export function Cmpf305Modal({
   licenseScopeFormat: LicenseScopeFormat;
   licenseScopeRows: StoredLicenseScopeRow[];
   rows: Cmpf305MachineryStored[];
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (rows: Cmpf305MachineryStored[]) => void;
   onClose: () => void;
 }) {
@@ -89,6 +96,7 @@ export function Cmpf305Modal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
@@ -296,6 +304,20 @@ export function Cmpf305Modal({
     window.alert(`Imported ${result.importedCount} plant & machinery row(s).`);
   }
 
+  function handleImportFromApplication(nextRows: Cmpf305MachineryStored[]): boolean {
+    const current = storedFromEditor(rows);
+    if (cmpf305HasContent(current)) {
+      const ok = window.confirm(
+        "Replace the current Plant & Machinery list with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setRows(editorRowsFromStored(nextRows));
+    setMachineryFormKey((key) => key + 1);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
@@ -342,6 +364,14 @@ export function Cmpf305Modal({
               className="hidden"
               onChange={(event) => void handleImportFile(event)}
             />
+            <button
+              type="button"
+              onClick={() => setShowImportDialog(true)}
+              title="Import Plant & Machinery from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Import
+            </button>
             <button
               type="button"
               onClick={() => setShowPrintPreview((prev) => !prev)}
@@ -479,6 +509,20 @@ export function Cmpf305Modal({
           firmRepDesignation={firmRepDesignation}
           rows={storedFromEditor(rows)}
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="cmpf_305"
+          title="Import Plant & Machinery"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "cmpf_305") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </>

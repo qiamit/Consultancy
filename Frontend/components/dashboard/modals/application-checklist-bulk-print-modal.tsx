@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   APPLICATION_CHECKLIST_PRINT_DOCS,
+  buildSelectedChecklistPrintDocs,
   buildSelectedChecklistPrintHtml,
   checklistPrintDocHasContent,
   downloadChecklistCombinedPdf,
@@ -32,17 +33,17 @@ export function ApplicationChecklistBulkPrintModal({
     [docs],
   );
 
+  const allIds = useMemo(() => docs.map((d) => d.id), [docs]);
+
   const [selected, setSelected] = useState<Set<ChecklistPrintDocId>>(
-    () => new Set(printableIds),
+    () => new Set(APPLICATION_CHECKLIST_PRINT_DOCS.map((d) => d.id)),
   );
   const [busy, setBusy] = useState<"print" | "pdf" | null>(null);
 
   const selectedCount = selected.size;
-  const allPrintableSelected =
-    printableIds.length > 0 && printableIds.every((id) => selected.has(id));
+  const allSelected = allIds.length > 0 && allIds.every((id) => selected.has(id));
 
-  function toggle(id: ChecklistPrintDocId, enabled: boolean) {
-    if (!enabled) return;
+  function toggle(id: ChecklistPrintDocId) {
     setSelected((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -51,8 +52,8 @@ export function ApplicationChecklistBulkPrintModal({
     });
   }
 
-  function selectAllPrintable() {
-    setSelected(new Set(printableIds));
+  function selectAll() {
+    setSelected(new Set(allIds));
   }
 
   function clearSelection() {
@@ -66,12 +67,13 @@ export function ApplicationChecklistBulkPrintModal({
       const ids = APPLICATION_CHECKLIST_PRINT_DOCS.map((d) => d.id).filter((id) =>
         selected.has(id),
       );
-      const html = await buildSelectedChecklistPrintHtml(ids, ctx);
       if (kind === "print") {
+        const html = await buildSelectedChecklistPrintHtml(ids, ctx);
         openChecklistCombinedPrint(html);
       } else {
+        const docs = await buildSelectedChecklistPrintDocs(ids, ctx);
         await downloadChecklistCombinedPdf({
-          html,
+          docs,
           companyName: ctx.letterData.companyName,
         });
       }
@@ -120,11 +122,11 @@ export function ApplicationChecklistBulkPrintModal({
           <div className="flex gap-2">
             <button
               type="button"
-              onClick={selectAllPrintable}
-              disabled={printableIds.length === 0 || allPrintableSelected}
+              onClick={selectAll}
+              disabled={allIds.length === 0 || allSelected}
               className="rounded px-2 py-1 text-[11px] font-medium text-sky-400 hover:bg-zinc-800 disabled:opacity-40"
             >
-              Select all with data
+              Select all
             </button>
             <button
               type="button"
@@ -138,27 +140,20 @@ export function ApplicationChecklistBulkPrintModal({
         </div>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5">
-          <ul className="grid grid-cols-1 gap-1 sm:grid-cols-2 xl:grid-cols-3">
+          <ul className="grid grid-cols-1 gap-px overflow-hidden rounded-xl border border-zinc-700 bg-zinc-700 sm:grid-cols-2 xl:grid-cols-3">
             {docs.map((doc, index) => {
               const checked = selected.has(doc.id);
               return (
-                <li key={doc.id}>
+                <li key={doc.id} className="bg-zinc-950">
                   <label
-                    className={`flex h-full cursor-pointer items-start gap-2.5 rounded-lg border border-transparent px-2.5 py-2.5 ${
-                      doc.hasContent
-                        ? "hover:border-zinc-700 hover:bg-zinc-900"
-                        : "cursor-not-allowed opacity-45"
+                    className={`flex h-full min-h-[3.25rem] cursor-pointer items-center gap-3 px-3 py-2.5 transition-colors ${
+                      checked
+                        ? "bg-sky-950/50 hover:bg-sky-950/70"
+                        : "hover:bg-zinc-900"
                     }`}
                   >
-                    <input
-                      type="checkbox"
-                      className="mt-0.5 h-3.5 w-3.5 shrink-0 rounded border-zinc-600 bg-zinc-900 text-sky-600 focus:ring-sky-500"
-                      checked={checked}
-                      disabled={!doc.hasContent}
-                      onChange={() => toggle(doc.id, doc.hasContent)}
-                    />
                     <span className="min-w-0 flex-1">
-                      <span className="block text-[12px] font-medium text-zinc-100">
+                      <span className="block text-[12px] font-medium leading-snug text-zinc-100">
                         <span className="mr-1.5 tabular-nums text-zinc-500">{index + 1}.</span>
                         {doc.label}
                       </span>
@@ -167,6 +162,20 @@ export function ApplicationChecklistBulkPrintModal({
                           No saved data yet
                         </span>
                       )}
+                    </span>
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border ${
+                        checked
+                          ? "border-sky-500 bg-sky-600/25"
+                          : "border-zinc-600 bg-zinc-900"
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="h-3.5 w-3.5 rounded border-zinc-500 bg-zinc-900 text-sky-600 focus:ring-sky-500 focus:ring-offset-0"
+                        checked={checked}
+                        onChange={() => toggle(doc.id)}
+                      />
                     </span>
                   </label>
                 </li>

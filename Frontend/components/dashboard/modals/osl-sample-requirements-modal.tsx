@@ -16,6 +16,7 @@ import {
 } from "@/components/dashboard/print/sync-print-preview-iframe";
 
 import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+import { buildOslSampleCourierLabelsHtml, buildOslSampleCourierQrText } from "@backend/modules/print/osl-sample-courier-labels";
 
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import { createClient } from "@backend/db/client/client";
@@ -39,6 +40,7 @@ import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-op
 import {
   createOslSampleRequirementRow,
   editorRowsFromStored,
+  rowHasContent,
   storedFromEditor,
   type OslSampleRequirementRow,
   type OslSampleRequirementStored,
@@ -69,12 +71,96 @@ type ClientPickerRow = {
   id: string;
   name: string;
   company_name: string | null;
+  address: string | null;
+  city: string | null;
+  pin_code: string | null;
+  state: string | null;
+  country: string | null;
 };
+
+const CLIENT_ADDRESS_SELECT =
+  "id, name, company_name, address, city, pin_code, state, country";
 
 function clientDisplayLabel(c: ClientPickerRow): string {
   const company = (c.company_name ?? "").trim();
   if (company) return company;
   return (c.name ?? "").trim() || "—";
+}
+
+/** Same shape as Client Master table: address + city + PIN + state + country. */
+function clientCompleteAddress(c: ClientPickerRow): string {
+  return [c.address, c.city, c.pin_code, c.state, c.country]
+    .map((p) => (p ?? "").trim())
+    .filter(Boolean)
+    .join(", ");
+}
+
+function normalizeNameKey(s: string): string {
+  return s.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+/** Looser key so "Pvt. Ltd." / "&" variants still match Client Master. */
+function softNameKey(s: string): string {
+  return normalizeNameKey(s)
+    .replace(/&/g, " and ")
+    .replace(/\b(pvt\.?|private)\b/g, " ")
+    .replace(/\b(ltd\.?|limited)\b/g, " ")
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function resolveClientAddress(
+  laboratoryName: string,
+  clients: ClientPickerRow[],
+): string {
+  const target = normalizeNameKey(laboratoryName);
+  const softTarget = softNameKey(laboratoryName);
+  if (!target) return "";
+
+  const scored = clients
+    .map((c) => {
+      const label = normalizeNameKey(clientDisplayLabel(c));
+      const company = normalizeNameKey(c.company_name ?? "");
+      const name = normalizeNameKey(c.name ?? "");
+      const softLabel = softNameKey(clientDisplayLabel(c));
+      const softCompany = softNameKey(c.company_name ?? "");
+      const softName = softNameKey(c.name ?? "");
+
+      let score = 0;
+      if (label === target || company === target || name === target) score = 3;
+      else if (
+        softTarget &&
+        (softLabel === softTarget ||
+          softCompany === softTarget ||
+          softName === softTarget)
+      ) {
+        score = 2;
+      } else if (
+        softTarget.length >= 8 &&
+        (softLabel.includes(softTarget) ||
+          softTarget.includes(softLabel) ||
+          softCompany.includes(softTarget) ||
+          softTarget.includes(softCompany))
+      ) {
+        score = 1;
+      }
+      return { c, score };
+    })
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  const match = scored[0]?.c;
+  return match ? clientCompleteAddress(match) : "";
+}
+
+async function fetchClientsForLabLookup(): Promise<ClientPickerRow[]> {
+  const supabase = createClient();
+  const { data } = await supabase
+    .from("clients")
+    .select(CLIENT_ADDRESS_SELECT)
+    .order("company_name", { ascending: true });
+  return (data ?? []) as ClientPickerRow[];
 }
 
 export function OslSampleRequirementsModal({
@@ -119,8 +205,15 @@ export function OslSampleRequirementsModal({
   const [clientRows, setClientRows] = useState<ClientPickerRow[]>([]);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [showCourierLabelsPreview, setShowCourierLabelsPreview] = useState(false);
+  const [courierLabelsHtml, setCourierLabelsHtml] = useState("");
+  const [courierLabelsLoading, setCourierLabelsLoading] = useState(false);
+  const [courierLabelsDownloading, setCourierLabelsDownloading] = useState(false);
+  const [courierIncludeBlv, setCourierIncludeBlv] = useState(true);
+  const [courierIncludeMobile, setCourierIncludeMobile] = useState(true);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const courierIframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,7 +221,7 @@ export function OslSampleRequirementsModal({
       const supabase = createClient();
       const { data } = await supabase
         .from("clients")
-        .select("id, name, company_name")
+        .select(CLIENT_ADDRESS_SELECT)
         .order("company_name", { ascending: true });
       if (!cancelled) setClientRows((data ?? []) as ClientPickerRow[]);
     })();
@@ -164,6 +257,16 @@ export function OslSampleRequirementsModal({
           companySettings.letterhead_show_address ?? prev.letterhead_show_address,
         letterhead_show_contact:
           companySettings.letterhead_show_contact ?? prev.letterhead_show_contact,
+        letterhead_show_mobile:
+          companySettings.letterhead_show_mobile ??
+          companySettings.letterhead_show_contact ??
+          prev.letterhead_show_mobile ??
+          prev.letterhead_show_contact,
+        letterhead_show_email:
+          companySettings.letterhead_show_email ??
+          companySettings.letterhead_show_contact ??
+          prev.letterhead_show_email ??
+          prev.letterhead_show_contact,
         letterhead_show_gst:
           companySettings.letterhead_show_gst ?? prev.letterhead_show_gst,
         primary_color: companySettings.primary_color || prev.primary_color,
@@ -201,7 +304,7 @@ export function OslSampleRequirementsModal({
     const supabase = createClient();
     const { data } = await supabase
       .from("clients")
-      .select("id, name, company_name")
+      .select(CLIENT_ADDRESS_SELECT)
       .order("company_name", { ascending: true });
     setClientRows((data ?? []) as ClientPickerRow[]);
   }, []);
@@ -266,6 +369,17 @@ export function OslSampleRequirementsModal({
       refreshPreview();
     }
   }, [showPrintPreview, refreshPreview]);
+
+  useEffect(() => {
+    if (!showCourierLabelsPreview || !courierLabelsHtml) return;
+    const iframe = courierIframeRef.current;
+    const doc = iframe?.contentDocument;
+    if (!iframe || !doc) return;
+    doc.open();
+    doc.write(courierLabelsHtml);
+    doc.close();
+    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+  }, [showCourierLabelsPreview, courierLabelsHtml]);
 
   const iframeSize = iframeSizeForOslPrintSettings(printSettings);
 
@@ -381,14 +495,193 @@ export function OslSampleRequirementsModal({
     }
   }
 
+  async function buildCourierLabelsDocumentHtml(opts?: {
+    includeBlv?: boolean;
+    includeMobile?: boolean;
+  }): Promise<string | null> {
+    const stored = storedFromEditor(rows).filter(rowHasContent);
+    if (stored.length === 0) return null;
+
+    const includeBlv = opts?.includeBlv ?? courierIncludeBlv;
+    const includeMobile = opts?.includeMobile ?? courierIncludeMobile;
+
+    // Fresh Client Master fetch so To · Laboratory gets complete address.
+    const labClients = await fetchClientsForLabLookup();
+
+    const QR = await import("qrcode");
+    const labelRows = await Promise.all(
+      stored.map(async (row) => {
+        const laboratory_address = resolveClientAddress(
+          row.laboratory_name,
+          labClients,
+        );
+        const payload = buildOslSampleCourierQrText(row, {
+          companyName: letterData.companyName,
+          companyAddress: letterData.address ?? "",
+          isNumber: letterData.isNumber ?? isCodeNumber ?? "",
+          isTitle: letterData.isTitle ?? "",
+          variant,
+          laboratory_address,
+        });
+        if (!payload.trim()) {
+          return { ...row, qr_data_url: "", laboratory_address };
+        }
+        try {
+          // High-res PNG + quiet zone so print/scan stays sharp (dense detail payload).
+          const qr_data_url = await QR.toDataURL(payload, {
+            width: 1024,
+            margin: 4,
+            errorCorrectionLevel: "M",
+            type: "image/png",
+            color: { dark: "#000000", light: "#ffffff" },
+          });
+          return { ...row, qr_data_url, laboratory_address };
+        } catch {
+          // Retry with lower ECC if payload is too dense for M.
+          try {
+            const qr_data_url = await QR.toDataURL(payload, {
+              width: 1024,
+              margin: 4,
+              errorCorrectionLevel: "L",
+              type: "image/png",
+              color: { dark: "#000000", light: "#ffffff" },
+            });
+            return { ...row, qr_data_url, laboratory_address };
+          } catch {
+            return { ...row, qr_data_url: "", laboratory_address };
+          }
+        }
+      }),
+    );
+
+    return buildOslSampleCourierLabelsHtml({
+      companyName: letterData.companyName,
+      companyAddress: letterData.address ?? "",
+      isNumber: letterData.isNumber ?? isCodeNumber ?? "",
+      isTitle: letterData.isTitle ?? "",
+      applicationNumber: letterData.applicationNumber ?? "",
+      variant,
+      rows: labelRows,
+      includeBlvCareOf: includeBlv,
+      includeLabMobile: includeMobile,
+    });
+  }
+
+  async function refreshCourierLabelsPreview(opts?: {
+    includeBlv?: boolean;
+    includeMobile?: boolean;
+  }) {
+    setCourierLabelsLoading(true);
+    try {
+      const html = await buildCourierLabelsDocumentHtml(opts);
+      if (html) setCourierLabelsHtml(html);
+    } catch (err) {
+      window.alert(
+        err instanceof Error ? err.message : "Unable to refresh sample labels preview.",
+      );
+    } finally {
+      setCourierLabelsLoading(false);
+    }
+  }
+
+  async function handleToggleCourierBlv() {
+    const next = !courierIncludeBlv;
+    setCourierIncludeBlv(next);
+    if (showCourierLabelsPreview) {
+      await refreshCourierLabelsPreview({
+        includeBlv: next,
+        includeMobile: courierIncludeMobile,
+      });
+    }
+  }
+
+  async function handleToggleCourierMobile() {
+    const next = !courierIncludeMobile;
+    setCourierIncludeMobile(next);
+    if (showCourierLabelsPreview) {
+      await refreshCourierLabelsPreview({
+        includeBlv: courierIncludeBlv,
+        includeMobile: next,
+      });
+    }
+  }
+
+  async function handleViewCourierLabels() {
+    if (showCourierLabelsPreview) {
+      setShowCourierLabelsPreview(false);
+      return;
+    }
+    if (courierLabelsLoading) return;
+
+    setCourierLabelsLoading(true);
+    try {
+      const html = await buildCourierLabelsDocumentHtml();
+      if (!html) {
+        window.alert("Add at least one sample before viewing courier labels.");
+        return;
+      }
+      setCourierLabelsHtml(html);
+      setShowPrintPreview(false);
+      setShowCourierLabelsPreview(true);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to open sample labels preview.");
+    } finally {
+      setCourierLabelsLoading(false);
+    }
+  }
+
+  async function handleDownloadCourierLabelsPdf() {
+    if (courierLabelsDownloading) return;
+
+    setCourierLabelsDownloading(true);
+    try {
+      const html = courierLabelsHtml.trim()
+        ? courierLabelsHtml
+        : await buildCourierLabelsDocumentHtml();
+      if (!html) {
+        window.alert("Add at least one sample before downloading courier labels.");
+        return;
+      }
+      if (!courierLabelsHtml.trim()) setCourierLabelsHtml(html);
+
+      await downloadPrintHtmlAsPdf({
+        html,
+        filename: `Sample_Courier_Labels_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        settings: {
+          paper_size: "A4",
+          orientation: "portrait",
+        },
+      });
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "Unable to download courier labels PDF.");
+    } finally {
+      setCourierLabelsDownloading(false);
+    }
+  }
+
+  function handlePrintCourierLabels() {
+    if (courierIframeRef.current?.contentWindow) {
+      courierIframeRef.current.contentWindow.focus();
+      courierIframeRef.current.contentWindow.print();
+      return;
+    }
+    if (!courierLabelsHtml.trim()) return;
+    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+    if (!printWindow) return;
+    printWindow.document.write(courierLabelsHtml);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
 
   return (
     <>
-      <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950">
-        <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 bg-zinc-900 px-4 py-3">
+      <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+        <div className="flex shrink-0 flex-col gap-2 border-b border-zinc-800 bg-zinc-900 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-2 sm:px-4 sm:py-3">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-white">{labels.modalTitle}</h2>
             <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isFullNumber} />
@@ -408,7 +701,10 @@ export function OslSampleRequirementsModal({
           </button>
           <button
             type="button"
-            onClick={() => setShowPrintPreview((prev) => !prev)}
+            onClick={() => {
+              setShowCourierLabelsPreview(false);
+              setShowPrintPreview((prev) => !prev);
+            }}
             className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
               showPrintPreview
                 ? "border-sky-500 bg-sky-600 text-white"
@@ -472,33 +768,48 @@ export function OslSampleRequirementsModal({
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
-          {!showPrintPreview && (
+          {!showPrintPreview && !showCourierLabelsPreview && (
             <div
               className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
                 settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
               }`}
             >
-              <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
-                <div className="flex flex-wrap items-center justify-end gap-3">
-                  <div className="flex shrink-0 flex-wrap items-center gap-2">
-                    <OslSampleAddButton theme="dark" onClick={openAddSampleForm} />
-                    {isCodeId ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowIsCodeView(true)}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
-                      >
-                        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
-                        View IS Files
-                      </button>
-                    ) : null}
-                  </div>
+              <div className="border-b border-zinc-800 px-3 py-2.5 sm:px-4 sm:py-3">
+                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <OslSampleAddButton theme="dark" onClick={openAddSampleForm} />
+                  <button
+                    type="button"
+                    onClick={() => void handleViewCourierLabels()}
+                    disabled={courierLabelsLoading}
+                    title="View printable sample tags with QR for courier attachment"
+                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${
+                      showCourierLabelsPreview
+                        ? "border-emerald-500 bg-emerald-600 text-white"
+                        : "border-emerald-600/50 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-950/70"
+                    }`}
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                    {courierLabelsLoading ? "Opening…" : "View Sample Labels"}
+                  </button>
+                  {isCodeId ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowIsCodeView(true)}
+                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                    >
+                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                      </svg>
+                      View IS Files
+                    </button>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-3 sm:p-4">
                 <OslSampleRequirementsTableEditor
                   theme="dark"
                   rows={rows}
@@ -506,6 +817,79 @@ export function OslSampleRequirementsModal({
                   onCopy={handleCopySample}
                   onRemove={handleRemoveSample}
                   focusSampleIndex={initialFocusSampleIndex}
+                />
+              </div>
+            </div>
+          )}
+
+          {showCourierLabelsPreview && (
+            <div
+              className={`flex min-w-0 flex-1 flex-col bg-zinc-600 ${
+                settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+              }`}
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-700/80 px-4 py-2">
+                <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
+                  Sample Labels Preview · Courier
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleCourierBlv()}
+                    disabled={courierLabelsLoading}
+                    title="Add BLV Testing Solutions C/o above laboratory name"
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${
+                      courierIncludeBlv
+                        ? "border-sky-500 bg-sky-600 text-white"
+                        : "border-zinc-500 bg-zinc-700 text-zinc-100 hover:bg-zinc-600"
+                    }`}
+                  >
+                    Add BLV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleToggleCourierMobile()}
+                    disabled={courierLabelsLoading}
+                    title="Add Mobile: +919009413040 under laboratory address"
+                    className={`rounded-lg border px-2.5 py-1 text-xs font-semibold disabled:opacity-50 ${
+                      courierIncludeMobile
+                        ? "border-sky-500 bg-sky-600 text-white"
+                        : "border-zinc-500 bg-zinc-700 text-zinc-100 hover:bg-zinc-600"
+                    }`}
+                  >
+                    Add Mobile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePrintCourierLabels}
+                    className="rounded-lg border border-zinc-500 bg-zinc-700 px-2.5 py-1 text-xs font-semibold text-zinc-100 hover:bg-zinc-600"
+                  >
+                    Print
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadCourierLabelsPdf()}
+                    disabled={courierLabelsDownloading}
+                    className="rounded-lg border border-emerald-500/60 bg-emerald-700 px-2.5 py-1 text-xs font-semibold text-white hover:bg-emerald-600 disabled:opacity-50"
+                  >
+                    {courierLabelsDownloading ? "Preparing PDF…" : "Download PDF"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowCourierLabelsPreview(false)}
+                    className="rounded-lg border border-zinc-500 bg-zinc-800 px-2.5 py-1 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+                  >
+                    Close Preview
+                  </button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+                <iframe
+                  ref={courierIframeRef}
+                  title="Sample courier labels preview"
+                  className="mx-auto max-w-full border-0 bg-white shadow-2xl"
+                  scrolling="no"
+                  style={printPreviewIframeStyle(210, 297)}
                 />
               </div>
             </div>

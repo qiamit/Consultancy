@@ -30,6 +30,7 @@ import {
   documentHasContent as cmpf311HasContent,
   type Cmpf311Stored,
 } from "@backend/modules/bis/cmpf-311";
+import { resolveSampleOfferLetterDate } from "@backend/modules/bis/sample-offer-letter-date";
 import {
   ftrReportHasContent,
   syncFactoryTestReportsFromSamples,
@@ -206,6 +207,12 @@ import {
 } from "@backend/modules/print/updated-scheme-of-inspection";
 
 import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+import {
+  mapPageSizeToPlaywrightFormat,
+  renderPdfViaPlaywright,
+  triggerPdfDownload,
+} from "@/lib/playwright-pdf-client";
+import { PDFDocument } from "pdf-lib";
 
 export const APPLICATION_CHECKLIST_PRINT_DOCS = [
   { id: "top_management", label: "Top Management Details" },
@@ -272,6 +279,7 @@ export type ChecklistBulkPrintContext = {
   applicationNumber: string;
   dateOfApplication: string;
   dateOfInspection: string;
+  applicationStage?: string | null;
   markingClause: string;
   packagingClause?: string;
   weeklyOff?: string[];
@@ -392,16 +400,51 @@ function extractHtmlParts(html: string): { styles: string; body: string } {
   return { styles, body };
 }
 
+/**
+ * Scope document CSS under a wrapper so fit-page rules like
+ * `html, body { overflow:hidden; max-height:297mm }` cannot clip the combined pack.
+ */
+function scopeDocumentCss(css: string, scopeSelector: string): string {
+  // Drop per-doc @page — one shared A4 @page is enough for the combined pack.
+  let cleaned = css.replace(/@page\b[^{]*\{(?:[^{}]|\{[^{}]*\})*\}/gi, "");
+
+  cleaned = cleaned.replace(/(^|})\s*([^@}{][^{]*)\{/g, (match, brace: string, selectors: string) => {
+    const scoped = selectors
+      .split(",")
+      .map((raw) => {
+        const sel = raw.trim();
+        if (!sel) return sel;
+        if (/^(html|body)$/i.test(sel)) return scopeSelector;
+        if (/^html\s*,\s*body$/i.test(sel) || /^body\s*,\s*html$/i.test(sel)) {
+          return scopeSelector;
+        }
+        if (/^html\s+body$/i.test(sel)) return scopeSelector;
+        if (/^(html|body)\b/i.test(sel)) {
+          return sel.replace(/^(html|body)\b/i, scopeSelector);
+        }
+        return `${scopeSelector} ${sel}`;
+      })
+      .filter(Boolean)
+      .join(", ");
+    return `${brace}\n${scoped} {`;
+  });
+
+  return cleaned;
+}
+
 function combineChecklistPrintHtml(docs: { id: ChecklistPrintDocId; html: string }[]): string {
   const styleChunks: string[] = [];
   const bodyChunks: string[] = [];
 
   docs.forEach((doc, index) => {
+    const scope = `.bulk-checklist-doc[data-doc-id="${doc.id}"]`;
     const { styles, body } = extractHtmlParts(doc.html);
-    if (styles.trim()) styleChunks.push(styles);
+    if (styles.trim()) styleChunks.push(scopeDocumentCss(styles, scope));
     const pageBreak = index === 0 ? "auto" : "always";
     bodyChunks.push(
-      `<div class="bulk-checklist-doc" data-doc-id="${doc.id}" style="page-break-before:${pageBreak}">${body}</div>`,
+      `<div class="bulk-checklist-doc" data-doc-id="${doc.id}" style="page-break-before:${pageBreak};break-before:${
+        index === 0 ? "auto" : "page"
+      }">${body}</div>`,
     );
   });
 
@@ -412,11 +455,35 @@ function combineChecklistPrintHtml(docs: { id: ChecklistPrintDocId; html: string
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Application Checklist Documents</title>
 <style>
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #fff;
+  overflow: visible !important;
+  max-height: none !important;
+  height: auto !important;
+}
+@page { size: A4 portrait; margin: 0; }
+.bulk-checklist-doc {
+  width: 100%;
+  box-sizing: border-box;
+  page-break-inside: auto;
+}
+.bulk-checklist-doc + .bulk-checklist-doc {
+  page-break-before: always;
+  break-before: page;
+}
 ${styleChunks.join("\n")}
-.bulk-checklist-doc { width: 100%; }
 @media print {
-  .bulk-checklist-doc { page-break-before: always; break-before: page; }
-  .bulk-checklist-doc:first-of-type { page-break-before: auto; break-before: auto; }
+  html, body {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+  .bulk-checklist-doc + .bulk-checklist-doc {
+    page-break-before: always;
+    break-before: page;
+  }
 }
 </style>
 </head>
@@ -596,6 +663,10 @@ function buildSingleChecklistDocHtml(
       const data = withDocumentSignatureImage(
         {
           ...letter,
+          inspectionDate: resolveSampleOfferLetterDate(
+            ctx.applicationStage,
+            ctx.dateOfInspection,
+          ),
           applicationNumber,
           signatoryName,
           signatoryDesignation,
@@ -616,6 +687,10 @@ function buildSingleChecklistDocHtml(
       const data = withDocumentSignatureImage(
         {
           ...letter,
+          inspectionDate: resolveSampleOfferLetterDate(
+            ctx.applicationStage,
+            ctx.dateOfInspection,
+          ),
           applicationNumber,
           signatoryName,
           signatoryDesignation,
@@ -881,6 +956,14 @@ export async function buildSelectedChecklistPrintHtml(
   ids: ChecklistPrintDocId[],
   ctx: ChecklistBulkPrintContext,
 ): Promise<string> {
+  const docs = await buildSelectedChecklistPrintDocs(ids, ctx);
+  return combineChecklistPrintHtml(docs);
+}
+
+export async function buildSelectedChecklistPrintDocs(
+  ids: ChecklistPrintDocId[],
+  ctx: ChecklistBulkPrintContext,
+): Promise<{ id: ChecklistPrintDocId; html: string }[]> {
   if (!ids.length) {
     throw new Error("No checklist documents selected for print.");
   }
@@ -900,12 +983,10 @@ export async function buildSelectedChecklistPrintHtml(
     logo_url: null,
   };
 
-  const docs = selectedWithContent.map((id) => ({
+  return selectedWithContent.map((id) => ({
     id,
     html: buildSingleChecklistDocHtml(id, ctx, printAssets),
   }));
-
-  return combineChecklistPrintHtml(docs);
 }
 
 export function openChecklistCombinedPrint(html: string): void {
@@ -919,13 +1000,60 @@ export function openChecklistCombinedPrint(html: string): void {
   printWindow.print();
 }
 
+async function mergePdfBlobs(blobs: Blob[]): Promise<Blob> {
+  const merged = await PDFDocument.create();
+  for (const blob of blobs) {
+    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const pages = await merged.copyPages(doc, doc.getPageIndices());
+    for (const page of pages) merged.addPage(page);
+  }
+  const out = await merged.save();
+  // Copy into a fresh ArrayBuffer-backed Uint8Array for Blob Part typing.
+  const copy = new Uint8Array(out.byteLength);
+  copy.set(out);
+  return new Blob([copy], { type: "application/pdf" });
+}
+
+function pdfSettingsFromHtml(html: string): Pick<PrintSettings, "paper_size" | "orientation"> {
+  const landscape = /@page\s*\{[^}]*landscape/i.test(html) || /orientation:\s*landscape/i.test(html);
+  return {
+    paper_size: "A4",
+    orientation: landscape ? "landscape" : "portrait",
+  };
+}
+
 export async function downloadChecklistCombinedPdf(opts: {
-  html: string;
+  html?: string;
+  docs?: { id: ChecklistPrintDocId; html: string }[];
   companyName: string;
 }): Promise<void> {
+  const filename = `Application_Checklist_${safePdfFilenamePart(opts.companyName)}.pdf`;
+
+  // Preferred path: render each document alone (keeps fit-page CSS intact), then merge.
+  if (opts.docs && opts.docs.length > 0) {
+    const blobs: Blob[] = [];
+    for (const doc of opts.docs) {
+      const settings = pdfSettingsFromHtml(doc.html);
+      const blob = await renderPdfViaPlaywright({
+        html: doc.html,
+        filename: `${doc.id}.pdf`,
+        format: mapPageSizeToPlaywrightFormat(settings.paper_size),
+        landscape: settings.orientation === "landscape",
+        margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+      });
+      blobs.push(blob);
+    }
+    const merged = await mergePdfBlobs(blobs);
+    triggerPdfDownload(merged, filename);
+    return;
+  }
+
+  const html = (opts.html ?? "").trim();
+  if (!html) throw new Error("Nothing to export as PDF.");
   await downloadPrintHtmlAsPdf({
-    html: opts.html,
-    filename: `Application_Checklist_${safePdfFilenamePart(opts.companyName)}.pdf`,
+    html,
+    filename,
     settings: {
       paper_size: "A4",
       orientation: "portrait",

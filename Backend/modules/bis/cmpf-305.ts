@@ -46,6 +46,10 @@ export function rowHasContent(row: Cmpf305MachineryStored): boolean {
   );
 }
 
+export function documentHasContent(rows: Cmpf305MachineryStored[]): boolean {
+  return rows.some(rowHasContent);
+}
+
 export function parseCmpf305Machinery(raw: unknown): Cmpf305MachineryStored[] {
   if (!Array.isArray(raw)) return [];
   return raw

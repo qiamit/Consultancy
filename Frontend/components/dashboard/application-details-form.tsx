@@ -17,9 +17,6 @@ import {
   DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_DESIGNATION,
   DROPDOWN_KEY_BIS_APPLICATION_INSPECTION_OFFICER_NAME,
   DROPDOWN_KEY_BIS_APPLICATION_NATURE_OF_INSPECTION,
-  DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE,
-  DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE,
-  DROPDOWN_KEY_CLIENT_COMPANY_SCALE,
 } from "@backend/shared/dropdown-keys";
 import {
   type LegalDocumentRow,
@@ -32,7 +29,7 @@ const APP_META_FIELD_LABEL =
 const APP_META_INPUT_SHELL =
   "flex overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950";
 
-function ApplicationMetaDropdown({
+export function ApplicationMetaDropdown({
   label,
   optionKey,
   dialogTitle,
@@ -69,8 +66,8 @@ function ApplicationMetaDropdown({
         selectedValue={value}
         onClearSelection={() => onChange("")}
         hideLabel
-        listZIndexClass="z-[60]"
-        overlayZIndexClass="z-[70]"
+        listZIndexClass="z-[510]"
+        overlayZIndexClass="z-[520]"
         inputRowShellClassName={APP_META_INPUT_SHELL}
         onOptionAdded={onOptionsChanged}
         onOptionDeleted={onOptionsChanged}
@@ -80,7 +77,7 @@ function ApplicationMetaDropdown({
   );
 }
 
-function ApplicationWeeklyOffSelector({
+export function ApplicationWeeklyOffSelector({
   value,
   onChange,
 }: {
@@ -173,25 +170,27 @@ export function ApplicationDetailsForm({
   onUpdateMeta,
   appDropdownOptions,
   onReloadDropdowns,
-  isCodeProductManualNumber,
-  onFirmScaleChange,
   projectId,
   legalDocumentRows,
   onLegalDocumentsChange,
+  onSave,
+  saving = false,
+  savedFlash = false,
 }: {
   applicationMeta: ApplicationMeta;
   onUpdateMeta: (patch: Partial<ApplicationMeta>) => void;
   appDropdownOptions: Record<string, AppDropdownOptionRow[]>;
   onReloadDropdowns: () => void;
-  isCodeProductManualNumber?: string | null;
-  onFirmScaleChange: (value: string) => void;
   projectId: string;
   legalDocumentRows: LegalDocumentRow[];
   onLegalDocumentsChange: (rows: LegalDocumentRow[]) => void;
+  onSave?: () => void;
+  saving?: boolean;
+  savedFlash?: boolean;
 }) {
   return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
+    <div className="@container w-full min-w-0 space-y-5">
+      <div className="grid grid-cols-1 gap-3 @[420px]:grid-cols-2 @[720px]:grid-cols-3 @[980px]:grid-cols-4 @[420px]:gap-4">
         <div className="min-w-0">
           <label htmlFor="application_procedure" className={APP_META_FIELD_LABEL}>
             Application Procedure
@@ -216,7 +215,7 @@ export function ApplicationDetailsForm({
             Application Number
           </label>
           <div className={APP_META_INPUT_SHELL}>
-            <span className="inline-flex shrink-0 items-center border-r border-zinc-200 bg-zinc-50 px-3 py-2 text-sm font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
+            <span className="inline-flex shrink-0 items-center border-r border-zinc-200 bg-zinc-50 px-2.5 py-2 text-xs font-semibold text-zinc-600 sm:px-3 sm:text-sm dark:border-zinc-700 dark:bg-zinc-900/80 dark:text-zinc-300">
               {APPLICATION_NUMBER_PREFIX}
             </span>
             <input
@@ -255,32 +254,6 @@ export function ApplicationDetailsForm({
           onOptionsChanged={onReloadDropdowns}
         />
 
-        <ApplicationMetaDropdown
-          label="Marking Clause"
-          optionKey={DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE}
-          dialogTitle="Manage Marking Clauses"
-          addPlaceholder="Add marking clause…"
-          manageAriaLabel="Add or remove marking clauses"
-          value={applicationMeta.marking_clause}
-          onChange={(v) => onUpdateMeta({ marking_clause: v })}
-          options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_MARKING_CLAUSE] ?? []}
-          onOptionsChanged={onReloadDropdowns}
-        />
-
-        <ApplicationMetaDropdown
-          label="Packaging Clause"
-          optionKey={DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE}
-          dialogTitle="Manage Packaging Clauses"
-          addPlaceholder="Add packaging clause…"
-          manageAriaLabel="Add or remove packaging clauses"
-          value={applicationMeta.packaging_clause}
-          onChange={(v) => onUpdateMeta({ packaging_clause: v })}
-          options={appDropdownOptions[DROPDOWN_KEY_BIS_APPLICATION_PACKAGING_CLAUSE] ?? []}
-          onOptionsChanged={onReloadDropdowns}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <ApplicationMetaDropdown
           label="Name of Branch Head"
           optionKey={DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_NAME}
@@ -354,9 +327,7 @@ export function ApplicationDetailsForm({
           }
           onOptionsChanged={onReloadDropdowns}
         />
-      </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6">
         <ApplicationMetaDropdown
           label="Nature of Inspection"
           optionKey={DROPDOWN_KEY_BIS_APPLICATION_NATURE_OF_INSPECTION}
@@ -381,43 +352,6 @@ export function ApplicationDetailsForm({
             className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
           />
         </div>
-
-        <div className="min-w-0">
-          <ApplicationWeeklyOffSelector
-            value={applicationMeta.weekly_off}
-            onChange={(weekly_off) => onUpdateMeta({ weekly_off })}
-          />
-        </div>
-
-        <ApplicationMetaDropdown
-          label="Firm Scale"
-          optionKey={DROPDOWN_KEY_CLIENT_COMPANY_SCALE}
-          dialogTitle="Company Scales"
-          addPlaceholder="New scale name…"
-          manageAriaLabel="Add or remove company scales"
-          value={applicationMeta.firm_scale}
-          onChange={onFirmScaleChange}
-          options={appDropdownOptions[DROPDOWN_KEY_CLIENT_COMPANY_SCALE] ?? []}
-          onOptionsChanged={onReloadDropdowns}
-        />
-
-        <div className="min-w-0">
-          <label htmlFor="product_manual_number" className={APP_META_FIELD_LABEL}>
-            Product Manual Number
-          </label>
-          <input
-            id="product_manual_number"
-            type="text"
-            value={applicationMeta.product_manual_number}
-            onChange={(e) => onUpdateMeta({ product_manual_number: e.target.value })}
-            placeholder={
-              isCodeProductManualNumber?.trim()
-                ? `IS Code default: ${isCodeProductManualNumber.trim()}`
-                : "From IS Code Master…"
-            }
-            className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none placeholder:text-zinc-400 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:placeholder:text-zinc-600"
-          />
-        </div>
       </div>
 
       <LegalDocumentsTableEditor
@@ -425,6 +359,27 @@ export function ApplicationDetailsForm({
         rows={legalDocumentRows}
         onChange={onLegalDocumentsChange}
       />
+
+      {onSave ? (
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+          <p className="mr-auto text-xs text-zinc-500 dark:text-zinc-400">
+            Changes also auto-save while you type.
+          </p>
+          {savedFlash ? (
+            <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+              Saved ✓
+            </span>
+          ) : null}
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving}
+            className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+          >
+            {saving ? "Saving…" : "Save"}
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

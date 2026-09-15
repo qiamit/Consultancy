@@ -210,7 +210,7 @@ export function ModalToolbarActions({
       : null;
 
   return (
-    <div ref={hostRef} className="ml-auto flex min-w-0 shrink-0 items-center gap-2">
+    <div ref={hostRef} className="flex min-w-0 shrink-0 items-center gap-2 sm:ml-auto">
       <div
         ref={measureRef}
         className="pointer-events-none absolute -z-10 flex items-center gap-2 opacity-0"

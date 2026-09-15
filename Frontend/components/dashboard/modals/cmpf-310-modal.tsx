@@ -31,6 +31,9 @@ import {
 import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ApplicationMetaDropdown } from "@/components/dashboard/application-details-form";
+import { DROPDOWN_KEY_CLIENT_COMPANY_SCALE } from "@backend/shared/dropdown-keys";
+import { type AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 
 const CMPF310_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with CMPF 310 — Acceptance of Rate of Marking Fee:
@@ -55,6 +58,9 @@ export function Cmpf310Modal({
   isCode,
   companyScale,
   topManagement,
+  appDropdownOptions,
+  onReloadDropdowns,
+  onFirmScaleChange,
   onSave,
   onClose,
 }: {
@@ -68,6 +74,9 @@ export function Cmpf310Modal({
   isCode: IsCodeMarkingFeeSource | null;
   companyScale: string | null;
   topManagement: TopManagementStored[];
+  appDropdownOptions: Record<string, AppDropdownOptionRow[]>;
+  onReloadDropdowns: () => void;
+  onFirmScaleChange: (value: string) => void;
   onSave: (document: Cmpf310Stored) => void;
   onClose: () => void;
 }) {
@@ -87,7 +96,7 @@ export function Cmpf310Modal({
   );
   const [printAssets, setPrintAssets] = useState<Cmpf310PrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
-  const [showPrintPreview, setShowPrintPreview] = useState(true);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
@@ -333,6 +342,19 @@ export function Cmpf310Modal({
             }`}
           >
             <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+              <div className="mb-4 max-w-md">
+                <ApplicationMetaDropdown
+                  label="Firm Scale"
+                  optionKey={DROPDOWN_KEY_CLIENT_COMPANY_SCALE}
+                  dialogTitle="Company Scales"
+                  addPlaceholder="New scale name…"
+                  manageAriaLabel="Add or remove company scales"
+                  value={companyScale ?? ""}
+                  onChange={onFirmScaleChange}
+                  options={appDropdownOptions[DROPDOWN_KEY_CLIENT_COMPANY_SCALE] ?? []}
+                  onOptionsChanged={onReloadDropdowns}
+                />
+              </div>
               <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                 Marking Fee Details
               </p>
@@ -359,7 +381,7 @@ export function Cmpf310Modal({
                 ))}
               </dl>
               <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-                Rates are loaded from the linked IS Code and company scale. Use{" "}
+                Edit Firm Scale above; rates load from the linked IS Code and selected scale. Use{" "}
                 <strong className="text-zinc-300">Print Preview</strong> to view the full CMPF
                 310 letter.
               </p>

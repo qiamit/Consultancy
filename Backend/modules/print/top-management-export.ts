@@ -269,14 +269,16 @@ function buildLetterheadContactLine(
   settings: PrintSettings,
 ): string {
   const parts: string[] = [];
+  const showMobile = settings.letterhead_show_mobile ?? settings.letterhead_show_contact;
+  const showEmail = settings.letterhead_show_email ?? settings.letterhead_show_contact;
   if (settings.letterhead_show_gst && company.gst_number.trim()) {
     parts.push(`GST: ${company.gst_number.trim()}`);
   }
-  if (settings.letterhead_show_contact && company.email.trim()) {
-    parts.push(`Email: ${company.email.trim()}`);
+  if (showMobile) {
+    parts.push(`Mobile: ${company.phone.trim() || "—"}`);
   }
-  if (settings.letterhead_show_contact && company.phone.trim()) {
-    parts.push(`Tel: ${company.phone.trim()}`);
+  if (showEmail) {
+    parts.push(`Email: ${company.email.trim() || "—"}`);
   }
   return parts.join("  |  ");
 }
@@ -299,8 +301,9 @@ async function buildLetterheadBlocks(
   const company = buildTopManagementCompany(data, assets);
   const color = primaryColorHex(letterheadSettings);
   const width = contentWidthTwip(letterheadSettings);
-  const addressLine =
-    letterheadSettings.letterhead_show_address ? companyAddressLine(company) : "";
+  const addressLine = letterheadSettings.letterhead_show_address
+    ? companyAddressLine(company)
+    : "";
   const contactLine = buildLetterheadContactLine(company, letterheadSettings);
   const tagline = letterheadSettings.letterhead_tagline.trim();
 

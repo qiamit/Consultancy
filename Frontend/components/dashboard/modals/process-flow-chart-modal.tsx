@@ -27,17 +27,24 @@ import {
 import { downloadProcessFlowChartWord } from "@backend/modules/print/process-flow-chart-export";
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
-import { type ProcessFlowChartStored, defaultProcessFlowChartDocument } from "@backend/modules/bis/process-flow-chart";
+import {
+  type ProcessFlowChartStored,
+  defaultProcessFlowChartDocument,
+  documentHasContent,
+} from "@backend/modules/bis/process-flow-chart";
 import {
   parseProcessFlowChartSettings,
   type ProcessFlowChartSettings,
 } from "@backend/modules/bis/process-flow-chart-settings";
-import {resolvePrimaryTopManagementPerson,
+import {
+  resolvePrimaryTopManagementPerson,
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
+import type { ProcessFlowImportExclude } from "@backend/actions/process-flow-chart-import";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ProcessFlowChartImportDialog } from "@/components/dashboard/modals/process-flow-chart-import-dialog";
 
 const PROCESS_FLOW_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Process Flow Chart documents submitted with BIS licence applications:
@@ -60,6 +67,8 @@ export function ProcessFlowChartModal({
   dateOfApplication,
   topManagement,
   storedDocument,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -71,6 +80,10 @@ export function ProcessFlowChartModal({
   dateOfApplication: string;
   topManagement: TopManagementStored[];
   storedDocument: ProcessFlowChartStored;
+  /** Current party — pre-selected in Import Chart dialog. */
+  clientId?: string | null;
+  /** Skip the open application/license in the import list. */
+  excludeImportSource?: ProcessFlowImportExclude | null;
   onSave: (document: ProcessFlowChartStored) => void;
   onClose: () => void;
 }) {
@@ -93,9 +106,11 @@ export function ProcessFlowChartModal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | "chart" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
+  const [editorRevision, setEditorRevision] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const canvasEditorRef = useRef<ProcessFlowChartEditorHandle>(null);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
@@ -291,6 +306,32 @@ export function ProcessFlowChartModal({
     imageUploadInputRef.current?.click();
   }
 
+  function handleOpenImportDialog() {
+    setShowImportDialog(true);
+  }
+
+  function handleImportChart(nextDocument: ProcessFlowChartStored): boolean {
+    if (documentHasContent(document)) {
+      const ok = window.confirm(
+        "Replace the current Process Flow Chart with the imported chart?",
+      );
+      if (!ok) return false;
+    }
+    setDocument({
+      ...nextDocument,
+      chart_settings: parseProcessFlowChartSettings({
+        ...(nextDocument.chart_settings ?? defaultProcessFlowChartDocument().chart_settings),
+        print_chart_size:
+          nextDocument.chart_settings?.print_chart_size ??
+          document.chart_settings?.print_chart_size ??
+          "fit_page",
+      }),
+    });
+    setEditorRevision((n) => n + 1);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function handleImageFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -394,6 +435,14 @@ export function ProcessFlowChartModal({
             />
             <button
               type="button"
+              onClick={handleOpenImportDialog}
+              title="Import Chart from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Import Chart
+            </button>
+            <button
+              type="button"
               onClick={() => toggleSettingsPanel("chart")}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                 settingsPanel === "chart"
@@ -444,8 +493,9 @@ export function ProcessFlowChartModal({
             >
               <div className="min-h-0 flex-1 flex-col p-4 sm:p-6 flex">
                 <ProcessFlowChartEditor
+                  key={`${applicationNumber}-${editorRevision}`}
                   ref={canvasEditorRef}
-                  storeKey={applicationNumber}
+                  storeKey={`${applicationNumber}-${editorRevision}`}
                   initialOutlineItems={
                     document.outline_items ?? defaultProcessFlowChartDocument().outline_items
                   }
@@ -515,6 +565,15 @@ export function ProcessFlowChartModal({
           accentColor="amber"
           overlayZIndexClass="z-[500]"
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ProcessFlowChartImportDialog
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(nextDocument) => handleImportChart(nextDocument)}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </>

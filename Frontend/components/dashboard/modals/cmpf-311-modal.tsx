@@ -30,6 +30,7 @@ import {
 } from "@backend/modules/bis/top-management";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import type { ApplicationMeta } from "@backend/modules/bis/application-checklist-notes";
 
 const CMPF311_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with CMPF 311 — Acceptance of Scheme of Inspection & Testing (SIT):
@@ -51,7 +52,9 @@ export function Cmpf311Modal({
   dateOfApplication,
   dateOfInspection,
   productManualNumber,
+  isCodeProductManualNumber,
   topManagement,
+  onUpdateMeta,
   onSave,
   onClose,
 }: {
@@ -63,10 +66,15 @@ export function Cmpf311Modal({
   dateOfApplication: string;
   dateOfInspection: string;
   productManualNumber: string;
+  isCodeProductManualNumber?: string | null;
   topManagement: TopManagementStored[];
+  onUpdateMeta: (patch: Partial<ApplicationMeta>) => void;
   onSave: (document: Cmpf311Stored) => void;
   onClose: () => void;
 }) {
+  const resolvedProductManualNumber =
+    productManualNumber.trim() || isCodeProductManualNumber?.trim() || "";
+
   const document = useMemo(
     () =>
       resolveCmpf311Document({
@@ -76,7 +84,7 @@ export function Cmpf311Modal({
         topManagement,
         applicationNumber,
         dateOfApplication,
-        productManualNumber,
+        productManualNumber: resolvedProductManualNumber,
       }),
     [
       letterData.isNumber,
@@ -85,7 +93,7 @@ export function Cmpf311Modal({
       topManagement,
       applicationNumber,
       dateOfApplication,
-      productManualNumber,
+      resolvedProductManualNumber,
     ],
   );
 
@@ -351,6 +359,26 @@ export function Cmpf311Modal({
               }`}
             >
               <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
+                <div className="mb-4 max-w-md">
+                  <label
+                    htmlFor="cmpf311_product_manual_number"
+                    className="mb-1 block text-sm font-medium leading-tight text-zinc-400"
+                  >
+                    Product Manual Number
+                  </label>
+                  <input
+                    id="cmpf311_product_manual_number"
+                    type="text"
+                    value={productManualNumber}
+                    onChange={(e) => onUpdateMeta({ product_manual_number: e.target.value })}
+                    placeholder={
+                      isCodeProductManualNumber?.trim()
+                        ? `IS Code default: ${isCodeProductManualNumber.trim()}`
+                        : "From IS Code Master…"
+                    }
+                    className="block w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 shadow-sm outline-none placeholder:text-zinc-600 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30"
+                  />
+                </div>
                 <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                   Document Details
                 </p>
@@ -375,9 +403,9 @@ export function Cmpf311Modal({
                   ))}
                 </dl>
                 <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-                  Details are loaded from the application and IS Code. Use{" "}
-                  <strong className="text-zinc-300">Print Preview</strong> to view the full CMPF
-                  311 letter.
+                  Edit Product Manual Number above; other details load from the application and IS
+                  Code. Use <strong className="text-zinc-300">Print Preview</strong> to view the
+                  full CMPF 311 letter.
                 </p>
               </div>
             </div>

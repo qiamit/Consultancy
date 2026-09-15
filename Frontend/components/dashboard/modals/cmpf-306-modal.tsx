@@ -30,7 +30,7 @@ import type { PrintSettings } from "@backend/modules/print/types";
 import {
   editorRowsFromStored,
   storedFromEditor,
-  type Cmpf306EquipmentRow,
+  documentHasContent as cmpf306HasContent,
   type Cmpf306Stored,
 } from "@backend/modules/bis/cmpf-306";
 import { editorRowsFromImported, importCmpf306EquipmentFromXlsx } from "@backend/modules/bis/cmpf-306-import";
@@ -41,8 +41,10 @@ import {
 } from "@backend/modules/bis/top-management";
 import type { LicenseScopeFormat } from "@backend/modules/bis/license-scope-format";
 import type { StoredLicenseScopeRow } from "@backend/modules/bis/license-scope-format";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 export function Cmpf306Modal({
   projectId,
@@ -60,6 +62,8 @@ export function Cmpf306Modal({
   licenseScopeFormat,
   licenseScopeRows,
   document: initialDocument,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -81,6 +85,8 @@ export function Cmpf306Modal({
   licenseScopeFormat: LicenseScopeFormat;
   licenseScopeRows: StoredLicenseScopeRow[];
   document: Cmpf306Stored;
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (document: Cmpf306Stored) => void;
   onClose: () => void;
 }) {
@@ -90,7 +96,9 @@ export function Cmpf306Modal({
   );
   const [consentLetters, setConsentLetters] = useState(() => initialDocument.consent_letters);
   const [equipmentFormKey, setEquipmentFormKey] = useState(0);
-  const separateSheetEnclosed = initialDocument.separate_sheet_enclosed;
+  const [separateSheetEnclosed, setSeparateSheetEnclosed] = useState(
+    () => initialDocument.separate_sheet_enclosed,
+  );
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCmpf306PrintSettings(),
   );
@@ -98,6 +106,7 @@ export function Cmpf306Modal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
@@ -318,6 +327,26 @@ export function Cmpf306Modal({
     window.alert(`Imported ${result.importedCount} test equipment row(s).`);
   }
 
+  function handleImportFromApplication(nextDocument: Cmpf306Stored): boolean {
+    const current = storedFromEditor(rows, separateSheetEnclosed, {
+      calibrationCertificates,
+      consentLetters,
+    });
+    if (cmpf306HasContent(current)) {
+      const ok = window.confirm(
+        "Replace the current Testing Equipment list with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setRows(editorRowsFromStored(nextDocument));
+    setCalibrationCertificates(nextDocument.calibration_certificates);
+    setConsentLetters(nextDocument.consent_letters);
+    setSeparateSheetEnclosed(nextDocument.separate_sheet_enclosed);
+    setEquipmentFormKey((key) => key + 1);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
@@ -364,6 +393,14 @@ export function Cmpf306Modal({
               className="hidden"
               onChange={(event) => void handleImportFile(event)}
             />
+            <button
+              type="button"
+              onClick={() => setShowImportDialog(true)}
+              title="Import Testing Equipment from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Import
+            </button>
             <button
               type="button"
               onClick={() => setShowPrintPreview((prev) => !prev)}
@@ -506,6 +543,20 @@ export function Cmpf306Modal({
           firmRepDesignation={firmRepDesignation}
           equipment={previewDocument.equipment}
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="cmpf_306"
+          title="Import Testing Equipment"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "cmpf_306") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </>

@@ -44,9 +44,17 @@ export function buildLetterheadHtml(c: PrintCompanyInfo, s: PrintSettings): stri
     : `<div style="width:72px;height:72px;background:${esc(s.primary_color)};border-radius:8px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:26px;font-weight:800;">${esc((c.name || "C").charAt(0).toUpperCase())}</div>`;
 
   const contactItems: string[] = [];
-  if (s.letterhead_show_gst && c.gst_number) contactItems.push(`<b>GST:</b> ${esc(c.gst_number)}`);
-  if (s.letterhead_show_contact && c.email) contactItems.push(`<b>Email:</b> ${esc(c.email)}`);
-  if (s.letterhead_show_contact && c.phone) contactItems.push(`<b>Tel:</b> ${esc(c.phone)}`);
+  const showMobile = s.letterhead_show_mobile ?? s.letterhead_show_contact;
+  const showEmail = s.letterhead_show_email ?? s.letterhead_show_contact;
+  if (s.letterhead_show_gst && c.gst_number?.trim()) {
+    contactItems.push(`<b>GST:</b> ${esc(c.gst_number.trim())}`);
+  }
+  if (showMobile) {
+    contactItems.push(`<b>Mobile:</b> ${esc(c.phone?.trim() || "—")}`);
+  }
+  if (showEmail) {
+    contactItems.push(`<b>Email:</b> ${esc(c.email?.trim() || "—")}`);
+  }
 
   const addressParts = [c.address, c.city, c.state, c.pin_code, c.country].filter(Boolean);
   const addressLine = addressParts.join(", ");

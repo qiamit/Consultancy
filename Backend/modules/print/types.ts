@@ -13,6 +13,10 @@ export interface PrintSettings {
   letterhead_tagline: string;
   letterhead_show_address: boolean;
   letterhead_show_contact: boolean;
+  /** When set, overrides letterhead_show_contact for Mobile only. */
+  letterhead_show_mobile?: boolean;
+  /** When set, overrides letterhead_show_contact for Email only. */
+  letterhead_show_email?: boolean;
   letterhead_show_gst: boolean;
 
   footer_left: string;
@@ -62,6 +66,8 @@ export const DEFAULT_PRINT_SETTINGS: PrintSettings = {
   letterhead_tagline: "",
   letterhead_show_address: true,
   letterhead_show_contact: true,
+  letterhead_show_mobile: true,
+  letterhead_show_email: true,
   letterhead_show_gst: true,
   footer_left: "",
   footer_center: "",
@@ -111,6 +117,8 @@ export function printSettingsFromRow(
     letterhead_tagline: s("print_letterhead_tagline", ""),
     letterhead_show_address: b("print_letterhead_show_address", true),
     letterhead_show_contact: b("print_letterhead_show_contact", true),
+    letterhead_show_mobile: b("print_letterhead_show_contact", true),
+    letterhead_show_email: b("print_letterhead_show_contact", true),
     letterhead_show_gst: b("print_letterhead_show_gst", true),
     footer_left: s("print_footer_left", ""),
     footer_center: s("print_footer_center", ""),

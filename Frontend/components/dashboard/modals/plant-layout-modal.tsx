@@ -23,13 +23,16 @@ import {
 import { downloadPlantLayoutWord } from "@backend/modules/print/plant-layout-export";
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
-import { type PlantLayoutStored } from "@backend/modules/bis/plant-layout";
-import {resolvePrimaryTopManagementPerson,
+import { type PlantLayoutStored, documentHasContent as plantLayoutHasContent } from "@backend/modules/bis/plant-layout";
+import {
+  resolvePrimaryTopManagementPerson,
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 const PLANT_LAYOUT_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Plant Layout documents submitted with BIS licence applications:
@@ -52,6 +55,8 @@ export function PlantLayoutModal({
   dateOfApplication,
   topManagement,
   storedDocument,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -63,6 +68,8 @@ export function PlantLayoutModal({
   dateOfApplication: string;
   topManagement: TopManagementStored[];
   storedDocument: PlantLayoutStored;
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (document: PlantLayoutStored) => void;
   onClose: () => void;
 }) {
@@ -74,9 +81,11 @@ export function PlantLayoutModal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
+  const [editorRevision, setEditorRevision] = useState(0);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const canvasEditorRef = useRef<PlantLayoutCanvasEditorHandle>(null);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
@@ -251,6 +260,19 @@ export function PlantLayoutModal({
     imageUploadInputRef.current?.click();
   }
 
+  function handleImportLayout(nextDocument: PlantLayoutStored): boolean {
+    if (plantLayoutHasContent(document)) {
+      const ok = window.confirm(
+        "Replace the current Plant Layout with the imported layout?",
+      );
+      if (!ok) return false;
+    }
+    setDocument(nextDocument);
+    setEditorRevision((n) => n + 1);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function handleImageFileChange(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -352,6 +374,14 @@ export function PlantLayoutModal({
             />
             <button
               type="button"
+              onClick={() => setShowImportDialog(true)}
+              title="Import Plant Layout from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Import
+            </button>
+            <button
+              type="button"
               onClick={() => toggleSettingsPanel("print")}
               className={`rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                 settingsPanel === "print"
@@ -391,8 +421,9 @@ export function PlantLayoutModal({
             >
               <div className="min-h-0 flex-1 flex-col p-4 sm:p-6 flex">
                 <PlantLayoutCanvasEditor
+                  key={`${applicationNumber}-${editorRevision}`}
                   ref={canvasEditorRef}
-                  storeKey={applicationNumber}
+                  storeKey={`${applicationNumber}-${editorRevision}`}
                   initialShapes={document.shapes ?? storedDocument.shapes ?? []}
                   onChange={({ drawing_data_url, shapes }) =>
                     patchDocument({ drawing_data_url, shapes })
@@ -447,6 +478,20 @@ export function PlantLayoutModal({
           accentColor="amber"
           overlayZIndexClass="z-[500]"
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="plant_layout"
+          title="Import Plant Layout"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "plant_layout") return false;
+            return handleImportLayout(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </>
