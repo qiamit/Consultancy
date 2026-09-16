@@ -1459,7 +1459,7 @@ export async function downloadChecklistCombinedPdf(opts: {
       const blob = await renderPdfViaPlaywright({
         html,
         filename: "checklist.pdf",
-        format: "A4",
+        format: "a4",
         landscape: false,
         margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
       });

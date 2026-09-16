@@ -238,11 +238,7 @@ export function AppointmentLetterCreatorModal({
   }
 
   function togglePrintPreview() {
-    setShowPrintPreview((prev) => {
-      const next = !prev;
-      if (next) setMobilePane("preview");
-      return next;
-    });
+    setShowPrintPreview((prev) => !prev);
   }
 
   function fillRemainingFromTechnicalStaff(
