@@ -1,6 +1,6 @@
 "use server";
 
-import { parseApplicationChecklistNotes } from "@backend/modules/bis/application-checklist-notes";
+import { parseApplicationChecklistNotes, applicationMetaHasContent } from "@backend/modules/bis/application-checklist-notes";
 import {
   documentHasContent as processFlowHasContent,
   parseProcessFlowChart,
@@ -17,6 +17,50 @@ import {
   documentHasContent as cmpf306HasContent,
   parseCmpf306,
 } from "@backend/modules/bis/cmpf-306";
+import {
+  documentHasContent as cmpf307HasContent,
+  parseCmpf307,
+} from "@backend/modules/bis/cmpf-307";
+import {
+  documentHasContent as cmpf311HasContent,
+  parseCmpf311,
+} from "@backend/modules/bis/cmpf-311";
+import {
+  documentHasContent as rawMaterialHasContent,
+  parseRawMaterialDetails,
+} from "@backend/modules/bis/raw-material-details";
+import {
+  documentHasContent as certifiedReferenceMaterialsHasContent,
+  parseCertifiedReferenceMaterials,
+} from "@backend/modules/bis/certified-reference-materials";
+import {
+  parseLegalDocuments,
+  rowHasContent as legalDocumentRowHasContent,
+} from "@backend/modules/bis/legal-documents";
+import {
+  documentHasContent as undertakingGeneralIssHasContent,
+  parseUndertakingGeneralIss,
+} from "@backend/modules/bis/undertaking-general-iss";
+import {
+  documentHasContent as selfEvaluationFormHasContent,
+  parseSelfEvaluationForm,
+} from "@backend/modules/bis/self-evaluation-form";
+import {
+  documentHasContent as oslSampleRequirementsHasContent,
+  parseOslSampleRequirements,
+} from "@backend/modules/bis/osl-sample-requirements";
+import {
+  documentHasContent as locationMapHasContent,
+  parseLocationMap,
+} from "@backend/modules/bis/location-map";
+import {
+  documentHasContent as topManagementHasContent,
+  parseTopManagement,
+} from "@backend/modules/bis/top-management";
+import {
+  documentHasContent as technicalStaffHasContent,
+  parseTechnicalStaff,
+} from "@backend/modules/bis/technical-staff";
 import {
   applicationProjectKindDbValues,
   inFilter,
@@ -87,6 +131,33 @@ function notesHaveDocument(
         return cmpf305HasContent(parsed.cmpf305Machinery);
       case "cmpf_306":
         return cmpf306HasContent(parsed.cmpf306);
+      case "cmpf_307":
+        return cmpf307HasContent(parsed.cmpf307);
+      case "cmpf_311":
+        return cmpf311HasContent(parsed.cmpf311);
+      case "raw_material_details":
+        return rawMaterialHasContent(parsed.rawMaterialDetails);
+      case "certified_reference_materials":
+        return certifiedReferenceMaterialsHasContent(parsed.certifiedReferenceMaterials);
+      case "application_details":
+        return (
+          applicationMetaHasContent(parsed.meta) ||
+          parsed.legalDocuments.some(legalDocumentRowHasContent)
+        );
+      case "undertaking_general_iss":
+        return undertakingGeneralIssHasContent(parsed.undertakingGeneralIss);
+      case "self_evaluation_form":
+        return selfEvaluationFormHasContent(parsed.selfEvaluationForm);
+      case "osl_sample_requirements":
+        return oslSampleRequirementsHasContent(parsed.oslSampleRequirements);
+      case "pi_sample_requirements":
+        return oslSampleRequirementsHasContent(parsed.piSampleRequirements);
+      case "location_map":
+        return locationMapHasContent(parsed.locationMap);
+      case "top_management":
+        return topManagementHasContent(parsed.topManagement);
+      case "technical_staff":
+        return technicalStaffHasContent(parsed.technicalStaff);
       default:
         return false;
     }
@@ -120,6 +191,69 @@ function extractDocument(
       const document = parseCmpf306(parsed.cmpf306);
       if (!cmpf306HasContent(document)) return null;
       return { key: "cmpf_306", document };
+    }
+    case "cmpf_307": {
+      const document = parseCmpf307(parsed.cmpf307);
+      if (!cmpf307HasContent(document)) return null;
+      return { key: "cmpf_307", document };
+    }
+    case "cmpf_311": {
+      const document = parseCmpf311(parsed.cmpf311);
+      if (!cmpf311HasContent(document)) return null;
+      return { key: "cmpf_311", document };
+    }
+    case "raw_material_details": {
+      const document = parseRawMaterialDetails(parsed.rawMaterialDetails);
+      if (!rawMaterialHasContent(document)) return null;
+      return { key: "raw_material_details", document };
+    }
+    case "certified_reference_materials": {
+      const document = parseCertifiedReferenceMaterials(parsed.certifiedReferenceMaterials);
+      if (!certifiedReferenceMaterialsHasContent(document)) return null;
+      return { key: "certified_reference_materials", document };
+    }
+    case "application_details": {
+      const meta = parsed.meta;
+      const legalDocuments = parseLegalDocuments(parsed.legalDocuments).filter(
+        legalDocumentRowHasContent,
+      );
+      if (!applicationMetaHasContent(meta) && legalDocuments.length === 0) return null;
+      return { key: "application_details", document: { meta, legalDocuments } };
+    }
+    case "undertaking_general_iss": {
+      const document = parseUndertakingGeneralIss(parsed.undertakingGeneralIss);
+      if (!undertakingGeneralIssHasContent(document)) return null;
+      return { key: "undertaking_general_iss", document };
+    }
+    case "self_evaluation_form": {
+      const document = parseSelfEvaluationForm(parsed.selfEvaluationForm);
+      if (!selfEvaluationFormHasContent(document)) return null;
+      return { key: "self_evaluation_form", document };
+    }
+    case "osl_sample_requirements": {
+      const document = parseOslSampleRequirements(parsed.oslSampleRequirements);
+      if (!oslSampleRequirementsHasContent(document)) return null;
+      return { key: "osl_sample_requirements", document };
+    }
+    case "pi_sample_requirements": {
+      const document = parseOslSampleRequirements(parsed.piSampleRequirements);
+      if (!oslSampleRequirementsHasContent(document)) return null;
+      return { key: "pi_sample_requirements", document };
+    }
+    case "location_map": {
+      const document = parseLocationMap(parsed.locationMap);
+      if (!locationMapHasContent(document)) return null;
+      return { key: "location_map", document };
+    }
+    case "top_management": {
+      const document = parseTopManagement(parsed.topManagement);
+      if (!topManagementHasContent(document)) return null;
+      return { key: "top_management", document };
+    }
+    case "technical_staff": {
+      const document = parseTechnicalStaff(parsed.technicalStaff);
+      if (!technicalStaffHasContent(document)) return null;
+      return { key: "technical_staff", document };
     }
     default:
       return null;

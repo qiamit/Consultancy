@@ -33,6 +33,7 @@ import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-docu
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
 import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 const PLANT_LAYOUT_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Plant Layout documents submitted with BIS licence applications:
@@ -91,7 +92,9 @@ export function PlantLayoutModal({
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    setDocument(storedDocument);
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(storedDocument, prev, plantLayoutHasContent),
+    );
   }, [storedDocument]);
 
   useEffect(() => {

@@ -39,18 +39,22 @@ import type { PrintSettings } from "@backend/modules/print/types";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 import {
   createOslSampleRequirementRow,
+  documentHasContent as oslSampleRequirementsHasContent,
   editorRowsFromStored,
   rowHasContent,
   storedFromEditor,
   type OslSampleRequirementRow,
   type OslSampleRequirementStored,
 } from "@backend/modules/bis/osl-sample-requirements";
-import {resolvePrimaryTopManagementPerson,
+import {
+  resolvePrimaryTopManagementPerson,
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 const OSL_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with OSL (Outside Laboratory) sample requirements and sample offer letters for BIS certification:
@@ -171,6 +175,8 @@ export function OslSampleRequirementsModal({
   isCodeId,
   revisionYear,
   rows: initialStored,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
   initialFocusSampleIndex = null,
@@ -182,11 +188,15 @@ export function OslSampleRequirementsModal({
   isCodeId: string | null;
   revisionYear: number | null;
   rows: OslSampleRequirementStored[];
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (rows: OslSampleRequirementStored[]) => void;
   onClose: () => void;
   initialFocusSampleIndex?: number | null;
 }) {
   const labels = sampleOfferLetterLabels(variant);
+  const importDocumentKey =
+    variant === "pi" ? ("pi_sample_requirements" as const) : ("osl_sample_requirements" as const);
   const [rows, setRows] = useEditorRowsFromStored(initialStored, editorRowsFromStored);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultOslSamplePrintSettings(),
@@ -197,6 +207,7 @@ export function OslSampleRequirementsModal({
   );
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
   const [sampleFormRow, setSampleFormRow] = useState<
@@ -678,6 +689,20 @@ export function OslSampleRequirementsModal({
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
 
+  function handleImportFromApplication(nextRows: OslSampleRequirementStored[]): boolean {
+    const current = storedFromEditor(rows);
+    if (oslSampleRequirementsHasContent(current)) {
+      const ok = window.confirm(
+        `Replace the current ${labels.modalTitle} with the imported sample data?`,
+      );
+      if (!ok) return false;
+    }
+    setRows(editorRowsFromStored(nextRows));
+    setShowPrintPreview(false);
+    setShowCourierLabelsPreview(false);
+    return true;
+  }
+
   return (
     <>
       <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
@@ -698,6 +723,14 @@ export function OslSampleRequirementsModal({
             className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowImportDialog(true)}
+            title={`Import ${labels.modalTitle} from Another Application or License`}
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            Import
           </button>
           <button
             type="button"
@@ -954,6 +987,20 @@ export function OslSampleRequirementsModal({
           accentColor="emerald"
           overlayZIndexClass="z-[500]"
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey={importDocumentKey}
+          title={`Import ${labels.modalTitle}`}
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== importDocumentKey) return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
 

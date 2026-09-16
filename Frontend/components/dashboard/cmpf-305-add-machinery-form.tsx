@@ -60,10 +60,28 @@ export function Cmpf305AddMachineryForm({
   const [error, setError] = useState<string | null>(null);
   const [autoFillLoading, setAutoFillLoading] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
+  const isFirstSyncRef = useRef(true);
 
   useEffect(() => {
     const nextRows = editorRowsFromFormEntries(form.machineryEntries, rowsRef.current);
+    const prevHadContent = rowsRef.current.some(
+      (row) =>
+        row.machinery_name.trim() ||
+        row.make.trim() ||
+        row.production_capacity_per_day.trim() ||
+        row.number.trim() ||
+        row.remarks.trim(),
+    );
     rowsRef.current = nextRows;
+
+    // First sync after mount: never push an empty list over existing parent rows.
+    // (Remount / HMR used to wipe saved Plant & Machinery this way.)
+    if (isFirstSyncRef.current) {
+      isFirstSyncRef.current = false;
+      if (nextRows.length === 0 && prevHadContent) return;
+      if (nextRows.length === 0) return;
+    }
+
     onRowsChange(nextRows);
   }, [form, onRowsChange]);
 

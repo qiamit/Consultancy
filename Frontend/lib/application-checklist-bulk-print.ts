@@ -77,6 +77,7 @@ import {
   type SelfEvaluationFormStored,
 } from "@backend/modules/bis/self-evaluation-form";
 import {
+  findQualityControlIncharge,
   resolveQualityControlIncharge,
   rowHasContent as technicalStaffRowHasContent,
   type TechnicalStaffStored,
@@ -111,6 +112,11 @@ import {
   buildAuthorizationLetterHtml,
   defaultAuthorizationLetterPrintSettings,
 } from "@backend/modules/print/authorization-letter";
+import {
+  buildBisForm1Html,
+  defaultBisForm1PrintSettings,
+  type BisForm1Data,
+} from "@backend/modules/print/bis-form-1";
 import {
   buildCertifiedReferenceMaterialsHtml,
   defaultCertifiedReferenceMaterialsPrintSettings,
@@ -206,28 +212,35 @@ import {
   defaultUpdatedSchemeOfInspectionPrintSettings,
 } from "@backend/modules/print/updated-scheme-of-inspection";
 
-import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
+import { safePdfFilenamePart } from "@/lib/download-print-pdf";
 import {
   mapPageSizeToPlaywrightFormat,
   renderPdfViaPlaywright,
   triggerPdfDownload,
 } from "@/lib/playwright-pdf-client";
+import {
+  rowHasContent as legalDocumentRowHasContent,
+  type LegalDocumentStored,
+} from "@backend/modules/bis/legal-documents";
+import { fileNameFromStoredDocumentRef } from "@backend/modules/storage/cmpf-306-documents";
 import { PDFDocument } from "pdf-lib";
 
+/** Order matches Application Form document shortcuts (print / binding sequence). */
 export const APPLICATION_CHECKLIST_PRINT_DOCS = [
+  { id: "application_copy", label: "Application Copy" },
+  { id: "license_scope", label: "Undertaking for License Scope" },
+  { id: "osl_sample_requirements", label: "Sample for Out Side Lab" },
   { id: "top_management", label: "Top Management Details" },
   { id: "technical_staff", label: "Technical Staff Details" },
   { id: "location_map", label: "Location Map" },
   { id: "plant_layout", label: "Plant Layout" },
   { id: "process_flow_chart", label: "Process Flow Chart" },
   { id: "process_description", label: "Process Description" },
-  { id: "license_scope", label: "Undertaking for License Scope" },
-  { id: "osl_sample_requirements", label: "Sample for Out Side Lab" },
-  { id: "cmpf_305", label: "List of Plant & Machinery - CMPF 305" },
+  { id: "cmpf_305", label: "List of Plant & Machinery" },
   { id: "cmpf_306", label: "List of Testing Equipments - CMPF - 306" },
-  { id: "cmpf_307", label: "Brand Name Declaration - CMPF 307" },
-  { id: "cmpf_310", label: "Acceptance of Marking Fee - CMPF 310" },
-  { id: "cmpf_311", label: "Acceptance of Scheme of Inspection & Testing CMPF 311" },
+  { id: "cmpf_307", label: "Brand Name Declaration" },
+  { id: "cmpf_310", label: "Acceptance of Marking Fee" },
+  { id: "cmpf_311", label: "Acceptance of SIT" },
   { id: "raw_material_details", label: "Undertaking For Raw Material" },
   { id: "certified_reference_materials", label: "List of Certified Reference Material" },
   { id: "undertaking_option_2", label: "Undertaking for Simplified Procedure" },
@@ -236,12 +249,41 @@ export const APPLICATION_CHECKLIST_PRINT_DOCS = [
   { id: "authorization_letter", label: "Authorization Letter" },
   { id: "pi_sample_requirements", label: "Sample Offer for Inspection" },
   { id: "factory_test_reports", label: "Factory Test Reports" },
-  { id: "updated_scheme_of_inspection", label: "Updated Scheme of Inspection & Testing" },
+  { id: "updated_scheme_of_inspection", label: "Updated SIT" },
   { id: "undertaking_long_duration_test", label: "Undertaking for Long Duration Test" },
-  { id: "undertaking_minimum_marking_fee", label: "Undertaking for Minimum Marking Fee" },
+  { id: "undertaking_minimum_marking_fee", label: "Undertaking for MMF - AIF" },
 ] as const;
 
 export type ChecklistPrintDocId = (typeof APPLICATION_CHECKLIST_PRINT_DOCS)[number]["id"];
+
+/** Maps bulk-print document ids to Application Form modal `openDoc` keys. */
+export const CHECKLIST_PRINT_DOC_EDIT_KEYS: Record<ChecklistPrintDocId, string> = {
+  application_copy: "application-details",
+  top_management: "top-management",
+  technical_staff: "technical-staff",
+  location_map: "location-map",
+  plant_layout: "plant-layout",
+  process_flow_chart: "process-flow-chart",
+  process_description: "process-description",
+  license_scope: "license-scope",
+  osl_sample_requirements: "osl-sample",
+  cmpf_305: "cmpf-305",
+  cmpf_306: "cmpf-306",
+  cmpf_307: "cmpf-307",
+  cmpf_310: "cmpf-310",
+  cmpf_311: "cmpf-311",
+  raw_material_details: "raw-material",
+  certified_reference_materials: "certified-reference-materials",
+  undertaking_option_2: "undertaking-option-2",
+  undertaking_general_iss: "undertaking-general-iss",
+  self_evaluation_form: "self-evaluation",
+  authorization_letter: "authorization-letter",
+  pi_sample_requirements: "pi-sample",
+  factory_test_reports: "factory-test-report",
+  updated_scheme_of_inspection: "updated-sit",
+  undertaking_long_duration_test: "undertaking-long-duration",
+  undertaking_minimum_marking_fee: "undertaking-mmf",
+};
 
 export type ChecklistBulkPrintLetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -276,6 +318,8 @@ export type ChecklistBulkPrintContext = {
   processDescription: ProcessDescriptionStored;
   updatedSchemeOfInspection: UpdatedSchemeOfInspectionStored;
   selfEvaluationForm: SelfEvaluationFormStored;
+  /** Application Details → Legal Documents attachments. */
+  legalDocuments: LegalDocumentStored[];
   applicationNumber: string;
   dateOfApplication: string;
   dateOfInspection: string;
@@ -286,8 +330,269 @@ export type ChecklistBulkPrintContext = {
   inspectionOfficerName: string;
   inspectionOfficerDesignation: string;
   licenceNumber?: string;
+  /** Firm scale for BIS Form 1 (Application Copy). */
+  firmScale?: string;
+  /** Sector / company type for BIS Form 1 (Application Copy). */
+  sector?: string;
   printAssets?: ManufacturingScopePrintAssets;
 };
+
+export type ChecklistBulkListRow =
+  | {
+      kind: "print";
+      id: ChecklistPrintDocId;
+      rowKey: ChecklistPrintDocId;
+      label: string;
+      hasContent: boolean;
+      editKey: string;
+    }
+  | {
+      kind: "attachment";
+      id: string;
+      rowKey: string;
+      label: string;
+      hasContent: boolean;
+      editKey: string;
+      documentRef: string;
+      attachmentGroup:
+        | "legal_document"
+        | "cmpf306_calibration"
+        | "cmpf306_consent"
+        | "qci_appointment_letter"
+        | "qci_education_certificate"
+        | "qci_photo";
+    };
+
+function attachmentFileLabel(ref: string, fallback: string): string {
+  const name = fileNameFromStoredDocumentRef(ref).trim();
+  return name && name !== "Document" ? name : fallback;
+}
+
+/**
+ * Full bulk-print grid: checklist print modules (Application Form shortcut order)
+ * + Application Details attachments (after Sample for OSL / Application Details slot)
+ * + QCI Appointment Letter / Education Certificate / Photo (after Technical Staff)
+ * + CMPF-306 Calibration Certificates / Consent Letters (right after CMPF 306).
+ */
+export function buildChecklistBulkListRows(
+  ctx: ChecklistBulkPrintContext,
+): ChecklistBulkListRow[] {
+  const rows: ChecklistBulkListRow[] = [];
+
+  function pushQciAttachmentRows() {
+    const qci = findQualityControlIncharge(ctx.technicalStaff);
+
+    const slots: {
+      group: Extract<
+        ChecklistBulkListRow,
+        { kind: "attachment" }
+      >["attachmentGroup"];
+      label: string;
+      ref: string;
+    }[] = [
+      {
+        group: "qci_appointment_letter",
+        label: "QCI Appointment Letter",
+        ref: qci?.appointment_letter.trim() ?? "",
+      },
+      {
+        group: "qci_education_certificate",
+        label: "QCI Education Certificate",
+        ref: qci?.educational_certificate.trim() ?? "",
+      },
+      {
+        group: "qci_photo",
+        label: "QCI Photo",
+        ref: qci?.photo.trim() ?? "",
+      },
+    ];
+
+    for (const slot of slots) {
+      const hasFile = Boolean(slot.ref);
+      rows.push({
+        kind: "attachment",
+        id: `${slot.group}:${hasFile ? "0" : "empty"}`,
+        rowKey: `${slot.group}:${hasFile ? "0" : "empty"}`,
+        label: slot.label,
+        hasContent: hasFile,
+        editKey: "technical-staff",
+        documentRef: slot.ref,
+        attachmentGroup: slot.group,
+      });
+    }
+  }
+
+  function pushLegalDocumentRows() {
+    const legalDocs = (ctx.legalDocuments ?? []).filter(legalDocumentRowHasContent);
+    if (legalDocs.length === 0) {
+      rows.push({
+        kind: "attachment",
+        id: "legal_document:empty",
+        rowKey: "legal_document:empty",
+        label: "Legal Documents",
+        hasContent: false,
+        editKey: "application-details",
+        documentRef: "",
+        attachmentGroup: "legal_document",
+      });
+      return;
+    }
+    legalDocs.forEach((doc, index) => {
+      const desc =
+        doc.description.trim() ||
+        attachmentFileLabel(doc.document_ref, `Document ${index + 1}`);
+      rows.push({
+        kind: "attachment",
+        id: `legal_document:${index}`,
+        rowKey: `legal_document:${index}`,
+        label: desc,
+        hasContent: Boolean(doc.document_ref.trim()),
+        editKey: "application-details",
+        documentRef: doc.document_ref,
+        attachmentGroup: "legal_document",
+      });
+    });
+  }
+
+  function pushCmpf306AttachmentRows() {
+    const calibrations = (ctx.cmpf306.calibration_certificates ?? []).filter((r) => r.trim());
+    calibrations.forEach((ref, index) => {
+      rows.push({
+        kind: "attachment",
+        id: `cmpf306_calibration:${index}`,
+        rowKey: `cmpf306_calibration:${index}`,
+        label:
+          calibrations.length === 1
+            ? "Calibration Certificates"
+            : `Calibration Certificates ${index + 1}`,
+        hasContent: true,
+        editKey: "cmpf-306",
+        documentRef: ref,
+        attachmentGroup: "cmpf306_calibration",
+      });
+    });
+    if (calibrations.length === 0) {
+      rows.push({
+        kind: "attachment",
+        id: "cmpf306_calibration:empty",
+        rowKey: "cmpf306_calibration:empty",
+        label: "Calibration Certificates",
+        hasContent: false,
+        editKey: "cmpf-306",
+        documentRef: "",
+        attachmentGroup: "cmpf306_calibration",
+      });
+    }
+
+    const consents = (ctx.cmpf306.consent_letters ?? []).filter((r) => r.trim());
+    consents.forEach((ref, index) => {
+      rows.push({
+        kind: "attachment",
+        id: `cmpf306_consent:${index}`,
+        rowKey: `cmpf306_consent:${index}`,
+        label:
+          consents.length === 1
+            ? "Consent Letter"
+            : `Consent Letter ${index + 1}`,
+        hasContent: true,
+        editKey: "cmpf-306",
+        documentRef: ref,
+        attachmentGroup: "cmpf306_consent",
+      });
+    });
+    if (consents.length === 0) {
+      rows.push({
+        kind: "attachment",
+        id: "cmpf306_consent:empty",
+        rowKey: "cmpf306_consent:empty",
+        label: "Consent Letter",
+        hasContent: false,
+        editKey: "cmpf-306",
+        documentRef: "",
+        attachmentGroup: "cmpf306_consent",
+      });
+    }
+  }
+
+  for (const doc of APPLICATION_CHECKLIST_PRINT_DOCS) {
+    rows.push({
+      kind: "print",
+      id: doc.id,
+      rowKey: doc.id,
+      label: doc.label,
+      hasContent: checklistPrintDocHasContent(doc.id, ctx),
+      editKey: CHECKLIST_PRINT_DOC_EDIT_KEYS[doc.id],
+    });
+
+    // Application Details slot sits after Sample for OSL in the Application Form grid.
+    if (doc.id === "osl_sample_requirements") {
+      pushLegalDocumentRows();
+    }
+
+    if (doc.id === "technical_staff") {
+      pushQciAttachmentRows();
+    }
+
+    if (doc.id === "cmpf_306") {
+      pushCmpf306AttachmentRows();
+    }
+  }
+
+  return rows;
+}
+
+export async function resolveChecklistAttachmentUrl(documentRef: string): Promise<string> {
+  const { createClient } = await import("@backend/db/client/client");
+  const { resolveDocumentRef } = await import(
+    "@backend/modules/storage/technical-staff-documents"
+  );
+  const url = await resolveDocumentRef(createClient(), documentRef);
+  if (!url) throw new Error("Unable to open attachment. File may be missing.");
+  return url;
+}
+
+export async function openChecklistAttachmentView(documentRef: string): Promise<void> {
+  const url = await resolveChecklistAttachmentUrl(documentRef);
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (!win) throw new Error("Unable to open preview. Please allow pop-ups and try again.");
+}
+
+export async function openChecklistAttachmentPrint(documentRef: string): Promise<void> {
+  const url = await resolveChecklistAttachmentUrl(documentRef);
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (!win) throw new Error("Unable to open print window. Please allow pop-ups and try again.");
+  // Give the viewer a moment to load before print (PDF / image).
+  window.setTimeout(() => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      // Viewer may block print until fully loaded — user can print manually.
+    }
+  }, 800);
+}
+
+export async function downloadChecklistAttachmentPdf(documentRef: string, label: string): Promise<void> {
+  const url = await resolveChecklistAttachmentUrl(documentRef);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error("Unable to download attachment.");
+  const blob = await res.blob();
+  const safe = label.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 80) || "Attachment";
+  const pathName = (() => {
+    try {
+      return new URL(url).pathname;
+    } catch {
+      return "";
+    }
+  })();
+  const extMatch = /\.([a-zA-Z0-9]{2,5})(?:\?|$)/.exec(pathName);
+  const ext = extMatch?.[1]?.toLowerCase() ?? (blob.type.includes("pdf") ? "pdf" : "bin");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `${safe}.${ext}`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
 
 function withBulkLetterhead(settings: PrintSettings): PrintSettings {
   return {
@@ -333,6 +638,14 @@ export function checklistPrintDocHasContent(
   ctx: ChecklistBulkPrintContext,
 ): boolean {
   switch (id) {
+    case "application_copy":
+      return Boolean(
+        ctx.letterData.companyName.trim() ||
+          ctx.applicationNumber.trim() ||
+          ctx.topManagement.some(topManagementRowHasContent) ||
+          ctx.technicalStaff.some(technicalStaffRowHasContent) ||
+          licenseScopeHasContent(ctx),
+      );
     case "top_management":
       return ctx.topManagement.some(topManagementRowHasContent);
     case "technical_staff":
@@ -531,6 +844,87 @@ function resolveFactoryTestReports(ctx: ChecklistBulkPrintContext): FactoryTestR
   });
 }
 
+function resolveFactoryAddressLine(ctx: ChecklistBulkPrintContext): string {
+  const address = ctx.letterData.address.trim();
+  const city = ctx.letterData.city.trim();
+  if (!address) return city;
+  if (!city) return address;
+  if (address.toLowerCase().includes(city.toLowerCase())) return address;
+  return `${address}, ${city}`;
+}
+
+function buildBisForm1DataFromCtx(ctx: ChecklistBulkPrintContext): BisForm1Data {
+  const letter = ctx.letterData;
+  const street = letter.address.trim();
+  const city = letter.city.trim();
+  const state = letter.bisBranchState.trim();
+  const country = (letter.bisBranchCountry.trim() || "INDIA").toUpperCase();
+  const phone = letter.phone.trim();
+  const email = letter.email.trim();
+  const contactPerson = letter.contactPerson.trim();
+  const primary = resolvePrimaryTopManagementPerson(ctx.topManagement);
+  const product = letter.isTitle.trim() || letter.isNumber.trim();
+  const isNumberRaw = letter.isNumber.trim();
+  const isNumber = isNumberRaw
+    ? /^is\b/i.test(isNumberRaw)
+      ? isNumberRaw
+      : `IS ${isNumberRaw}`
+    : "";
+  const gradesText = serializeLicenseScopeText(
+    ctx.licenseScopeFormat,
+    ctx.licenseScope,
+    storedRowsToEditorRows(ctx.licenseScopeRows),
+  );
+
+  return {
+    applicationNumber: ctx.applicationNumber.trim(),
+    companyName: letter.companyName.trim(),
+    officeAddress: street || resolveFactoryAddressLine(ctx),
+    factoryAddress: street || resolveFactoryAddressLine(ctx),
+    city,
+    district: city,
+    state,
+    country,
+    pinCode: "",
+    officeTel: phone,
+    officeFax: "-",
+    officeEmail: email,
+    factoryTel: phone ? `Mobile: ${phone}` : "",
+    factoryFax: "-",
+    factoryEmail: email,
+    correspondenceAddress: "Factory",
+    scale: (ctx.firmScale ?? "").trim(),
+    sector: (ctx.sector ?? "").trim(),
+    topManagement: ctx.topManagement
+      .filter(topManagementRowHasContent)
+      .map((r) => ({
+        name: r.person_name.trim(),
+        designation: r.designation.trim(),
+      })),
+    technicalManagement: ctx.technicalStaff
+      .filter(technicalStaffRowHasContent)
+      .map((r) => ({
+        name: r.person_name.trim(),
+        designation: r.designation.trim(),
+      })),
+    contactPersonLine: [contactPerson || primary.person_name, phone]
+      .filter(Boolean)
+      .join(" "),
+    productName: product,
+    isNumber,
+    isPart: "",
+    isSection: "",
+    gradesText,
+    unitsOfProduction: "0.00",
+    quantity: "0.00",
+    valueRs: "",
+    bisLicensesHeld: (ctx.licenceNumber ?? "").trim(),
+    signatoryName: primary.person_name || contactPerson,
+    signatoryDesignation: primary.designation,
+    dateOfApplication: ctx.dateOfApplication,
+  };
+}
+
 function buildSingleChecklistDocHtml(
   id: ChecklistPrintDocId,
   ctx: ChecklistBulkPrintContext,
@@ -543,6 +937,8 @@ function buildSingleChecklistDocHtml(
   const topManagement = ctx.topManagement;
 
   switch (id) {
+    case "application_copy":
+      return buildBisForm1Html(buildBisForm1DataFromCtx(ctx), defaultBisForm1PrintSettings());
     case "top_management": {
       const settings = withBulkLetterhead(defaultTopManagementPrintSettings());
       const data = {
@@ -1000,6 +1396,17 @@ export function openChecklistCombinedPrint(html: string): void {
   printWindow.print();
 }
 
+/** Open a single checklist document in a new tab for on-screen viewing (no print dialog). */
+export function openChecklistDocumentView(html: string): void {
+  const viewWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+  if (!viewWindow) {
+    throw new Error("Unable to open preview window. Please allow pop-ups and try again.");
+  }
+  viewWindow.document.write(html);
+  viewWindow.document.close();
+  viewWindow.focus();
+}
+
 async function mergePdfBlobs(blobs: Blob[]): Promise<Blob> {
   const merged = await PDFDocument.create();
   for (const blob of blobs) {
@@ -1026,13 +1433,15 @@ function pdfSettingsFromHtml(html: string): Pick<PrintSettings, "paper_size" | "
 export async function downloadChecklistCombinedPdf(opts: {
   html?: string;
   docs?: { id: ChecklistPrintDocId; html: string }[];
+  /** Optional attachment storage refs to merge into the same PDF (PDF files only). */
+  attachmentRefs?: string[];
   companyName: string;
 }): Promise<void> {
   const filename = `Application_Checklist_${safePdfFilenamePart(opts.companyName)}.pdf`;
+  const blobs: Blob[] = [];
 
   // Preferred path: render each document alone (keeps fit-page CSS intact), then merge.
   if (opts.docs && opts.docs.length > 0) {
-    const blobs: Blob[] = [];
     for (const doc of opts.docs) {
       const settings = pdfSettingsFromHtml(doc.html);
       const blob = await renderPdfViaPlaywright({
@@ -1044,19 +1453,83 @@ export async function downloadChecklistCombinedPdf(opts: {
       });
       blobs.push(blob);
     }
-    const merged = await mergePdfBlobs(blobs);
-    triggerPdfDownload(merged, filename);
-    return;
+  } else {
+    const html = (opts.html ?? "").trim();
+    if (html) {
+      const blob = await renderPdfViaPlaywright({
+        html,
+        filename: "checklist.pdf",
+        format: "A4",
+        landscape: false,
+        margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+      });
+      blobs.push(blob);
+    }
   }
 
-  const html = (opts.html ?? "").trim();
-  if (!html) throw new Error("Nothing to export as PDF.");
-  await downloadPrintHtmlAsPdf({
-    html,
-    filename,
-    settings: {
-      paper_size: "A4",
-      orientation: "portrait",
-    },
+  for (const ref of opts.attachmentRefs ?? []) {
+    const trimmed = ref.trim();
+    if (!trimmed) continue;
+    try {
+      const url = await resolveChecklistAttachmentUrl(trimmed);
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      let pathName = trimmed;
+      try {
+        pathName = new URL(url).pathname;
+      } catch {
+        // keep trimmed
+      }
+      const isPdf = blob.type.includes("pdf") || /\.pdf(?:\?|$)/i.test(pathName);
+      if (isPdf) blobs.push(blob);
+    } catch {
+      // Skip non-mergeable / missing attachments.
+    }
+  }
+
+  if (blobs.length === 0) throw new Error("Nothing to export as PDF.");
+  const merged = blobs.length === 1 ? blobs[0]! : await mergePdfBlobs(blobs);
+  triggerPdfDownload(merged, filename);
+}
+
+/** Download selected checklist HTML as a Word-openable .doc file. */
+export function downloadChecklistCombinedWord(opts: {
+  html: string;
+  companyName: string;
+}): void {
+  const html = opts.html.trim();
+  if (!html) throw new Error("Nothing to export as Word.");
+
+  const styleMatches = [...html.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi)];
+  const styles = styleMatches.map((m) => m[1] ?? "").join("\n");
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  const body = (bodyMatch?.[1] ?? html).trim();
+
+  const wordHtml = `<!DOCTYPE html>
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+ xmlns:w="urn:schemas-microsoft-com:office:word"
+ xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8"/>
+<title>Application Checklist</title>
+<!--[if gte mso 9]><xml><w:WordDocument><w:View>Print</w:View><w:Zoom>100</w:Zoom></w:WordDocument></xml><![endif]-->
+<style>
+${styles}
+@page { size: A4; margin: 12mm; }
+body { font-family: Arial, Helvetica, sans-serif; }
+</style>
+</head>
+<body>${body}</body>
+</html>`;
+
+  const blob = new Blob(["\ufeff", wordHtml], {
+    type: "application/msword",
   });
+  const filename = `Application_Checklist_${safePdfFilenamePart(opts.companyName)}.doc`;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
 }

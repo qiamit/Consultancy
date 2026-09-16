@@ -46,6 +46,10 @@ export function rowHasContent(row: CertifiedReferenceMaterialStored): boolean {
   );
 }
 
+export function documentHasContent(rows: CertifiedReferenceMaterialStored[]): boolean {
+  return rows.some(rowHasContent);
+}
+
 export function parseCertifiedReferenceMaterials(raw: unknown): CertifiedReferenceMaterialStored[] {
   if (!Array.isArray(raw)) return [];
   return raw

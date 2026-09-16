@@ -31,6 +31,7 @@ import {
   editorRowsFromStored,
   storedFromEditor,
   documentHasContent as cmpf305HasContent,
+  rowHasContent,
   type Cmpf305MachineryStored,
 } from "@backend/modules/bis/cmpf-305";
 import { editorRowsFromImported, importCmpf305MachineryFromXlsx } from "@backend/modules/bis/cmpf-305-import";
@@ -89,6 +90,22 @@ export function Cmpf305Modal({
 }) {
   const [rows, setRows] = useState(() => editorRowsFromStored(initialStored));
   const [machineryFormKey, setMachineryFormKey] = useState(0);
+  const parentRowsSigRef = useRef(JSON.stringify(initialStored.filter((r) => rowHasContent(r))));
+
+  // Keep editor in sync when parent reloads/saves machinery (e.g. notes hydrate).
+  useEffect(() => {
+    const visible = initialStored.filter((r) => rowHasContent(r));
+    const sig = JSON.stringify(visible);
+    if (sig === parentRowsSigRef.current) return;
+    // Never let a late empty parent wipe in-progress / already-loaded rows.
+    if (visible.length === 0) {
+      parentRowsSigRef.current = sig;
+      return;
+    }
+    parentRowsSigRef.current = sig;
+    setRows(editorRowsFromStored(initialStored));
+    setMachineryFormKey((key) => key + 1);
+  }, [initialStored]);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCmpf305PrintSettings(),
   );
@@ -438,29 +455,27 @@ export function Cmpf305Modal({
         </div>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
-          {!showPrintPreview && (
-            <div
-              className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
-                settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
-              }`}
-            >
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-                <Cmpf305AddMachineryForm
-                  key={machineryFormKey}
-                  isCodeId={isCodeId}
-                  isReference={isReference}
-                  isNumber={isNumber}
-                  revisionYear={revisionYear}
-                  isTitle={letterData.isTitle ?? ""}
-                  licenseScope={licenseScope}
-                  licenseScopeFormat={licenseScopeFormat}
-                  licenseScopeRows={licenseScopeRows}
-                  initialRows={rows}
-                  onRowsChange={setRows}
-                />
-              </div>
+          <div
+            className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
+              showPrintPreview ? "hidden" : settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+            }`}
+          >
+            <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+              <Cmpf305AddMachineryForm
+                key={machineryFormKey}
+                isCodeId={isCodeId}
+                isReference={isReference}
+                isNumber={isNumber}
+                revisionYear={revisionYear}
+                isTitle={letterData.isTitle ?? ""}
+                licenseScope={licenseScope}
+                licenseScopeFormat={licenseScopeFormat}
+                licenseScopeRows={licenseScopeRows}
+                initialRows={rows}
+                onRowsChange={setRows}
+              />
             </div>
-          )}
+          </div>
 
           {showPrintPreview && (
             <div

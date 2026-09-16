@@ -3,6 +3,7 @@ import {
   BorderStyle,
   Document,
   ImageRun,
+  PageBreak,
   Packer,
   Paragraph,
   ShadingType,
@@ -39,7 +40,7 @@ import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 20;
-const DOCX_FOOTER_SIZE = 16;
+const DOCX_FOOTER_SIZE = 19; // ~9.5pt — matches Print Preview declaration box
 
 const THIN_BORDER = {
   style: BorderStyle.SINGLE,
@@ -118,6 +119,33 @@ function plainParagraph(
   });
 }
 
+function footerRun(text: string, opts?: { bold?: boolean; italics?: boolean }): TextRun {
+  return new TextRun({
+    text,
+    font: DOCX_FONT,
+    size: DOCX_FOOTER_SIZE,
+    bold: opts?.bold ?? false,
+    italics: opts?.italics ?? false,
+  });
+}
+
+function footerParagraph(
+  text: string,
+  opts?: {
+    align?: (typeof AlignmentType)[keyof typeof AlignmentType];
+    before?: number;
+    after?: number;
+    bold?: boolean;
+    italics?: boolean;
+  },
+): Paragraph {
+  return new Paragraph({
+    alignment: opts?.align ?? AlignmentType.LEFT,
+    spacing: { before: opts?.before ?? 0, after: opts?.after ?? 60, line: 240 },
+    children: [footerRun(text, { bold: opts?.bold, italics: opts?.italics })],
+  });
+}
+
 function metaCell(text: string, opts: { bold?: boolean; width: number; fill?: string }): TableCell {
   return new TableCell({
     width: { size: opts.width, type: WidthType.DXA },
@@ -134,7 +162,7 @@ function metaCell(text: string, opts: { bold?: boolean; width: number; fill?: st
   });
 }
 
-function buildHeaderGrid(data: Cmpf306LetterData, widthTwip: number): Table {
+function buildApplicantHeaderGrid(data: Cmpf306LetterData, widthTwip: number): Table {
   const c1 = Math.round(widthTwip * 0.18);
   const c2 = Math.round(widthTwip * 0.32);
   const c3 = Math.round(widthTwip * 0.18);
@@ -177,6 +205,20 @@ function buildHeaderGrid(data: Cmpf306LetterData, widthTwip: number): Table {
           }),
         ],
       }),
+    ],
+  });
+}
+
+function buildApplicationMetaGrid(data: Cmpf306LetterData, widthTwip: number): Table {
+  const c1 = Math.round(widthTwip * 0.18);
+  const c2 = Math.round(widthTwip * 0.32);
+  const c3 = Math.round(widthTwip * 0.18);
+  const c4 = widthTwip - c1 - c2 - c3;
+
+  return new Table({
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: [c1, c2, c3, c4],
+    rows: [
       new TableRow({
         children: [
           metaCell("Application No.", { bold: true, width: c1, fill: "EEF2F7" }),
@@ -197,10 +239,16 @@ function buildHeaderGrid(data: Cmpf306LetterData, widthTwip: number): Table {
   });
 }
 
-function equipmentTableSection(
-  rows: Cmpf306EquipmentStored[],
-  widthTwip: number,
-): Table {
+function equipmentColumnWidths(widthTwip: number): number[] {
+  const weights = [0.7, 2.4, 1, 1, 1, 1.3, 0.9, 0.9];
+  const sum = weights.reduce((a, b) => a + b, 0);
+  const widths = weights.map((w) => Math.max(350, Math.round((w / sum) * widthTwip)));
+  const diff = widthTwip - widths.reduce((a, b) => a + b, 0);
+  widths[widths.length - 1] = Math.max(350, (widths[widths.length - 1] ?? 350) + diff);
+  return widths;
+}
+
+function equipmentHeaderCells(widths: number[]): TableCell[] {
   const headers: { label: string; lines?: string[] }[] = [
     { label: "Sr No.", lines: ["Sr", "No"] },
     { label: "Test Equipments / Chemicals" },
@@ -211,13 +259,8 @@ function equipmentTableSection(
     { label: "Clause No." },
     { label: "Quantity" },
   ];
-  const weights = [0.7, 2.4, 1, 1, 1, 1.3, 0.9, 0.9];
-  const sum = weights.reduce((a, b) => a + b, 0);
-  const widths = weights.map((w) => Math.max(350, Math.round((w / sum) * widthTwip)));
-  const diff = widthTwip - widths.reduce((a, b) => a + b, 0);
-  widths[widths.length - 1] = Math.max(350, (widths[widths.length - 1] ?? 350) + diff);
 
-  const headerCells = headers.map(
+  return headers.map(
     (col, i) =>
       new TableCell({
         width: { size: widths[i]!, type: WidthType.DXA },
@@ -233,90 +276,163 @@ function equipmentTableSection(
         ),
       }),
   );
+}
 
-  const visible = rows.filter(equipmentRowHasContent);
-  const dataRows =
-    visible.length > 0
-      ? visible.map(
-          (row, i) =>
-            new TableRow({
-              children: [
-                String(i + 1),
-                row.equipment_name.trim() || "—",
-                row.make.trim() || "—",
-                row.least_count.trim() || "—",
-                row.range.trim() || "—",
-                row.calibration_details.trim() || "—",
-                row.clause_number.trim() || "—",
-                row.quantity.trim() || "—",
-              ].map(
-                (text, colIndex) =>
-                  new TableCell({
-                    width: { size: widths[colIndex]!, type: WidthType.DXA },
-                    borders: CELL_BORDERS,
-                    children: [
-                      new Paragraph({
-                        alignment:
-                          colIndex === 1 ? AlignmentType.LEFT : AlignmentType.CENTER,
-                        spacing: { after: 0 },
-                        children: [bodyRun(text, false, 16)],
-                      }),
-                    ],
-                  }),
-              ),
-            }),
-        )
-      : [
-          new TableRow({
+function dummyTestingEquipmentTable(widthTwip: number): Table {
+  const widths = equipmentColumnWidths(widthTwip);
+
+  function emptyDataRow(sr: number): TableRow {
+    return new TableRow({
+      children: [String(sr), "", "", "", "", "", "", ""].map(
+        (text, colIndex) =>
+          new TableCell({
+            width: { size: widths[colIndex]!, type: WidthType.DXA },
+            borders: CELL_BORDERS,
             children: [
-              new TableCell({
-                columnSpan: 8,
-                width: { size: widthTwip, type: WidthType.DXA },
-                borders: CELL_BORDERS,
-                children: [
-                  new Paragraph({
-                    alignment: AlignmentType.CENTER,
-                    spacing: { after: 0 },
-                    children: [bodyRun("No testing equipment entered yet.")],
-                  }),
-                ],
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 0 },
+                children: [bodyRun(text || " ", false, 16)],
               }),
             ],
           }),
-        ];
+      ),
+    });
+  }
+
+  const mergedRow = new TableRow({
+    children: [
+      new TableCell({
+        columnSpan: 8,
+        width: { size: widthTwip, type: WidthType.DXA },
+        borders: CELL_BORDERS,
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 60, after: 60 },
+            children: [bodyRun("(List of Testing Equipments is Attached)", true, 18)],
+          }),
+        ],
+      }),
+    ],
+  });
 
   return new Table({
     width: { size: widthTwip, type: WidthType.DXA },
     columnWidths: widths,
-    rows: [new TableRow({ children: headerCells }), ...dataRows],
+    rows: [
+      new TableRow({ children: equipmentHeaderCells(widths) }),
+      emptyDataRow(1),
+      emptyDataRow(2),
+      mergedRow,
+      emptyDataRow(4),
+      emptyDataRow(5),
+    ],
   });
 }
 
-function footerRun(text: string, opts?: { bold?: boolean; italics?: boolean }): TextRun {
-  return new TextRun({
-    text,
-    font: DOCX_FONT,
-    size: DOCX_FOOTER_SIZE,
-    bold: opts?.bold ?? false,
-    italics: opts?.italics ?? false,
-  });
-}
+function equipmentTableSection(
+  rows: Cmpf306EquipmentStored[],
+  separateSheetEnclosed: boolean,
+  widthTwip: number,
+): (Paragraph | Table)[] {
+  const widths = equipmentColumnWidths(widthTwip);
+  const visible = rows.filter(equipmentRowHasContent);
 
-function footerParagraph(
-  text: string,
-  opts?: {
-    align?: (typeof AlignmentType)[keyof typeof AlignmentType];
-    before?: number;
-    after?: number;
-    bold?: boolean;
-    italics?: boolean;
-  },
-): Paragraph {
-  return new Paragraph({
-    alignment: opts?.align ?? AlignmentType.LEFT,
-    spacing: { before: opts?.before ?? 0, after: opts?.after ?? 60, line: 240 },
-    children: [footerRun(text, { bold: opts?.bold, italics: opts?.italics })],
-  });
+  const dataRows: TableRow[] = [];
+
+  if (separateSheetEnclosed) {
+    dataRows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            width: { size: widths[0]!, type: WidthType.DXA },
+            borders: CELL_BORDERS,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 0 },
+                children: [bodyRun("1", false, 16)],
+              }),
+            ],
+          }),
+          new TableCell({
+            columnSpan: 7,
+            width: { size: widthTwip - widths[0]!, type: WidthType.DXA },
+            borders: CELL_BORDERS,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 0 },
+                children: [bodyRun(CMPF306_SEPARATE_SHEET_LABEL, true, 16)],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  }
+
+  if (visible.length === 0 && !separateSheetEnclosed) {
+    dataRows.push(
+      new TableRow({
+        children: [
+          new TableCell({
+            columnSpan: 8,
+            width: { size: widthTwip, type: WidthType.DXA },
+            borders: CELL_BORDERS,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 0 },
+                children: [bodyRun("No testing equipment entered yet.")],
+              }),
+            ],
+          }),
+        ],
+      }),
+    );
+  } else {
+    const srOffset = separateSheetEnclosed ? 1 : 0;
+    visible.forEach((row, i) => {
+      dataRows.push(
+        new TableRow({
+          children: [
+            String(i + 1 + srOffset),
+            row.equipment_name.trim() || "—",
+            row.make.trim() || "—",
+            row.least_count.trim() || "—",
+            row.range.trim() || "—",
+            row.calibration_details.trim() || "—",
+            row.clause_number.trim() || "—",
+            row.quantity.trim() || "—",
+          ].map(
+            (text, colIndex) =>
+              new TableCell({
+                width: { size: widths[colIndex]!, type: WidthType.DXA },
+                borders: CELL_BORDERS,
+                children: [
+                  new Paragraph({
+                    alignment:
+                      colIndex === 1 ? AlignmentType.LEFT : AlignmentType.CENTER,
+                    spacing: { after: 0 },
+                    children: [bodyRun(text, false, 16)],
+                  }),
+                ],
+              }),
+          ),
+        }),
+      );
+    });
+  }
+
+  return [
+    new Table({
+      width: { size: widthTwip, type: WidthType.DXA },
+      columnWidths: widths,
+      rows: [new TableRow({ children: equipmentHeaderCells(widths) }), ...dataRows],
+    }),
+  ];
 }
 
 /** Matches Print Preview: two-column bordered declaration + shaded signature bands. */
@@ -476,6 +592,62 @@ async function buildDeclarationSignatureBox(
   ];
 }
 
+async function buildTmStyleSignatoryParagraphs(
+  data: Cmpf306LetterData,
+): Promise<Paragraph[]> {
+  const sigName = data.firmRepName?.trim() || data.contactPerson?.trim() || "—";
+  const sigDesig = data.firmRepDesignation?.trim() || "—";
+  const out: Paragraph[] = [
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 280, after: 0 },
+      children: [bodyRun(`For ${data.companyName || "—"}`, true)],
+    }),
+  ];
+
+  const sigImg = await loadImageFromUrl(data.signatureImageUrl?.trim() || null);
+  if (sigImg) {
+    out.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { before: 120, after: 40 },
+        children: [
+          new ImageRun({
+            type: sigImg.type,
+            data: sigImg.data,
+            transformation: { width: 120, height: 48 },
+            altText: {
+              title: "Signature",
+              description: "Signatory signature",
+              name: "signature",
+            },
+          }),
+        ],
+      }),
+    );
+  } else {
+    out.push(new Paragraph({ spacing: { before: 280, after: 0 }, children: [] }));
+  }
+
+  out.push(
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8", space: 1 },
+      },
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Name: ${sigName}`, false, 18)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`, false, 18)],
+    }),
+  );
+
+  return out;
+}
+
 async function buildCmpf306Docx(
   data: Cmpf306LetterData,
   settings: PrintSettings,
@@ -501,22 +673,27 @@ async function buildCmpf306Docx(
       },
       children: [bodyRun("Declaration Regarding Testing Equipments", true, 28)],
     }),
-    buildHeaderGrid(data, widthTwip),
+    buildApplicantHeaderGrid(data, widthTwip),
+    buildApplicationMetaGrid(data, widthTwip),
     plainParagraph("To", { before: 160, after: 40 }),
     plainParagraph("The Director & Head", { after: 20 }),
     plainParagraph("Bureau of Indian Standard", { after: 20 }),
-    plainParagraph(bisLine, { after: 160 }),
-  ];
-
-  if (data.document.separate_sheet_enclosed) {
-    children.push(plainParagraph(CMPF306_SEPARATE_SHEET_LABEL, { after: 120, bold: true }));
-  }
-
-  children.push(
-    equipmentTableSection(data.document.equipment, widthTwip),
+    plainParagraph(bisLine, { after: 80 }),
+    dummyTestingEquipmentTable(widthTwip),
     ...(await buildDeclarationSignatureBox(data, widthTwip)),
+    // Page 2+ — letterhead + Application No/IS Code + equipment table.
+    new Paragraph({ spacing: { after: 0 }, children: [new PageBreak()] }),
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
+    buildApplicationMetaGrid(data, widthTwip),
+    new Paragraph({ spacing: { after: 120 }, children: [] }),
+    ...equipmentTableSection(
+      data.document.equipment,
+      data.document.separate_sheet_enclosed,
+      widthTwip,
+    ),
+    ...(await buildTmStyleSignatoryParagraphs(data)),
     ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
-  );
+  ];
 
   return new Document({
     sections: [

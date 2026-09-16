@@ -34,6 +34,7 @@ import { loadCompanyPrintContext } from "@backend/modules/print/load-company-pri
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
   createTopManagementRow,
+  documentHasContent as topManagementDocumentHasContent,
   editorRowsFromStored,
   resolvePrimaryTopManagementPerson,
   rowHasContent,
@@ -41,8 +42,10 @@ import {
   type TopManagementRow,
   type TopManagementStored,
 } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 const TOP_MGMT_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Top Management details for BIS licence applications:
@@ -65,6 +68,8 @@ export function TopManagementModal({
   isCodeId,
   revisionYear,
   rows: initialStored,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -76,6 +81,8 @@ export function TopManagementModal({
   isCodeId: string | null;
   revisionYear: number | null;
   rows: TopManagementStored[];
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (rows: TopManagementStored[]) => void;
   onClose: () => void;
 }) {
@@ -91,6 +98,7 @@ export function TopManagementModal({
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [personFormRow, setPersonFormRow] = useState<
     TopManagementRow | null | undefined
   >(undefined);
@@ -305,6 +313,19 @@ export function TopManagementModal({
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
 
+  function handleImportFromApplication(nextDocument: TopManagementStored[]): boolean {
+    const current = storedFromEditor(rows);
+    if (topManagementDocumentHasContent(current)) {
+      const ok = window.confirm(
+        "Replace the current Top Management list with the imported persons?",
+      );
+      if (!ok) return false;
+    }
+    setRows(editorRowsFromStored(nextDocument));
+    setShowPrintPreview(false);
+    return true;
+  }
+
   return (
     <>
       <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950">
@@ -325,6 +346,14 @@ export function TopManagementModal({
               className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowImportDialog(true)}
+              title="Import Top Management from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Import
             </button>
             <button
               type="button"
@@ -481,6 +510,20 @@ export function TopManagementModal({
           />
         ) : null}
       </div>
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="top_management"
+          title="Import Top Management"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "top_management") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
+        />
+      )}
 
       {showIsCodeView && isCodeId && (
         <IsCodeViewModal

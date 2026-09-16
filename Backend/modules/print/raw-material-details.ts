@@ -7,6 +7,7 @@ import {
 } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
   paginateRawMaterialRows,
+  RAW_MATERIAL_ROWS_FIRST_PAGE,
   RAW_MATERIAL_ROWS_PER_PAGE,
   type RawMaterialStored,
 } from "@backend/modules/bis/raw-material-details";
@@ -14,6 +15,10 @@ import { formatApplicationNumberDisplay } from "@backend/modules/bis/application
 import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { buildClassSignatoryBlockHtml } from "@backend/modules/print/signatory-signature";
+import {
+  iframeSizeForPagedPrintSettings,
+  printPageGapHtml,
+} from "@backend/modules/print/paged-preview";
 
 export type RawMaterialDetailsLetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -199,8 +204,17 @@ function buildSinglePageHtml(
   isLastPage: boolean,
   settings: PrintSettings,
 ): string {
+  const sheetClass = [
+    "rmd-sheet",
+    "rmd-sheet-fill",
+    pageNum > 1 ? "rmd-page-break rmd-sheet-cont" : "rmd-sheet-first",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return `
-<div class="rmd-sheet${pageNum > 1 ? " page-break" : ""}">
+${printPageGapHtml(pageNum, totalPages)}
+<div class="${sheetClass}">
   ${buildPageHeaderHtml()}
   ${pageNum === 1 ? buildIntroContentHtml(data) : ""}
   ${buildMaterialTableHtml(pageRows, startIndex, settings)}
@@ -211,21 +225,28 @@ function buildSinglePageHtml(
 }
 
 function buildFormBody(data: RawMaterialDetailsLetterData, settings: PrintSettings): string {
-  const pages = paginateRawMaterialRows(data.rows, RAW_MATERIAL_ROWS_PER_PAGE);
+  const pages = paginateRawMaterialRows(
+    data.rows,
+    RAW_MATERIAL_ROWS_PER_PAGE,
+    RAW_MATERIAL_ROWS_FIRST_PAGE,
+  );
   const totalPages = pages.length;
+  let startIndex = 0;
 
   return pages
-    .map((pageRows, i) =>
-      buildSinglePageHtml(
+    .map((pageRows, i) => {
+      const html = buildSinglePageHtml(
         data,
         pageRows,
         i + 1,
         totalPages,
-        i * RAW_MATERIAL_ROWS_PER_PAGE,
+        startIndex,
         i === totalPages - 1,
         settings,
-      ),
-    )
+      );
+      startIndex += pageRows.length;
+      return html;
+    })
     .join("");
 }
 
@@ -262,7 +283,7 @@ export function defaultRawMaterialDetailsPrintSettings(): PrintSettings {
     show_footer_line: false,
     margin_top: 5,
     margin_bottom: 5,
-    margin_left: 15,
+    margin_left: 12,
     margin_right: 10,
   };
 }
@@ -273,7 +294,16 @@ export function rawMaterialDetailsLetterheadSettings(settings: PrintSettings): P
     ...settings,
     letterhead_layout: "logo-na",
     show_page_numbers: false,
+    font_size: 9,
   };
+}
+
+export function rawMaterialDetailsPrintPageCount(rows: RawMaterialStored[]): number {
+  return paginateRawMaterialRows(
+    rows,
+    RAW_MATERIAL_ROWS_PER_PAGE,
+    RAW_MATERIAL_ROWS_FIRST_PAGE,
+  ).length;
 }
 
 export function buildRawMaterialDetailsHtml(
@@ -283,7 +313,9 @@ export function buildRawMaterialDetailsHtml(
 ): string {
   const letterheadSettings = rawMaterialDetailsLetterheadSettings(settings);
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  const letterheadReserveMm = 26;
+  const sheetMinHeightFirst = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm - ${letterheadReserveMm}mm)`;
+  const sheetMinHeightCont = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
     .rmd-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -291,81 +323,88 @@ export function buildRawMaterialDetailsHtml(
       font-size: 9px;
       position: relative;
       width: 100%;
-      min-height: ${sheetMinHeight};
       box-sizing: border-box;
-      padding-bottom: 4mm;
+      padding-bottom: 6mm;
+    }
+    .rmd-sheet.rmd-sheet-fill.rmd-sheet-first {
+      min-height: ${sheetMinHeightFirst};
+    }
+    .rmd-sheet.rmd-sheet-fill.rmd-sheet-cont {
+      min-height: ${sheetMinHeightCont};
     }
     .rmd-title {
       text-align: center;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       text-decoration: underline;
-      margin: 0 0 12px;
+      margin: 0 0 6px;
       letter-spacing: 0.02em;
     }
     .rmd-page-indicator {
       position: absolute;
       right: 0;
       bottom: 0;
-      font-size: 10px;
+      font-size: 9px;
       font-weight: 600;
       text-align: right;
     }
     .rmd-intro {
-      font-size: 10px;
-      line-height: 1.55;
+      font-size: 9.5px;
+      line-height: 1.4;
       text-align: justify;
-      margin: 8px 0 10px;
+      margin: 4px 0 6px;
     }
     .rmd-to-row {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 16px;
-      margin: 0 0 12px;
+      gap: 12px;
+      margin: 0 0 6px;
     }
     .rmd-to-block {
       flex: 1;
       min-width: 0;
-      line-height: 1.55;
+      line-height: 1.4;
     }
     .rmd-date-block {
       flex-shrink: 0;
       text-align: right;
-      line-height: 1.55;
+      line-height: 1.4;
     }
     .rmd-date-block div + div {
-      margin-top: 4px;
+      margin-top: 2px;
     }
     .rmd-para {
-      margin: 0 0 10px;
+      margin: 0 0 6px;
     }
     .rmd-closing {
-      margin-top: 14px;
+      margin-top: 8px;
+      font-size: 9.5px;
+      line-height: 1.4;
     }
     .rmd-material-table {
       width: 100%;
       border-collapse: collapse;
       table-layout: fixed;
-      margin-top: 10px;
+      margin-top: 4px;
     }
     .rmd-material-table .rmd-cell {
       border: 1px solid #111;
-      padding: 4px 5px;
+      padding: 2px 4px;
       vertical-align: middle;
-      line-height: 1.3;
+      line-height: 1.25;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
     .rmd-material-table .rmd-th {
-      font-size: 7.5px;
+      font-size: 7px;
       font-weight: 700;
       text-align: center;
       background: #eef2f7;
-      line-height: 1.25;
+      line-height: 1.2;
     }
     .rmd-material-table .rmd-td {
-      font-size: 9px;
+      font-size: 8.5px;
       text-align: center;
     }
     .rmd-material-table .rmd-col-left {
@@ -375,12 +414,12 @@ export function buildRawMaterialDetailsHtml(
       text-align: center;
     }
     .rmd-signatory-block {
-      margin-top: 28px;
+      margin-top: 10px;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      font-size: 10px;
-      line-height: 1.6;
+      font-size: 9.5px;
+      line-height: 1.45;
       text-align: right;
     }
     .rmd-signatory-for {
@@ -388,18 +427,31 @@ export function buildRawMaterialDetailsHtml(
       text-align: right;
     }
     .rmd-signatory-sig {
-      margin-top: 32px;
-      min-width: 200px;
+      margin-top: 18px;
+      min-width: 180px;
       text-align: right;
     }
     .rmd-signatory-line {
       border-top: 1px solid #94a3b8;
       padding-top: 2px;
-      font-size: 10px;
-      line-height: 1.35;
+      font-size: 9.5px;
+      line-height: 1.3;
       text-align: right;
     }
-    .page-break { page-break-before: always; }
+    .rmd-page-break {
+      page-break-before: always;
+      break-before: page;
+    }
+    @media print {
+      .rmd-sheet {
+        page-break-after: always;
+        break-after: page;
+      }
+      .rmd-sheet:last-of-type {
+        page-break-after: auto;
+        break-after: auto;
+      }
+    }
   `;
 
   return buildPrintDocument({
@@ -413,6 +465,7 @@ export function buildRawMaterialDetailsHtml(
 
 export function iframeSizeForRawMaterialDetailsPrintSettings(
   settings: PrintSettings,
+  pageCount = 1,
 ): { widthMm: number; heightMm: number } {
-  return iframeSizeForPrintSettings(settings);
+  return iframeSizeForPagedPrintSettings(settings, pageCount);
 }

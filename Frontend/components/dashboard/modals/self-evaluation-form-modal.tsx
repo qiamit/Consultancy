@@ -30,14 +30,18 @@ import {
   buildSefBrandRows,
   buildSefQcStaffRows,
   buildSefRawMaterialRows,
+  documentHasContent as selfEvaluationFormHasContent,
   resolveSelfEvaluationFormDocument,
   resolveSelfEvaluationPackagingMarking,
   type SelfEvaluationFormStored,
 } from "@backend/modules/bis/self-evaluation-form";
 import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff";
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 const SEF_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with the Self Evaluation cum Verification Form submitted with BIS licence applications:
@@ -67,6 +71,8 @@ export function SelfEvaluationFormModal({
   cmpf307,
   topManagement,
   storedDocument,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -83,6 +89,8 @@ export function SelfEvaluationFormModal({
   cmpf307: Cmpf307Stored;
   topManagement: TopManagementStored[];
   storedDocument: SelfEvaluationFormStored;
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (document: SelfEvaluationFormStored) => void;
   onClose: () => void;
 }) {
@@ -110,10 +118,17 @@ export function SelfEvaluationFormModal({
   }));
 
   useEffect(() => {
-    setDocument({
-      ...resolvedDefaults,
-      packaging_marking: resolveSelfEvaluationPackagingMarking(storedDocument, markingClause),
-    });
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        selfEvaluationFormHasContent,
+        (stored) => ({
+          ...resolvedDefaults,
+          packaging_marking: resolveSelfEvaluationPackagingMarking(stored, markingClause),
+        }),
+      ),
+    );
   }, [resolvedDefaults, storedDocument, markingClause]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
@@ -122,6 +137,7 @@ export function SelfEvaluationFormModal({
   const [printAssets, setPrintAssets] = useState<SelfEvaluationFormPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
@@ -232,8 +248,11 @@ export function SelfEvaluationFormModal({
     }
   }, [showPrintPreview, refreshPreview]);
 
-  const iframeSize = iframeSizeForSelfEvaluationFormPrintSettings(printSettings);
-  const previewPageCount = sefPrintPageCount();
+  const previewPageCount = useMemo(() => sefPrintPageCount(), []);
+  const iframeSize = iframeSizeForSelfEvaluationFormPrintSettings(
+    printSettings,
+    previewPageCount,
+  );
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
     setPrintSettings((prev) => ({
@@ -288,6 +307,21 @@ export function SelfEvaluationFormModal({
     setDocument((prev) => ({ ...prev, plant_layout: plantLayout }));
   }
 
+  function handleImportFromApplication(nextDocument: SelfEvaluationFormStored): boolean {
+    if (selfEvaluationFormHasContent(document)) {
+      const ok = window.confirm(
+        "Replace the current Self Evaluation Form (plant layout & packaging/marking) with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setDocument({
+      ...nextDocument,
+      packaging_marking: resolveSelfEvaluationPackagingMarking(nextDocument, markingClause),
+    });
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
@@ -310,6 +344,14 @@ export function SelfEvaluationFormModal({
             className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowImportDialog(true)}
+            title="Import Self Evaluation Form from Another Application or License"
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            Import
           </button>
           <button
             type="button"
@@ -438,7 +480,7 @@ export function SelfEvaluationFormModal({
                 title="Self Evaluation Form preview"
                 className="mx-auto max-w-full border-0 bg-white shadow-2xl"
                 scrolling="no"
-                style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm * previewPageCount)}
+                style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
               />
             </div>
           </div>
@@ -466,6 +508,20 @@ export function SelfEvaluationFormModal({
           accentColor="amber"
           overlayZIndexClass="z-[500]"
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="self_evaluation_form"
+          title="Import Self Evaluation Form"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "self_evaluation_form") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </>

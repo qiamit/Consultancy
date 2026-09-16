@@ -19,6 +19,7 @@ import {
   type TechnicalStaffRow,
 } from "@backend/modules/bis/technical-staff";
 import type { TopManagementStored } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import {
   technicalStaffDocumentPath,
   uploadTechnicalStaffDocument,
@@ -125,6 +126,8 @@ function AppointmentLetterField({
   letterData,
   topManagement,
   person,
+  clientId = null,
+  excludeImportSource = null,
 }: {
   value: string;
   onChange: (url: string) => void;
@@ -141,6 +144,8 @@ function AppointmentLetterField({
     educational_qualification: string;
     experience_years: string;
   };
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
 }) {
   const [uploading, setUploading] = useState(false);
   const [showCreator, setShowCreator] = useState(false);
@@ -214,6 +219,8 @@ function AppointmentLetterField({
           letterData={letterData}
           topManagement={topManagement}
           person={person}
+          clientId={clientId}
+          excludeImportSource={excludeImportSource}
           onCreated={(url) => {
             onChange(url);
             setShowCreator(false);
@@ -295,6 +302,8 @@ export function TechnicalStaffFormModal({
   letterData,
   topManagement,
   initial,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -305,6 +314,8 @@ export function TechnicalStaffFormModal({
   >;
   topManagement: TopManagementStored[];
   initial?: TechnicalStaffRow | null;
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (row: TechnicalStaffRow) => void;
   onClose: () => void;
 }) {
@@ -489,6 +500,8 @@ export function TechnicalStaffFormModal({
               rowId={draftId}
               letterData={letterData}
               topManagement={topManagement}
+              clientId={clientId}
+              excludeImportSource={excludeImportSource}
               person={{
                 person_name: personName,
                 designation,

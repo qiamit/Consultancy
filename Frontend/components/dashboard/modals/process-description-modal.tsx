@@ -25,6 +25,7 @@ import { downloadProcessDescriptionWord } from "@backend/modules/print/process-d
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as processDescriptionHasContent,
   mergeProcessDescriptionWithDefaults,
   resolveProcessDescriptionDocument,
   type ProcessDescriptionStored,
@@ -34,6 +35,7 @@ import type { LicenseScopeFormat, LicenseScopeTableRow } from "@backend/modules/
 import type { ProcessFlowChartStored } from "@backend/modules/bis/process-flow-chart";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 export function ProcessDescriptionModal({
   letterData,
@@ -89,7 +91,14 @@ export function ProcessDescriptionModal({
   );
 
   useEffect(() => {
-    setDocument(mergeProcessDescriptionWithDefaults(storedDocument, resolvedDefaults));
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        processDescriptionHasContent,
+        (stored) => mergeProcessDescriptionWithDefaults(stored, resolvedDefaults),
+      ),
+    );
   }, [storedDocument, resolvedDefaults]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>

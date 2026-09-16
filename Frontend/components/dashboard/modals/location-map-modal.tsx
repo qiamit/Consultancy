@@ -26,6 +26,7 @@ import {
   buildGoogleMapsDirectionsUrl,
   buildGoogleMapsEmbedUrl,
   computeFitZoom,
+  documentHasContent as locationMapDocumentHasContent,
   isMapZoomFit,
   MAP_ZOOM_FIT,
   locationMapHasValidRoute,
@@ -34,11 +35,13 @@ import {
   MIN_MAP_ZOOM,
   normalizeMapZoom,
   parseCoordinate,
+  parseLatLngPastePair,
   resolveLocationMapDefaults,
   resolveMapZoom,
   sanitizeCoordinateInput,
   type LocationMapStored,
 } from "@backend/modules/bis/location-map";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import {
   resolvePrimaryTopManagementPerson,
   type TopManagementStored,
@@ -46,6 +49,8 @@ import {
 } from "@backend/modules/bis/top-management";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 const LOCATION_MAP_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Location Map documents submitted with BIS licence applications:
@@ -72,11 +77,14 @@ function CoordinateField({
   label,
   value,
   onChange,
+  onPastePair,
   placeholder,
 }: {
   label: string;
   value: string;
   onChange: (value: string) => void;
+  /** When clipboard has "lat, lng", fill both fields. */
+  onPastePair?: (latitude: string, longitude: string) => void;
   placeholder: string;
 }) {
   return (
@@ -88,7 +96,23 @@ function CoordinateField({
         autoComplete="off"
         spellCheck={false}
         value={value}
-        onChange={(e) => onChange(sanitizeCoordinateInput(e.target.value))}
+        onChange={(e) => {
+          const raw = e.target.value;
+          const pair = parseLatLngPastePair(raw);
+          if (pair && onPastePair) {
+            onPastePair(pair.latitude, pair.longitude);
+            return;
+          }
+          onChange(sanitizeCoordinateInput(raw));
+        }}
+        onPaste={(e) => {
+          if (!onPastePair) return;
+          const text = e.clipboardData.getData("text");
+          const pair = parseLatLngPastePair(text);
+          if (!pair) return;
+          e.preventDefault();
+          onPastePair(pair.latitude, pair.longitude);
+        }}
         placeholder={placeholder}
         className={inputClass}
       />
@@ -127,6 +151,8 @@ export function LocationMapModal({
   dateOfApplication,
   topManagement,
   storedDocument,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -138,6 +164,8 @@ export function LocationMapModal({
   dateOfApplication: string;
   topManagement: TopManagementStored[];
   storedDocument: LocationMapStored;
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (document: LocationMapStored) => void;
   onClose: () => void;
 }) {
@@ -161,14 +189,32 @@ export function LocationMapModal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
-    setDocument(mergeLocationMapWithDefaults(storedDocument, resolvedDefaults));
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        locationMapDocumentHasContent,
+        (stored) => mergeLocationMapWithDefaults(stored, resolvedDefaults),
+      ),
+    );
   }, [storedDocument, resolvedDefaults]);
+
+  // If From Location Name is blank (e.g. client/firm loaded after open), fill Firm name.
+  useEffect(() => {
+    const firmName = letterData.companyName.trim();
+    if (!firmName) return;
+    setDocument((prev) => {
+      if (prev.from_location_name.trim()) return prev;
+      return { ...prev, from_location_name: firmName };
+    });
+  }, [letterData.companyName]);
 
   useEffect(() => {
     let cancelled = false;
@@ -426,6 +472,18 @@ export function LocationMapModal({
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
 
+  function handleImportFromApplication(nextDocument: LocationMapStored): boolean {
+    if (locationMapDocumentHasContent(document)) {
+      const ok = window.confirm(
+        "Replace the current Location Map (names, latitude, longitude) with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setDocument(nextDocument);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   return (
     <>
       <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
@@ -454,6 +512,14 @@ export function LocationMapModal({
               className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowImportDialog(true)}
+              title="Import Location Map from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Import
             </button>
             <button
               type="button"
@@ -538,19 +604,33 @@ export function LocationMapModal({
                           label="Location Name"
                           value={document.from_location_name}
                           onChange={(from_location_name) => patchDocument({ from_location_name })}
-                          placeholder="e.g. Manufacturing Unit / Factory"
+                          placeholder={
+                            letterData.companyName.trim() || "Firm name"
+                          }
                         />
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <CoordinateField
                             label="Latitude"
                             value={document.from_latitude}
                             onChange={(from_latitude) => patchDocument({ from_latitude })}
+                            onPastePair={(latitude, longitude) =>
+                              patchDocument({
+                                from_latitude: latitude,
+                                from_longitude: longitude,
+                              })
+                            }
                             placeholder="e.g. 21.3846"
                           />
                           <CoordinateField
                             label="Longitude"
                             value={document.from_longitude}
                             onChange={(from_longitude) => patchDocument({ from_longitude })}
+                            onPastePair={(latitude, longitude) =>
+                              patchDocument({
+                                from_latitude: latitude,
+                                from_longitude: longitude,
+                              })
+                            }
                             placeholder="e.g. 81.6614"
                           />
                         </div>
@@ -571,12 +651,24 @@ export function LocationMapModal({
                             label="Latitude"
                             value={document.to_latitude}
                             onChange={(to_latitude) => patchDocument({ to_latitude })}
+                            onPastePair={(latitude, longitude) =>
+                              patchDocument({
+                                to_latitude: latitude,
+                                to_longitude: longitude,
+                              })
+                            }
                             placeholder="e.g. 28.6139"
                           />
                           <CoordinateField
                             label="Longitude"
                             value={document.to_longitude}
                             onChange={(to_longitude) => patchDocument({ to_longitude })}
+                            onPastePair={(latitude, longitude) =>
+                              patchDocument({
+                                to_latitude: latitude,
+                                to_longitude: longitude,
+                              })
+                            }
                             placeholder="e.g. 77.2090"
                           />
                         </div>
@@ -726,6 +818,20 @@ export function LocationMapModal({
           )}
         </div>
       </div>
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="location_map"
+          title="Import Location Map"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "location_map") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
+        />
+      )}
 
       {showQeAssistant && (
         <AiChatModal

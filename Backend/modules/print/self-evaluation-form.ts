@@ -1,8 +1,7 @@
-import { buildPrintDocument } from "@backend/modules/print/engine";
+import { buildLetterheadHtml, buildPrintDocument } from "@backend/modules/print/engine";
 import {
   buildManufacturingScopeCompany,
   defaultDeclarationPrintSettings,
-  iframeSizeForPrintSettings,
   type ManufacturingScopeDeclarationData,
 } from "@backend/modules/print/manufacturing-scope-declaration";
 import type { Cmpf307BrandStored } from "@backend/modules/bis/cmpf-307";
@@ -18,6 +17,12 @@ import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/typ
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { buildClassSignatoryBlockHtml } from "@backend/modules/print/signatory-signature";
+import {
+  iframeSizeForPagedPrintSettings,
+  pagedPrintSheetStyles,
+  printPageGapHtml,
+  printPageIndicatorHtml,
+} from "@backend/modules/print/paged-preview";
 
 export type SelfEvaluationFormLetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -61,26 +66,10 @@ function formatBisBranchLine(branchName: string, state: string): string {
   return `${esc(branch)}, ${esc(st)}, INDIA`;
 }
 
-function padPageNum(n: number): string {
-  return String(n).padStart(2, "0");
+/** Self Evaluation Form is always two print pages. */
+export function sefPrintPageCount(_pageCount = 2): number {
+  return 2;
 }
-
-const SEF_TOTAL_PAGES = 2;
-
-export function sefPrintPageCount(): number {
-  return SEF_TOTAL_PAGES;
-}
-
-function buildPageIndicatorHtml(pageNum: number, totalPages: number): string {
-  return `<div class="sef-page-indicator">Page ${padPageNum(pageNum)} of ${padPageNum(totalPages)}</div>`;
-}
-
-const CELL =
-  "border:1px solid #111;padding:3px 5px;font-size:9px;vertical-align:middle;line-height:1.3;";
-const TH = `${CELL}font-weight:700;text-align:center;background:#eef2f7;`;
-const TD = `${CELL}text-align:center;`;
-const TD_LEFT = `${CELL}text-align:left;`;
-const LBL = `${CELL}font-weight:700;width:42%;background:#f8fafc;text-align:left;`;
 
 function buildToBlockHtml(data: SelfEvaluationFormLetterData): string {
   const letterDate = formatMetaDate(data.dateOfApplication);
@@ -117,6 +106,13 @@ function buildSignatoryBlockHtml(data: SelfEvaluationFormLetterData): string {
     signatureImageUrl: data.signatureImageUrl,
   });
 }
+
+const CELL =
+  "border:1px solid #111;padding:3px 5px;font-size:9px;vertical-align:middle;line-height:1.3;";
+const TH = `${CELL}font-weight:700;text-align:center;background:#eef2f7;`;
+const TD = `${CELL}text-align:center;`;
+const TD_LEFT = `${CELL}text-align:left;`;
+const LBL = `${CELL}font-weight:700;width:42%;background:#f8fafc;text-align:left;`;
 
 function buildRawMaterialTableHtml(rows: RawMaterialStored[]): string {
   const filled = rows.filter(
@@ -243,47 +239,71 @@ function buildBrandTableHtml(rows: Cmpf307BrandStored[]): string {
 </table>`;
 }
 
-function buildPage1Html(data: SelfEvaluationFormLetterData, sheetMinHeight: string): string {
-  return `
-<div class="sef-sheet" style="min-height:${sheetMinHeight};">
-  <h1 class="sef-title">Self Evaluation cum Verification Form</h1>
-  ${buildToBlockHtml(data)}
-  <p class="sef-section"><strong>1. General Information</strong></p>
-  <p class="sef-line"><strong>a.</strong> Applicant Name :- ${esc(data.companyName) || "________________"}</p>
-  <p class="sef-line"><strong>b.</strong> Plant Layout :- ${esc(data.document.plant_layout) || "Enclosed"}</p>
-  <p class="sef-section"><strong>2. Raw Material Details</strong></p>
-  ${buildRawMaterialTableHtml(data.rawMaterialRows)}
-  <p class="sef-section"><strong>3. Packaging &amp; Marking</strong></p>
-  ${buildPackagingMarkingTableHtml(data.packagingMarkingRows)}
-  <p class="sef-section sef-section-tight"><strong>4. Details of Quality Control Staff</strong></p>
-  ${buildQcStaffTableHtml(data.qcStaffRows)}
-  ${buildPageIndicatorHtml(1, SEF_TOTAL_PAGES)}
-</div>`;
-}
-
-function buildPage2Html(data: SelfEvaluationFormLetterData, sheetMinHeight: string): string {
+function buildBrandPointsHtml(data: SelfEvaluationFormLetterData): string {
   const reasonsB = esc(data.brandsWithoutMarkReasons) || "&nbsp;";
-  const points = SEF_BRAND_DECLARATION_POINTS.map(
+  return SEF_BRAND_DECLARATION_POINTS.map(
     (text, i) =>
       `<p class="sef-point"><strong>${String.fromCharCode(66 + i)}.</strong> ${esc(text)}${i === 0 ? ` ${reasonsB}` : ""}</p>`,
   ).join("");
-
-  return `
-<div class="sef-sheet sef-page-break" style="min-height:${sheetMinHeight};">
-  <p class="sef-section"><strong>5. Brand Name</strong></p>
-  <p class="sef-subhead"><strong>Declaration of Brand Name / Trade – Mark Proposed to be Covered Under Certification</strong></p>
-  <p class="sef-subhead"><strong>A. Brand Name / Trade – Mark(s) Being Used</strong></p>
-  ${buildBrandTableHtml(data.brandRows)}
-  ${points}
-  <p class="sef-section"><strong>Declaration</strong></p>
-  <p class="sef-declaration">${esc(SEF_FINAL_DECLARATION)}</p>
-  ${buildSignatoryBlockHtml(data)}
-  ${buildPageIndicatorHtml(2, SEF_TOTAL_PAGES)}
-</div>`;
 }
 
-function buildFormBody(data: SelfEvaluationFormLetterData, sheetMinHeight: string): string {
-  return `${buildPage1Html(data, sheetMinHeight)}${buildPage2Html(data, sheetMinHeight)}`;
+/**
+ * Page 1: General / Raw Material / Packaging + Seal & Sign
+ * Page 2: Letterhead + QC Staff / Brand / Declaration + Seal & Sign
+ */
+function buildFormBodyHtml(
+  data: SelfEvaluationFormLetterData,
+  settings: PrintSettings,
+  company: PrintCompanyInfo,
+): string {
+  const page2Letterhead = buildLetterheadHtml(company, settings);
+  const signatory = buildSignatoryBlockHtml(data);
+
+  return `
+<div class="print-sheet sef-sheet">
+  <div class="print-sheet-body">
+    <h1 class="sef-title">Self Evaluation cum Verification Form</h1>
+    ${buildToBlockHtml(data)}
+    <section class="sef-block">
+      <p class="sef-section"><strong>1. General Information</strong></p>
+      <p class="sef-line"><strong>a.</strong> Applicant Name :- ${esc(data.companyName) || "________________"}</p>
+      <p class="sef-line"><strong>b.</strong> Plant Layout :- ${esc(data.document.plant_layout) || "Enclosed"}</p>
+    </section>
+    <section class="sef-block">
+      <p class="sef-section"><strong>2. Raw Material Details</strong></p>
+      ${buildRawMaterialTableHtml(data.rawMaterialRows)}
+    </section>
+    <section class="sef-block">
+      <p class="sef-section"><strong>3. Packaging &amp; Marking</strong></p>
+      ${buildPackagingMarkingTableHtml(data.packagingMarkingRows)}
+    </section>
+    ${signatory}
+  </div>
+  ${printPageIndicatorHtml(1, 2)}
+</div>
+${printPageGapHtml(2, 2)}
+<div class="print-sheet sef-sheet print-sheet-page-break">
+  <div class="print-sheet-body">
+    ${page2Letterhead}
+    <section class="sef-block">
+      <p class="sef-section sef-section-tight"><strong>4. Details of Quality Control Staff</strong></p>
+      ${buildQcStaffTableHtml(data.qcStaffRows)}
+    </section>
+    <section class="sef-block">
+      <p class="sef-section"><strong>5. Brand Name</strong></p>
+      <p class="sef-subhead"><strong>Declaration of Brand Name / Trade – Mark Proposed to be Covered Under Certification</strong></p>
+      <p class="sef-subhead"><strong>A. Brand Name / Trade – Mark(s) Being Used</strong></p>
+      ${buildBrandTableHtml(data.brandRows)}
+      ${buildBrandPointsHtml(data)}
+    </section>
+    <section class="sef-block sef-declaration-block">
+      <p class="sef-section"><strong>Declaration</strong></p>
+      <p class="sef-declaration">${esc(SEF_FINAL_DECLARATION)}</p>
+      ${signatory}
+    </section>
+  </div>
+  ${printPageIndicatorHtml(2, 2)}
+</div>`;
 }
 
 export type SelfEvaluationFormPrintAssets = Partial<
@@ -339,20 +359,13 @@ export function buildSelfEvaluationFormHtml(
   assets?: SelfEvaluationFormPrintAssets,
 ): string {
   const letterheadSettings = selfEvaluationFormLetterheadSettings(settings);
-  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  const company = buildSelfEvaluationFormCompany(data, assets);
   const styles = `
+    ${pagedPrintSheetStyles(letterheadSettings)}
     .sef-sheet {
       font-family: "Times New Roman", Times, serif;
       color: #111;
       font-size: 10px;
-      position: relative;
-      box-sizing: border-box;
-      padding-bottom: 4mm;
-    }
-    .sef-page-break {
-      page-break-before: always;
-      break-before: page;
     }
     .sef-title {
       text-align: center;
@@ -361,14 +374,6 @@ export function buildSelfEvaluationFormHtml(
       text-decoration: underline;
       margin: 0 0 6px;
       line-height: 1.35;
-    }
-    .sef-page-indicator {
-      position: absolute;
-      right: 0;
-      bottom: 0;
-      font-size: 10px;
-      font-weight: 600;
-      text-align: right;
     }
     .sef-to-row {
       display: flex;
@@ -448,20 +453,37 @@ export function buildSelfEvaluationFormHtml(
       line-height: 1.35;
       text-align: right;
     }
+    @media print {
+      .sef-block table {
+        break-inside: auto;
+        page-break-inside: auto;
+      }
+      .sef-block tr {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      .sef-declaration-block {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+    }
   `;
 
   return buildPrintDocument({
     title: "Self Evaluation cum Verification Form",
-    bodyHtml: buildFormBody(data, sheetMinHeight),
+    bodyHtml: buildFormBodyHtml(data, letterheadSettings, company),
     extraStyles: styles,
     settings: letterheadSettings,
-    company: buildSelfEvaluationFormCompany(data, assets),
+    company,
   });
 }
 
-export function iframeSizeForSelfEvaluationFormPrintSettings(settings: PrintSettings): {
+export function iframeSizeForSelfEvaluationFormPrintSettings(
+  settings: PrintSettings,
+  pageCount = 2,
+): {
   widthMm: number;
   heightMm: number;
 } {
-  return iframeSizeForPrintSettings(settings);
+  return iframeSizeForPagedPrintSettings(settings, sefPrintPageCount(pageCount));
 }

@@ -69,7 +69,11 @@ export function parseCmpf305Machinery(raw: unknown): Cmpf305MachineryStored[] {
 
 export function editorRowsFromStored(stored: Cmpf305MachineryStored[]): Cmpf305MachineryRow[] {
   const rows = stored.filter(rowHasContent);
-  if (rows.length === 0) return defaultCmpf305MachineryRows();
+  if (rows.length === 0) {
+    // One blank editor row — never seed a full page of empty rows (that used to
+    // sync back as [] and wipe saved machinery after remount / print preview).
+    return [createCmpf305MachineryRow()];
+  }
   return rows.map((r, i) => ({
     id: `cmpf305-loaded-${i}`,
     ...r,

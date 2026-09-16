@@ -99,7 +99,8 @@ async function buildDrawingParagraphs(
     ];
   }
 
-  const heightPx = Math.round(widthPx * 0.72);
+  // Cap drawing height so Word export stays closer to one A4 page.
+  const heightPx = Math.min(Math.round(widthPx * 0.72), Math.round(widthPx * 0.58));
   return [
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -254,7 +255,7 @@ async function buildPlantLayoutDocx(
     }),
     plainParagraph("Respected / Sir,", { before: 140, after: 80 }),
     plainParagraph(
-      "We hereby submit the plant layout drawing of our manufacturing unit for your kind reference in connection with our BIS licence application. The layout plan is shown below.",
+      "We hereby submit the enclosed plant layout drawing of our manufacturing unit for your kind perusal and record in connection with our application for grant of BIS licence under the applicable Indian Standard. The drawing indicates the arrangement of production, storage, testing and allied areas within the factory premises to facilitate inspection and verification by the Bureau. The detailed layout plan is shown below for ready reference.",
       { after: 120 },
     ),
     ...(await buildDrawingParagraphs(data, letterheadSettings)),

@@ -89,6 +89,10 @@ export function rowHasContent(row: OslSampleRequirementStored): boolean {
   );
 }
 
+export function documentHasContent(rows: OslSampleRequirementStored[]): boolean {
+  return rows.some(rowHasContent);
+}
+
 export function editorRowsFromStored(stored: OslSampleRequirementStored[]): OslSampleRequirementRow[] {
   if (stored.length === 0) return [];
   return stored.map((row, index) => ({

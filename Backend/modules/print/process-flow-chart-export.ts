@@ -277,7 +277,7 @@ async function buildProcessFlowChartDocx(
     }),
     plainParagraph("Respected / Sir,", { before: 140, after: 80 }),
     plainParagraph(
-      "We hereby submit the process flow chart and description of our manufacturing process for your kind reference in connection with our BIS licence application.",
+      "We hereby submit the process flow chart of our manufacturing process for your kind reference in connection with our BIS licence / certification application. This chart outlines the sequence of operations from receipt of raw material to final inspection, packing and dispatch, including in-process checks where applicable. The process flow diagram is shown below for your review and records.",
       { after: 120 },
     ),
     ...(await buildDrawingParagraphs(data, letterheadSettings)),

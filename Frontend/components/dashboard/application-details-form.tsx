@@ -174,6 +174,8 @@ export function ApplicationDetailsForm({
   legalDocumentRows,
   onLegalDocumentsChange,
   onSave,
+  onImportData,
+  onOpenApplicationForm,
   saving = false,
   savedFlash = false,
 }: {
@@ -185,6 +187,8 @@ export function ApplicationDetailsForm({
   legalDocumentRows: LegalDocumentRow[];
   onLegalDocumentsChange: (rows: LegalDocumentRow[]) => void;
   onSave?: () => void;
+  onImportData?: () => void;
+  onOpenApplicationForm?: () => void;
   saving?: boolean;
   savedFlash?: boolean;
 }) {
@@ -369,6 +373,38 @@ export function ApplicationDetailsForm({
             <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
               Saved ✓
             </span>
+          ) : null}
+          {onOpenApplicationForm ? (
+            <button
+              type="button"
+              onClick={onOpenApplicationForm}
+              title="Open BIS Form 1 (auto-filled from application data)"
+              className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg border border-teal-600/50 bg-gradient-to-br from-teal-600 to-indigo-700 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:from-teal-500 hover:to-indigo-600"
+            >
+              <span
+                className="inline-flex h-5 w-5 items-center justify-center rounded bg-white/15"
+                aria-hidden
+              >
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M9 12h6m-6 4h6M7 4h7l5 5v11a2 2 0 01-2 2H7a2 2 0 01-2-2V6a2 2 0 012-2z"
+                  />
+                </svg>
+              </span>
+              Application Form
+            </button>
+          ) : null}
+          {onImportData ? (
+            <button
+              type="button"
+              onClick={onImportData}
+              title="Import Application Details from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-semibold text-zinc-800 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+            >
+              Import Data
+            </button>
           ) : null}
           <button
             type="button"

@@ -252,6 +252,115 @@ export function parseApplicationMeta(raw: unknown): ApplicationMeta {
   };
 }
 
+/** Prefer pending/parsed rows; never let an empty source wipe filled local state. */
+export function preferNonEmptyRows<T>(
+  parsed: T[],
+  prev: T[],
+  pending: T[] | undefined,
+  rowHasContentFn: (row: T) => boolean,
+): T[] {
+  const candidate = pending !== undefined ? pending : parsed;
+  if (candidate.some(rowHasContentFn)) return candidate;
+  if (prev.some(rowHasContentFn)) return prev;
+  return candidate;
+}
+
+/** Prefer pending/parsed document; never let an empty source wipe filled local state. */
+export function preferNonEmptyDocument<T>(
+  parsed: T,
+  prev: T,
+  pending: T | undefined,
+  documentHasContentFn: (doc: T) => boolean,
+): T {
+  const candidate = pending !== undefined ? pending : parsed;
+  if (documentHasContentFn(candidate)) return candidate;
+  if (documentHasContentFn(prev)) return prev;
+  return candidate;
+}
+
+/** True when Application Details has importable (non-empty) field values. */
+export function applicationMetaHasContent(meta: ApplicationMeta): boolean {
+  return (
+    meta.application_number.trim().length > 0 ||
+    meta.date_of_application.trim().length > 0 ||
+    meta.bis_branch_name.trim().length > 0 ||
+    meta.dealing_officer_name.trim().length > 0 ||
+    meta.dealing_officer_designation.trim().length > 0 ||
+    meta.inspection_officer_name.trim().length > 0 ||
+    meta.inspection_officer_designation.trim().length > 0 ||
+    meta.branch_head_name.trim().length > 0 ||
+    meta.branch_head_designation.trim().length > 0 ||
+    meta.nature_of_inspection.trim().length > 0 ||
+    meta.date_of_inspection.trim().length > 0 ||
+    meta.marking_clause.trim().length > 0 ||
+    meta.packaging_clause.trim().length > 0 ||
+    meta.product_manual_number.trim().length > 0 ||
+    meta.firm_scale.trim().length > 0 ||
+    meta.weekly_off.length > 0
+  );
+}
+
+/**
+ * Merge Application Details preferring non-empty field values from later sources.
+ * Prevents a late empty hydrate / stale save from wiping typed data.
+ */
+export function mergeApplicationMetaPreferFilled(
+  ...sources: Array<ApplicationMeta | null | undefined>
+): ApplicationMeta {
+  const result = defaultApplicationMeta();
+  for (const src of sources) {
+    if (!src) continue;
+    if (src.application_procedure === "Normal" || src.application_procedure === "Simplified") {
+      result.application_procedure = src.application_procedure;
+    }
+    const assignIfFilled = (key: keyof ApplicationMeta) => {
+      if (key === "application_procedure" || key === "weekly_off") return;
+      const value = String(src[key] ?? "").trim();
+      if (value) {
+        (result as Record<string, unknown>)[key] = value;
+      }
+    };
+    (
+      [
+        "application_number",
+        "date_of_application",
+        "bis_branch_name",
+        "dealing_officer_name",
+        "dealing_officer_designation",
+        "inspection_officer_name",
+        "inspection_officer_designation",
+        "branch_head_name",
+        "branch_head_designation",
+        "nature_of_inspection",
+        "date_of_inspection",
+        "marking_clause",
+        "packaging_clause",
+        "product_manual_number",
+        "firm_scale",
+      ] as const
+    ).forEach(assignIfFilled);
+    if (Array.isArray(src.weekly_off) && src.weekly_off.length > 0) {
+      result.weekly_off = [...src.weekly_off];
+    }
+  }
+  return result;
+}
+
+/**
+ * Apply imported Application Details onto the current application.
+ * Keeps this application's number and date of application.
+ */
+export function mergeImportedApplicationMeta(
+  current: ApplicationMeta,
+  imported: ApplicationMeta,
+): ApplicationMeta {
+  return {
+    ...imported,
+    application_number: current.application_number,
+    date_of_application: current.date_of_application,
+  };
+}
+
 export function parseApplicationChecklistNotes(notes: string | null | undefined): {
   items: unknown[];
   licenseScope: string;

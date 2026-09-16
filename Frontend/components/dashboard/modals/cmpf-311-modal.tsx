@@ -22,14 +22,20 @@ import {
 import { downloadCmpf311Word } from "@backend/modules/print/cmpf-311-export";
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
-import { resolveCmpf311Document, type Cmpf311Stored } from "@backend/modules/bis/cmpf-311";
 import {
-  resolvePrimaryTopManagementPerson,
+  documentHasContent as cmpf311HasContent,
+  mergeCmpf311WithDefaults,
+  resolveCmpf311Document,
+  type Cmpf311Stored,
+} from "@backend/modules/bis/cmpf-311";
+import {
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 import type { ApplicationMeta } from "@backend/modules/bis/application-checklist-notes";
 
 const CMPF311_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
@@ -46,6 +52,9 @@ const CMPF311_QE_STARTERS = [
   "Review our reference letter details for CMPF 311",
 ];
 
+const FIELD_INPUT_CLASS =
+  "mt-1 block w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30";
+
 export function Cmpf311Modal({
   letterData,
   applicationNumber,
@@ -54,6 +63,9 @@ export function Cmpf311Modal({
   productManualNumber,
   isCodeProductManualNumber,
   topManagement,
+  document: initialDocument,
+  clientId = null,
+  excludeImportSource = null,
   onUpdateMeta,
   onSave,
   onClose,
@@ -68,6 +80,9 @@ export function Cmpf311Modal({
   productManualNumber: string;
   isCodeProductManualNumber?: string | null;
   topManagement: TopManagementStored[];
+  document: Cmpf311Stored;
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onUpdateMeta: (patch: Partial<ApplicationMeta>) => void;
   onSave: (document: Cmpf311Stored) => void;
   onClose: () => void;
@@ -75,27 +90,22 @@ export function Cmpf311Modal({
   const resolvedProductManualNumber =
     productManualNumber.trim() || isCodeProductManualNumber?.trim() || "";
 
-  const document = useMemo(
-    () =>
-      resolveCmpf311Document({
-        isNumber: letterData.isNumber,
-        isTitle: letterData.isTitle ?? null,
-        contactPerson: letterData.contactPerson,
-        topManagement,
-        applicationNumber,
-        dateOfApplication,
-        productManualNumber: resolvedProductManualNumber,
-      }),
-    [
-      letterData.isNumber,
-      letterData.isTitle,
-      letterData.contactPerson,
+  function buildResolvedDocument(): Cmpf311Stored {
+    return resolveCmpf311Document({
+      isNumber: letterData.isNumber,
+      isTitle: letterData.isTitle ?? null,
+      contactPerson: letterData.contactPerson,
       topManagement,
       applicationNumber,
       dateOfApplication,
-      resolvedProductManualNumber,
-    ],
+      productManualNumber: resolvedProductManualNumber,
+    });
+  }
+
+  const [document, setDocument] = useState(() =>
+    mergeCmpf311WithDefaults(initialDocument, buildResolvedDocument()),
   );
+  const skipAutoFieldSync = useRef(true);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCmpf311PrintSettings(),
@@ -104,10 +114,64 @@ export function Cmpf311Modal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // Re-auto-pick linked fields when application / IS / product manual sources change.
+  useEffect(() => {
+    const resolved = buildResolvedDocument();
+    if (skipAutoFieldSync.current) {
+      skipAutoFieldSync.current = false;
+      setDocument((prev) => mergeCmpf311WithDefaults(prev, resolved));
+      return;
+    }
+    setDocument((prev) => ({
+      ...prev,
+      reference_letter_no: resolved.reference_letter_no,
+      reference_letter_date: resolved.reference_letter_date,
+      licence_for_standard: resolved.licence_for_standard,
+      sit_document_ref: resolved.sit_document_ref,
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- sync only when source inputs change
+  }, [
+    applicationNumber,
+    dateOfApplication,
+    resolvedProductManualNumber,
+    letterData.isNumber,
+    letterData.isTitle,
+  ]);
+
+  // Fill empty signatory from Top Management without overwriting edits.
+  useEffect(() => {
+    const resolved = buildResolvedDocument();
+    setDocument((prev) => {
+      const nextName = prev.signatory_name.trim()
+        ? prev.signatory_name
+        : resolved.signatory_name;
+      const nextDesignation = prev.signatory_designation.trim()
+        ? prev.signatory_designation
+        : resolved.signatory_designation;
+      if (
+        nextName === prev.signatory_name &&
+        nextDesignation === prev.signatory_designation
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        signatory_name: nextName,
+        signatory_designation: nextDesignation,
+      };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topManagement, letterData.contactPerson]);
+
+  function patchDocument(patch: Partial<Cmpf311Stored>) {
+    setDocument((prev) => ({ ...prev, ...patch }));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -171,22 +235,14 @@ export function Cmpf311Modal({
 
   const isFullNumber = letterData.isNumber?.trim() || "—";
 
-  const { firmRepName, firmRepDesignation } = useMemo(() => {
-    const primary = resolvePrimaryTopManagementPerson(topManagement);
-    return {
-      firmRepName: primary.person_name || letterData.contactPerson?.trim() || "",
-      firmRepDesignation: primary.designation,
-    };
-  }, [topManagement, letterData.contactPerson]);
-
   const previewData = useMemo((): Cmpf311LetterData  => {
     return withDocumentSignatureImage({
       ...letterData,
       applicationNumber,
       dateOfApplication,
       dateOfInspection,
-      firmRepName,
-      firmRepDesignation,
+      firmRepName: document.signatory_name,
+      firmRepDesignation: document.signatory_designation,
       document,
     }, topManagement);
   }, [
@@ -194,10 +250,9 @@ export function Cmpf311Modal({
     applicationNumber,
     dateOfApplication,
     dateOfInspection,
-    firmRepName,
-    firmRepDesignation,
     document,
-    topManagement]);
+    topManagement,
+  ]);
 
   const refreshPreview = useCallback(() => {
     const iframe = iframeRef.current;
@@ -263,6 +318,18 @@ export function Cmpf311Modal({
     }
   }
 
+  function handleImportFromApplication(nextDocument: Cmpf311Stored): boolean {
+    if (cmpf311HasContent(document)) {
+      const ok = window.confirm(
+        "Replace the current SIT Acceptance details with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setDocument(nextDocument);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
@@ -285,6 +352,14 @@ export function Cmpf311Modal({
               className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowImportDialog(true)}
+              title="Import SIT Acceptance from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Import
             </button>
             <button
               type="button"
@@ -382,30 +457,97 @@ export function Cmpf311Modal({
                 <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                   Document Details
                 </p>
-                <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                  {[
-                    ["Reference Letter No.", document.reference_letter_no || "—"],
-                    ["Reference Letter Date", document.reference_letter_date || "—"],
-                    ["Licence For (Standard)", document.licence_for_standard || "—"],
-                    ["Product Manual No.", document.sit_document_ref || "—"],
-                    ["Signatory", firmRepName || "—"],
-                    ["Designation", firmRepDesignation || "—"],
-                  ].map(([label, value]) => (
-                    <div
-                      key={label}
-                      className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2"
-                    >
-                      <dt className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                        {label}
-                      </dt>
-                      <dd className="mt-1 text-zinc-200">{value}</dd>
-                    </div>
-                  ))}
-                </dl>
+                <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                  <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Reference Letter No.
+                    </span>
+                    <input
+                      type="text"
+                      value={document.reference_letter_no}
+                      onChange={(e) =>
+                        patchDocument({ reference_letter_no: e.target.value })
+                      }
+                      placeholder="From Application Number"
+                      className={FIELD_INPUT_CLASS}
+                    />
+                  </label>
+                  <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Reference Letter Date
+                    </span>
+                    <input
+                      type="text"
+                      value={document.reference_letter_date}
+                      onChange={(e) =>
+                        patchDocument({ reference_letter_date: e.target.value })
+                      }
+                      placeholder="From Date of Application"
+                      className={FIELD_INPUT_CLASS}
+                    />
+                  </label>
+                  <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Licence For (Standard)
+                    </span>
+                    <input
+                      type="text"
+                      value={document.licence_for_standard}
+                      onChange={(e) =>
+                        patchDocument({ licence_for_standard: e.target.value })
+                      }
+                      placeholder="From IS Number / Title"
+                      className={FIELD_INPUT_CLASS}
+                    />
+                  </label>
+                  <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Product Manual No.
+                    </span>
+                    <input
+                      type="text"
+                      value={document.sit_document_ref}
+                      onChange={(e) =>
+                        patchDocument({ sit_document_ref: e.target.value })
+                      }
+                      placeholder="From Product Manual Number"
+                      className={FIELD_INPUT_CLASS}
+                    />
+                  </label>
+                  <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Signatory
+                    </span>
+                    <input
+                      type="text"
+                      value={document.signatory_name}
+                      onChange={(e) =>
+                        patchDocument({ signatory_name: e.target.value })
+                      }
+                      placeholder="From Top Management"
+                      className={FIELD_INPUT_CLASS}
+                    />
+                  </label>
+                  <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Designation
+                    </span>
+                    <input
+                      type="text"
+                      value={document.signatory_designation}
+                      onChange={(e) =>
+                        patchDocument({ signatory_designation: e.target.value })
+                      }
+                      placeholder="From Top Management"
+                      className={FIELD_INPUT_CLASS}
+                    />
+                  </label>
+                </div>
                 <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-                  Edit Product Manual Number above; other details load from the application and IS
-                  Code. Use <strong className="text-zinc-300">Print Preview</strong> to view the
-                  full CMPF 311 letter.
+                  Fields auto-fill from Application, IS Code, and Product Manual Number; you can
+                  edit any value. Changing Product Manual Number above reloads Product Manual No.
+                  Use <strong className="text-zinc-300">Print Preview</strong> to view the full
+                  CMPF 311 letter.
                 </p>
               </div>
             </div>
@@ -456,6 +598,20 @@ export function Cmpf311Modal({
           accentColor="amber"
           overlayZIndexClass="z-[500]"
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="cmpf_311"
+          title="Import SIT Acceptance"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "cmpf_311") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </>

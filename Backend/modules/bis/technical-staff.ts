@@ -51,6 +51,10 @@ export function rowHasContent(row: TechnicalStaffStored): boolean {
   );
 }
 
+export function documentHasContent(rows: TechnicalStaffStored[]): boolean {
+  return rows.some(rowHasContent);
+}
+
 export function parseTechnicalStaff(raw: unknown): TechnicalStaffStored[] {
   if (!Array.isArray(raw)) return [];
   return raw
@@ -106,7 +110,7 @@ export function storedFromEditor(rows: TechnicalStaffRow[]): TechnicalStaffStore
     .filter(rowHasContent);
 }
 
-function isQualityControlInchargeDesignation(designation: string): boolean {
+export function isQualityControlInchargeDesignation(designation: string): boolean {
   const d = designation.trim().toLowerCase();
   if (!d) return false;
   return (
@@ -118,13 +122,22 @@ function isQualityControlInchargeDesignation(designation: string): boolean {
 }
 
 /** First technical staff row whose designation matches Quality Control Incharge. */
+export function findQualityControlIncharge(
+  staff: TechnicalStaffStored[],
+): TechnicalStaffStored | null {
+  return (
+    staff
+      .filter(rowHasContent)
+      .find((row) => isQualityControlInchargeDesignation(row.designation)) ?? null
+  );
+}
+
+/** First technical staff row whose designation matches Quality Control Incharge. */
 export function resolveQualityControlIncharge(staff: TechnicalStaffStored[]): {
   name: string;
   designation: string;
 } {
-  const match = staff
-    .filter(rowHasContent)
-    .find((row) => isQualityControlInchargeDesignation(row.designation));
+  const match = findQualityControlIncharge(staff);
   if (!match) return { name: "", designation: "" };
   return {
     name: match.person_name.trim(),

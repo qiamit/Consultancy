@@ -26,6 +26,7 @@ import {
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as undertakingLongDurationTestHasContent,
   mergeUndertakingLongDurationTestWithDefaults,
   resolveUndertakingLongDurationTestDocument,
   type UndertakingLongDurationTestStored,
@@ -33,6 +34,7 @@ import {
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 export function UndertakingLongDurationTestModal({
   letterData,
@@ -84,7 +86,14 @@ export function UndertakingLongDurationTestModal({
   );
 
   useEffect(() => {
-    setDocument(mergeUndertakingLongDurationTestWithDefaults(storedDocument, resolvedDefaults));
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        undertakingLongDurationTestHasContent,
+        (stored) => mergeUndertakingLongDurationTestWithDefaults(stored, resolvedDefaults),
+      ),
+    );
   }, [storedDocument, resolvedDefaults]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>

@@ -45,6 +45,10 @@ export function rowHasContent(row: TopManagementStored): boolean {
   );
 }
 
+export function documentHasContent(rows: TopManagementStored[]): boolean {
+  return rows.some(rowHasContent);
+}
+
 /** Sr No 1 in Top Management — used for firm representative on CMPF forms. */
 export function resolvePrimaryTopManagementPerson(rows: TopManagementStored[]): {
   person_name: string;

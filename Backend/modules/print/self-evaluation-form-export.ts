@@ -4,6 +4,7 @@ import {
   Packer,
   Paragraph,
   TextRun,
+  PageBreak,
 } from "docx";
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
@@ -69,6 +70,15 @@ function plainParagraph(text: string): Paragraph {
   });
 }
 
+function signatoryParagraphs(data: SelfEvaluationFormLetterData): Paragraph[] {
+  const doc = data.document;
+  return [
+    plainParagraph(`For ${data.companyName || "—"}`),
+    plainParagraph(`Name: ${doc.signatory_name || data.contactPerson || "—"}`),
+    plainParagraph(`Designation: ${doc.signatory_designation || "—"}`),
+  ];
+}
+
 async function buildSelfEvaluationFormDocx(
   data: SelfEvaluationFormLetterData,
   settings: PrintSettings,
@@ -77,8 +87,10 @@ async function buildSelfEvaluationFormDocx(
   const letterheadSettings = selfEvaluationFormLetterheadSettings(settings);
   const company = buildSelfEvaluationFormCompany(data, assets);
   const doc = data.document;
-  const children: Paragraph[] = [
-    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
+  const letterheadBlocks = await buildNoLogoLetterheadBlocks(company, letterheadSettings);
+
+  const page1: Paragraph[] = [
+    ...letterheadBlocks,
     new Paragraph({
       alignment: AlignmentType.CENTER,
       spacing: { after: 160 },
@@ -111,6 +123,14 @@ async function buildSelfEvaluationFormDocx(
     ...data.packagingMarkingRows.map((row, i) =>
       plainParagraph(`${i + 1}. ${row.label}: ${row.value}`),
     ),
+    ...signatoryParagraphs(data),
+  ];
+
+  const page2: Paragraph[] = [
+    new Paragraph({
+      children: [new PageBreak()],
+    }),
+    ...letterheadBlocks,
     plainParagraph("4. Details of Quality Control Staff"),
     ...data.qcStaffRows
       .filter(
@@ -142,10 +162,7 @@ async function buildSelfEvaluationFormDocx(
       ),
     ),
     plainParagraph(`Declaration: ${SEF_FINAL_DECLARATION}`),
-    plainParagraph(`Place: ${doc.sign_place || "—"}`),
-    plainParagraph(`Date: ${doc.sign_date || "—"}`),
-    plainParagraph(`Name: ${doc.signatory_name || "—"}`),
-    plainParagraph(`Designation: ${doc.signatory_designation || "—"}`),
+    ...signatoryParagraphs(data),
     ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
@@ -158,7 +175,7 @@ async function buildSelfEvaluationFormDocx(
             margin: pageMarginsFromSettings(letterheadSettings),
           },
         },
-        children,
+        children: [...page1, ...page2],
       },
     ],
   });

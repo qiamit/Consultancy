@@ -84,17 +84,6 @@ function buildOutlineTree(items: ProcessFlowOutlineItem[]): OutlineTreeNode[] {
   return roots;
 }
 
-function treeDepth(node: OutlineTreeNode): number {
-  if (node.children.length === 0) return 1;
-  return 1 + Math.max(...node.children.map(treeDepth));
-}
-
-function maxTreeDepth(items: ProcessFlowOutlineItem[]): number {
-  const roots = buildOutlineTree(items);
-  if (roots.length === 0) return 1;
-  return Math.max(...roots.map(treeDepth));
-}
-
 function groupItemsByLevel(items: ProcessFlowOutlineItem[]): Map<number, ProcessFlowOutlineItem[]> {
   const groups = new Map<number, ProcessFlowOutlineItem[]>();
   for (const item of items) {
@@ -363,10 +352,13 @@ export function canvasHeightForOutline(
   settings: ProcessFlowChartSettings = DEFAULT_PROCESS_FLOW_CHART_SETTINGS,
 ): number {
   const rows = items.length > 0 ? items : defaultOutlineItems();
-  const minHeight = 780;
-  const depth = maxTreeDepth(rows);
-  const needed = LAYOUT_START_Y * 2 + depth * (settings.box_height + settings.row_gap);
-  return Math.max(minHeight, needed);
+  const positions =
+    settings.hierarchy_layout === "level_rows"
+      ? layoutLevelRows(rows, settings)
+      : layoutTreeForest(buildOutlineTree(rows), settings);
+  const maxY = positions.reduce((highest, pos) => Math.max(highest, pos.y + pos.height), 0);
+  // Tight to content (+ bottom padding). Avoid forcing a huge empty grid.
+  return Math.max(200, Math.ceil(maxY + LAYOUT_START_Y));
 }
 
 export function parseOutlineItems(raw: unknown): ProcessFlowOutlineItem[] {

@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import {
+  canvasToContentCroppedDataUrl,
   cloneShapes,
   createShapeId,
   hitTestRectHandle,
@@ -113,7 +114,8 @@ export const PlantLayoutCanvasEditor = forwardRef<
     const canvas = canvasRef.current;
     if (!canvas) return;
     onChangeRef.current({
-      drawing_data_url: canvas.toDataURL("image/png"),
+      // Crop to content so print/preview box fits the layout (no empty canvas padding).
+      drawing_data_url: canvasToContentCroppedDataUrl(canvas, shapes, 28),
       shapes: cloneShapes(shapes),
     });
   }, []);

@@ -112,21 +112,25 @@ function btn(text: string, style: string, onClick: () => void): HTMLButtonElemen
  * @param initialSettings  Starting print settings
  * @param company   Company info for letterhead/footer
  * @param onSaveDefaults  Optional callback to persist settings (passes updated settings back)
+ * @param pageCount Optional fixed page count — sizes iframe to N sheets (no internal scroll)
  */
 export function openPrintPreview({
   buildDoc,
   initialSettings,
   company,
   onSaveDefaults,
+  pageCount = 1,
 }: {
   buildDoc: DocBuilder;
   initialSettings: PrintSettings;
   company: PrintCompanyInfo;
   onSaveDefaults?: (s: PrintSettings) => void;
+  pageCount?: number;
 }): void {
   document.getElementById(PANEL_ID)?.remove();
 
   let settings: PrintSettings = { ...initialSettings };
+  const pages = Math.max(1, Math.floor(pageCount) || 1);
 
   // ── Root overlay ──────────────────────────────────────────────
   const root = document.createElement("div");
@@ -185,8 +189,9 @@ export function openPrintPreview({
 
   const iframe = document.createElement("iframe");
   iframe.title = "Print preview";
+  iframe.setAttribute("scrolling", "no");
   iframe.style.cssText =
-    "width:210mm;min-height:297mm;background:#fff;border:none;border-radius:4px;box-shadow:0 8px 32px rgba(0,0,0,.5);";
+    "width:210mm;min-height:297mm;background:#fff;border:none;border-radius:4px;box-shadow:0 8px 32px rgba(0,0,0,.5);overflow:hidden;";
 
   previewWrap.appendChild(iframe);
 
@@ -209,7 +214,7 @@ export function openPrintPreview({
     doc.write(html);
     doc.close();
 
-    // Update iframe size to match paper
+    // Update iframe size to match paper × page count (no internal iframe scroll).
     const isA5 = settings.paper_size === "A5";
     const isLetter = settings.paper_size === "Letter";
     const isLegal = settings.paper_size === "Legal";
@@ -219,8 +224,16 @@ export function openPrintPreview({
     else if (isLetter) { w = 216; h = 279; }
     else if (isLegal) { w = 216; h = 356; }
     if (landscape) { [w, h] = [h, w]; }
+    const gapMm = pages > 1 ? (pages - 1) * 12 : 0;
+    const totalH = h * pages + gapMm + (pages > 1 ? 4 : 0);
     iframe.style.width = `${w}mm`;
-    iframe.style.minHeight = `${h}mm`;
+    iframe.style.height = `${totalH}mm`;
+    iframe.style.minHeight = `${totalH}mm`;
+    iframe.style.overflow = "hidden";
+    const htmlEl = doc.documentElement;
+    const bodyEl = doc.body;
+    if (htmlEl) htmlEl.style.overflow = "hidden";
+    if (bodyEl) bodyEl.style.overflow = "hidden";
   }
 
   function addField(body: HTMLDivElement, labelText: string, control: HTMLElement) {

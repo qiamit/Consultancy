@@ -36,8 +36,45 @@ export function parseCoordinate(raw: string): number | null {
   return num;
 }
 
+/**
+ * Parse Google Maps-style "lat, lng" clipboard text into two coordinates.
+ * Returns null when the text is a single value (normal typing / single paste).
+ */
+export function parseLatLngPastePair(
+  raw: string,
+): { latitude: string; longitude: string } | null {
+  const text = raw.trim();
+  if (!text) return null;
+
+  const match = text.match(
+    /^\s*([+-]?\d+(?:\.\d+)?)\s*[,;\t/ ]+\s*([+-]?\d+(?:\.\d+)?)\s*$/,
+  );
+  if (!match) return null;
+
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  if (!Number.isFinite(first) || !Number.isFinite(second)) return null;
+
+  // Google Maps copies latitude, longitude. If values look swapped, correct them.
+  let latitude = first;
+  let longitude = second;
+  if (Math.abs(latitude) > 90 && Math.abs(longitude) <= 90) {
+    latitude = second;
+    longitude = first;
+  }
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) return null;
+
+  return {
+    latitude: String(latitude),
+    longitude: String(longitude),
+  };
+}
+
 /** Keep only characters valid while typing a decimal coordinate. */
 export function sanitizeCoordinateInput(raw: string): string {
+  // If the user pasted "lat, lng" into one field, do not collapse the pair into one number.
+  if (parseLatLngPastePair(raw)) return raw.trim();
+
   let cleaned = raw.replace(/,/g, ".").replace(/[^\d.\-]/g, "");
   const negative = cleaned.startsWith("-");
   cleaned = cleaned.replace(/-/g, "");

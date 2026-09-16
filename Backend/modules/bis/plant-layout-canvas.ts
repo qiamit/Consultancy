@@ -683,6 +683,81 @@ export async function renderPlantLayoutScene(
   }
 }
 
+/** Tight axis-aligned bounds around drawable shapes (excludes full-canvas legacy bg). */
+export function shapeContentBounds(
+  shapes: PlantLayoutShape[],
+  padding = 28,
+): { x: number; y: number; width: number; height: number } | null {
+  let minX = Infinity;
+  let minY = Infinity;
+  let maxX = -Infinity;
+  let maxY = -Infinity;
+
+  const include = (x1: number, y1: number, x2: number, y2: number) => {
+    minX = Math.min(minX, x1, x2);
+    minY = Math.min(minY, y1, y2);
+    maxX = Math.max(maxX, x1, x2);
+    maxY = Math.max(maxY, y1, y2);
+  };
+
+  for (const shape of shapes) {
+    if (shape.type === "legacy") continue;
+    if (shape.type === "rectangle") {
+      include(shape.x, shape.y, shape.x + shape.width, shape.y + shape.height);
+    } else if (shape.type === "circle") {
+      include(
+        shape.cx - shape.radius,
+        shape.cy - shape.radius,
+        shape.cx + shape.radius,
+        shape.cy + shape.radius,
+      );
+    } else if (shape.type === "line" || shape.type === "arrow") {
+      include(shape.x1, shape.y1, shape.x2, shape.y2);
+    } else if (shape.type === "pen") {
+      for (const point of shape.points) include(point.x, point.y, point.x, point.y);
+    } else if (shape.type === "text") {
+      include(shape.x, shape.y, shape.x + Math.max(40, shape.text.length * shape.fontSize * 0.55), shape.y + shape.fontSize * 1.4);
+    }
+  }
+
+  if (!Number.isFinite(minX) || !Number.isFinite(minY) || maxX <= minX || maxY <= minY) {
+    return null;
+  }
+
+  const x = Math.max(0, Math.floor(minX - padding));
+  const y = Math.max(0, Math.floor(minY - padding));
+  return {
+    x,
+    y,
+    width: Math.max(1, Math.ceil(maxX + padding) - x),
+    height: Math.max(1, Math.ceil(maxY + padding) - y),
+  };
+}
+
+/** Export a PNG cropped tightly around chart content (grid box fits content). */
+export function canvasToContentCroppedDataUrl(
+  source: HTMLCanvasElement,
+  shapes: PlantLayoutShape[],
+  padding = 28,
+): string {
+  const bounds = shapeContentBounds(shapes, padding);
+  if (!bounds) return source.toDataURL("image/png");
+
+  const x = Math.min(bounds.x, source.width - 1);
+  const y = Math.min(bounds.y, source.height - 1);
+  const width = Math.min(bounds.width, source.width - x);
+  const height = Math.min(bounds.height, source.height - y);
+  if (width <= 0 || height <= 0) return source.toDataURL("image/png");
+
+  const crop = document.createElement("canvas");
+  crop.width = width;
+  crop.height = height;
+  const ctx = crop.getContext("2d");
+  if (!ctx) return source.toDataURL("image/png");
+  ctx.drawImage(source, x, y, width, height, 0, 0, width, height);
+  return crop.toDataURL("image/png");
+}
+
 export function shapesFromLegacyImage(dataUrl: string): PlantLayoutShape[] {
   if (!dataUrl.trim()) return [];
   return [{ id: createShapeId(), type: "legacy", dataUrl }];

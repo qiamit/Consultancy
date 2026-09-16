@@ -25,13 +25,17 @@ import { downloadUndertakingGeneralIssWord } from "@backend/modules/print/undert
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as undertakingGeneralIssHasContent,
   mergeUndertakingGeneralIssWithDefaults,
   resolveUndertakingGeneralIssDocument,
   type UndertakingGeneralIssStored,
 } from "@backend/modules/bis/undertaking-general-iss";
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 import {
   ApplicationMetaDropdown,
   ApplicationWeeklyOffSelector,
@@ -71,6 +75,8 @@ export function UndertakingGeneralIssModal({
   appDropdownOptions,
   onReloadDropdowns,
   onUpdateMeta,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -89,6 +95,8 @@ export function UndertakingGeneralIssModal({
   appDropdownOptions: Record<string, AppDropdownOptionRow[]>;
   onReloadDropdowns: () => void;
   onUpdateMeta: (patch: Partial<ApplicationMeta>) => void;
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (document: UndertakingGeneralIssStored) => void;
   onClose: () => void;
 }) {
@@ -129,7 +137,14 @@ export function UndertakingGeneralIssModal({
   );
 
   useEffect(() => {
-    setDocument(mergeUndertakingGeneralIssWithDefaults(storedDocument, resolvedDefaults));
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        undertakingGeneralIssHasContent,
+        (stored) => mergeUndertakingGeneralIssWithDefaults(stored, resolvedDefaults),
+      ),
+    );
   }, [storedDocument, resolvedDefaults]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
@@ -139,6 +154,7 @@ export function UndertakingGeneralIssModal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
@@ -300,6 +316,18 @@ export function UndertakingGeneralIssModal({
     }
   }
 
+  function handleImportFromApplication(nextDocument: UndertakingGeneralIssStored): boolean {
+    if (undertakingGeneralIssHasContent(document)) {
+      const ok = window.confirm(
+        "Replace the current Undertaking for General ISS with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setDocument(nextDocument);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
@@ -324,6 +352,14 @@ export function UndertakingGeneralIssModal({
             className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowImportDialog(true)}
+            title="Import Undertaking for General ISS from Another Application or License"
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            Import
           </button>
           <button
             type="button"
@@ -474,6 +510,20 @@ export function UndertakingGeneralIssModal({
         accentColor="amber"
         overlayZIndexClass="z-[500]"
         onClose={() => setShowQeAssistant(false)}
+      />
+    )}
+
+    {showImportDialog && (
+      <ChecklistDocumentImportDialog
+        documentKey="undertaking_general_iss"
+        title="Import Undertaking for General ISS"
+        defaultClientId={clientId}
+        exclude={excludeImportSource}
+        onImport={(payload) => {
+          if (payload.key !== "undertaking_general_iss") return false;
+          return handleImportFromApplication(payload.document);
+        }}
+        onClose={() => setShowImportDialog(false)}
       />
     )}
     </>

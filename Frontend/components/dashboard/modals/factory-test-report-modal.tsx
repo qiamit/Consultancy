@@ -267,12 +267,17 @@ export function FactoryTestReportModal({
       );
     }
   } else if (rowsKey !== appliedRowsKey) {
-    setAppliedRowsKey(rowsKey);
-    const next = editorReportsFromStored(initialStored);
-    setReports(next);
-    setActiveReportId((current) =>
-      next.length > 0 && !next.some((r) => r.id === current) ? next[0]!.id : current,
-    );
+    // Never let a late empty parent wipe in-progress / already-loaded reports.
+    if (Array.isArray(initialStored) && initialStored.length === 0) {
+      setAppliedRowsKey(rowsKey);
+    } else {
+      setAppliedRowsKey(rowsKey);
+      const next = editorReportsFromStored(initialStored);
+      setReports(next);
+      setActiveReportId((current) =>
+        next.length > 0 && !next.some((r) => r.id === current) ? next[0]!.id : current,
+      );
+    }
   }
 
   const contextualReports = useMemo(() => {

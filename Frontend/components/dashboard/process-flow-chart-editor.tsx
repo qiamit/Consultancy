@@ -9,7 +9,7 @@ import {
   forwardRef,
   type KeyboardEvent,
 } from "react";
-import { renderPlantLayoutScene, replaceBackgroundImage, type PlantLayoutShape } from "@backend/modules/bis/plant-layout-canvas";
+import { renderPlantLayoutScene, canvasToContentCroppedDataUrl, replaceBackgroundImage, type PlantLayoutShape } from "@backend/modules/bis/plant-layout-canvas";
 import {
   PROCESS_FLOW_CHART_CANVAS_WIDTH,
 } from "@backend/modules/bis/process-flow-chart";
@@ -84,7 +84,7 @@ export const ProcessFlowChartEditor = forwardRef<
       const shapes = buildShapesFromOutline(items, backgroundShapesRef.current, settings);
       await renderPlantLayoutScene(ctx, canvas.width, canvas.height, shapes, selection);
       const payload = {
-        drawing_data_url: canvas.toDataURL("image/png"),
+        drawing_data_url: canvasToContentCroppedDataUrl(canvas, shapes, 32),
         shapes,
         outline_items: items,
       };
@@ -105,7 +105,8 @@ export const ProcessFlowChartEditor = forwardRef<
         void renderPreview(outlineItems, selectedId, chartSettings);
       },
       captureSnapshot() {
-        return renderPreview(outlineItems, selectedId, chartSettings);
+        // Print / save snapshot without editor selection chrome.
+        return renderPreview(outlineItems, null, chartSettings);
       },
     }),
     [outlineItems, renderPreview, selectedId, chartSettings],

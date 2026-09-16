@@ -17,6 +17,7 @@ import {
   buildRawMaterialDetailsHtml,
   defaultRawMaterialDetailsPrintSettings,
   iframeSizeForRawMaterialDetailsPrintSettings,
+  rawMaterialDetailsPrintPageCount,
   type RawMaterialDetailsLetterData,
   type RawMaterialDetailsPrintAssets,
 } from "@backend/modules/print/raw-material-details";
@@ -24,7 +25,9 @@ import { downloadRawMaterialDetailsWord } from "@backend/modules/print/raw-mater
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as rawMaterialHasContent,
   editorRowsFromStored,
+  rowHasContent,
   storedFromEditor,
   type RawMaterialStored,
 } from "@backend/modules/bis/raw-material-details";
@@ -33,8 +36,10 @@ import {
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 const RAW_MATERIAL_DETAILS_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Raw Material Details submitted for BIS licence applications:
@@ -58,6 +63,8 @@ export function RawMaterialDetailsModal({
   dateOfInspection,
   topManagement,
   rows: initialStored,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -70,10 +77,32 @@ export function RawMaterialDetailsModal({
   dateOfInspection: string;
   topManagement: TopManagementStored[];
   rows: RawMaterialStored[];
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (rows: RawMaterialStored[]) => void;
   onClose: () => void;
 }) {
   const [rows, setRows] = useState(() => editorRowsFromStored(initialStored));
+  const [materialFormKey, setMaterialFormKey] = useState(0);
+  const parentRowsSigRef = useRef(
+    JSON.stringify(initialStored.filter((r) => rowHasContent(r))),
+  );
+
+  // Keep editor in sync when parent reloads notes (e.g. hydrate after open).
+  useEffect(() => {
+    const visible = initialStored.filter((r) => rowHasContent(r));
+    const sig = JSON.stringify(visible);
+    if (sig === parentRowsSigRef.current) return;
+    // Never let a late empty parent wipe in-progress / already-loaded rows.
+    if (visible.length === 0) {
+      parentRowsSigRef.current = sig;
+      return;
+    }
+    parentRowsSigRef.current = sig;
+    setRows(editorRowsFromStored(initialStored));
+    setMaterialFormKey((key) => key + 1);
+  }, [initialStored]);
+
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultRawMaterialDetailsPrintSettings(),
   );
@@ -81,6 +110,7 @@ export function RawMaterialDetailsModal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
@@ -103,6 +133,7 @@ export function RawMaterialDetailsModal({
         ...prev,
         ...companySettings,
         font_family: defaults.font_family,
+        font_size: defaults.font_size,
         show_letterhead: true,
         letterhead_layout: "logo-na",
         margin_top: defaults.margin_top,
@@ -136,6 +167,7 @@ export function RawMaterialDetailsModal({
     setPrintSettings((prev) => ({
       ...prev,
       font_family: defaults.font_family,
+      font_size: defaults.font_size,
       show_letterhead: true,
       margin_top: defaults.margin_top,
       margin_bottom: defaults.margin_bottom,
@@ -194,7 +226,14 @@ export function RawMaterialDetailsModal({
     }
   }, [showPrintPreview, refreshPreview]);
 
-  const iframeSize = iframeSizeForRawMaterialDetailsPrintSettings(printSettings);
+  const previewPageCount = useMemo(
+    () => rawMaterialDetailsPrintPageCount(storedFromEditor(rows)),
+    [rows],
+  );
+  const iframeSize = iframeSizeForRawMaterialDetailsPrintSettings(
+    printSettings,
+    previewPageCount,
+  );
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
     setPrintSettings((prev) => ({
@@ -241,6 +280,20 @@ export function RawMaterialDetailsModal({
     }
   }
 
+  function handleImportFromApplication(nextRows: RawMaterialStored[]): boolean {
+    const current = storedFromEditor(rows);
+    if (rawMaterialHasContent(current)) {
+      const ok = window.confirm(
+        "Replace the current Raw Material Details with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setRows(editorRowsFromStored(nextRows));
+    setMaterialFormKey((key) => key + 1);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
@@ -266,6 +319,14 @@ export function RawMaterialDetailsModal({
             className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowImportDialog(true)}
+            title="Import Raw Material Details from Another Application or License"
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            Import Data
           </button>
           <button
             type="button"
@@ -333,20 +394,19 @@ export function RawMaterialDetailsModal({
       </div>
 
       <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
-        {!showPrintPreview && (
-          <div
-            className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
-              settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
-            }`}
-          >
-            <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-              <RawMaterialDetailsAddForm
-                initialRows={rows}
-                onRowsChange={setRows}
-              />
-            </div>
+        <div
+          className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
+            showPrintPreview ? "hidden" : settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+          }`}
+        >
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+            <RawMaterialDetailsAddForm
+              key={materialFormKey}
+              initialRows={rows}
+              onRowsChange={setRows}
+            />
           </div>
-        )}
+        </div>
 
         {showPrintPreview && (
           <div
@@ -393,6 +453,20 @@ export function RawMaterialDetailsModal({
           accentColor="amber"
           overlayZIndexClass="z-[500]"
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="raw_material_details"
+          title="Import Raw Material Details"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "raw_material_details") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </>

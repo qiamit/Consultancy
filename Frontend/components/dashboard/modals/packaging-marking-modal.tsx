@@ -2,11 +2,16 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { PackagingMarkingForm } from "@/components/dashboard/packaging-marking-form";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 import {
   resolveSelfEvaluationPackagingMarking,
   type SelfEvaluationFormStored,
   type SefPackagingMarkingRow,
 } from "@backend/modules/bis/self-evaluation-form";
+
+function packagingMarkingRowsHaveContent(rows: SefPackagingMarkingRow[]): boolean {
+  return rows.some((row) => row.value.trim().length > 0);
+}
 
 export function PackagingMarkingModal({
   companyName,
@@ -28,7 +33,14 @@ export function PackagingMarkingModal({
   const [saving, startSave] = useTransition();
 
   useEffect(() => {
-    setRows(resolveSelfEvaluationPackagingMarking(storedDocument, markingClause));
+    setRows((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument.packaging_marking ?? [],
+        prev,
+        packagingMarkingRowsHaveContent,
+        () => resolveSelfEvaluationPackagingMarking(storedDocument, markingClause),
+      ),
+    );
   }, [storedDocument, markingClause]);
 
   function handleSave() {

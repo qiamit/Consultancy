@@ -117,7 +117,10 @@ ${buildLetterIntroHtml(data)}
 <p class="pfc-salutation">Respected / Sir,</p>
 <p class="pfc-declaration">
   We hereby submit the process flow chart of our manufacturing process for your kind
-  reference in connection with our BIS licence application. The process flow diagram is shown below.
+  reference in connection with our BIS licence / certification application. This chart
+  outlines the sequence of operations from receipt of raw material to final inspection,
+  packing and dispatch, including in-process checks where applicable. The process flow
+  diagram is shown below for your review and records.
 </p>
 ${buildDrawingHtml(data, fitOnePage)}
 <p class="pfc-truth-declaration">
@@ -204,50 +207,64 @@ export function buildProcessFlowChartHtml(
       overflow: hidden;
       display: flex;
       flex-direction: column;
+      box-sizing: border-box;
     }
     .lh-wrap {
       flex-shrink: 0;
-      margin-bottom: 4px !important;
-      padding-top: 4px !important;
-      padding-bottom: 4px !important;
+      margin-bottom: 2px !important;
+      padding-top: 2px !important;
+      padding-bottom: 2px !important;
     }
     .pfc-sheet {
       flex: 1 1 auto;
-      min-height: 0;
+      min-height: 0 !important;
       height: auto !important;
       max-height: none !important;
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      padding-bottom: 0;
+      justify-content: flex-start;
+      padding-bottom: 0 !important;
     }
     .pfc-sheet > *:not(.pfc-drawing-wrap) {
       flex-shrink: 0;
     }
     .pfc-drawing-wrap {
-      flex: 1 1 auto;
-      min-height: 0;
-      max-height: none !important;
-      margin: 2px 0 4px;
+      /* Size box to chart content; cap so it still fits the remaining A4 area. */
+      flex: 0 1 auto;
+      min-height: 0 !important;
+      width: 100%;
+      max-height: 100%;
+      margin: 4px 0 !important;
       position: relative;
+      overflow: hidden;
+      text-align: center;
     }
     .pfc-drawing-image--fit {
-      position: absolute;
-      inset: 0;
-      margin: auto;
+      position: static !important;
+      display: block;
       width: auto !important;
       height: auto !important;
       max-width: 100% !important;
-      max-height: 100% !important;
+      max-height: 170mm !important;
+      margin: 0 auto !important;
       object-fit: contain;
+      object-position: center top;
     }
-    .pfc-title { margin: 0 0 4px; font-size: 14px; }
-    .pfc-to-row { margin: 0 0 4px; }
+    .pfc-title { margin: 0 0 3px !important; font-size: 13px !important; }
+    .pfc-to-row { margin: 0 0 3px !important; gap: 8px !important; }
+    .pfc-to-block,
+    .pfc-date-block { font-size: 10px !important; line-height: 1.3 !important; }
     .pfc-salutation,
     .pfc-declaration,
-    .pfc-truth-declaration { margin: 0 0 3px; font-size: 9px; line-height: 1.35; }
-    .pfc-signatory-block { margin-top: 4px; }
-    .pfc-signatory-sig { margin-top: 10px; }
+    .pfc-truth-declaration {
+      margin: 0 0 2px !important;
+      font-size: 9px !important;
+      line-height: 1.3 !important;
+    }
+    .pfc-signatory-block { margin-top: 2px !important; font-size: 9px !important; line-height: 1.3 !important; }
+    .pfc-signatory-sig { margin-top: 6px !important; min-width: 160px !important; }
+    .pfc-signatory-sig img { max-height: 36px !important; top: -40px !important; }
     .pfc-page-indicator { display: none; }
     .doc-page > .pfc-sheet ~ div { display: none !important; }
   `

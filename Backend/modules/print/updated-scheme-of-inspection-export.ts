@@ -112,8 +112,12 @@ async function buildUpdatedSitDocx(
   const letterheadSettings = updatedSchemeOfInspectionLetterheadSettings(settings);
   const company = buildUpdatedSchemeOfInspectionCompany(data, assets);
   const doc = data.document;
-  const children: (Paragraph | Table)[] = [
-    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
+  const letterheadBlocks = await buildNoLogoLetterheadBlocks(company, letterheadSettings);
+  const portraitSettings = { ...letterheadSettings, orientation: "portrait" as const };
+  const landscapeSettings = { ...letterheadSettings, orientation: "landscape" as const };
+
+  const page1: (Paragraph | Table)[] = [
+    ...letterheadBlocks,
     plainParagraph(doc.pm_reference, true),
     new Paragraph({
       alignment: AlignmentType.CENTER,
@@ -132,6 +136,12 @@ async function buildUpdatedSitDocx(
     plainParagraph(doc.levels_of_control_text),
     plainParagraph(doc.standard_mark_text),
     plainParagraph(doc.rejections_text),
+    plainParagraph(doc.pm_reference, true),
+  ];
+
+  const page2: (Paragraph | Table)[] = [
+    ...letterheadBlocks,
+    plainParagraph(doc.pm_reference, true),
     plainParagraph("TABLE 1", true),
     new Table({
       width: { size: 100, type: WidthType.PERCENTAGE },
@@ -153,6 +163,7 @@ async function buildUpdatedSitDocx(
     plainParagraph(doc.note_1),
     plainParagraph(doc.note_2),
     plainParagraph(doc.note_3),
+    plainParagraph(doc.pm_reference, true),
     ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 
@@ -161,11 +172,20 @@ async function buildUpdatedSitDocx(
       {
         properties: {
           page: {
-            size: pageSizeTwipFromSettings(letterheadSettings),
-            margin: pageMarginsFromSettings(letterheadSettings),
+            size: pageSizeTwipFromSettings(portraitSettings),
+            margin: pageMarginsFromSettings(portraitSettings),
           },
         },
-        children,
+        children: page1,
+      },
+      {
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(landscapeSettings),
+            margin: pageMarginsFromSettings(landscapeSettings),
+          },
+        },
+        children: page2,
       },
     ],
   });

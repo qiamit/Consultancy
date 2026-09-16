@@ -1,4 +1,4 @@
-import { buildPrintDocument } from "@backend/modules/print/engine";
+import { buildLetterheadHtml, buildPrintDocument } from "@backend/modules/print/engine";
 import {
   buildManufacturingScopeCompany,
   defaultDeclarationPrintSettings,
@@ -12,7 +12,10 @@ import {
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
-import { signatorySignatureOverlayHtml } from "@backend/modules/print/signatory-signature";
+import {
+  buildRightAlignedSignatoryBlockHtml,
+  signatorySignatureOverlayHtml,
+} from "@backend/modules/print/signatory-signature";
 
 export type Cmpf305LetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -65,30 +68,23 @@ function formatBisBranchLine(branchName: string, state: string): string {
   return `${esc(branch)}, ${esc(st)}, INDIA`;
 }
 
-function buildHeaderGridHtml(data: Cmpf305LetterData): string {
+function headerGridCellStyles(): { lbl: string; val: string } {
+  // Borders come from CSS (.cmpf-header-grid td) so adjacent edges stay 1px — no double lines.
+  const cell = "padding:4px 6px;font-size:10px;vertical-align:middle;line-height:1.35;";
+  return {
+    lbl: `${cell}font-weight:700;width:18%;background:#eef2f7;`,
+    val: `${cell}font-weight:600;`,
+  };
+}
+
+function buildApplicationMetaRowsHtml(data: Cmpf305LetterData): string {
+  const { lbl, val } = headerGridCellStyles();
   const appNo = formatApplicationNo(data.applicationNumber);
   const dateApp = formatMetaDate(data.dateOfApplication);
   const dateInsp = formatMetaDate(data.dateOfInspection);
   const isCode = esc(data.isNumber) || "—";
-  const applicant = esc(data.companyName) || "—";
-
-  const cell =
-    "border:1px solid #111;padding:4px 6px;font-size:10px;vertical-align:middle;line-height:1.35;";
-  const lbl = `${cell}font-weight:700;width:18%;background:#eef2f7;`;
-  const val = `${cell}font-weight:600;`;
 
   return `
-<div class="cmpf-form-id">Form - I</div>
-<h1 class="cmpf-title">Declaration Regarding Manufacturing Machinery</h1>
-<table class="cmpf-header-grid" style="width:100%;border-collapse:collapse;margin-bottom:2px;">
-  <tr>
-    <td style="${lbl}">Applicant Name</td>
-    <td style="${val}" colspan="3">${applicant}</td>
-  </tr>
-  <tr>
-    <td style="${lbl}">Applicant Address</td>
-    <td style="${val}" colspan="3">${formatApplicantAddress(data.address)}</td>
-  </tr>
   <tr>
     <td style="${lbl}">Application No.</td>
     <td style="${val}">${esc(appNo)}</td>
@@ -100,7 +96,47 @@ function buildHeaderGridHtml(data: Cmpf305LetterData): string {
     <td style="${val}">${isCode}</td>
     <td style="${lbl}">Date of Inspection</td>
     <td style="${val}">${esc(dateInsp)}</td>
+  </tr>`;
+}
+
+/** Page 1 — Form-I title + one header table (firm + application meta). */
+function buildFormCoverHeaderHtml(data: Cmpf305LetterData): string {
+  const { lbl, val } = headerGridCellStyles();
+  const applicant = esc(data.companyName) || "—";
+
+  return `
+<div class="cmpf-form-id">Form - I</div>
+<h1 class="cmpf-title">Declaration Regarding Manufacturing Machinery</h1>
+<table class="cmpf-header-grid" style="width:100%;margin-bottom:8px;">
+  <colgroup>
+    <col style="width:18%" />
+    <col style="width:32%" />
+    <col style="width:22%" />
+    <col style="width:28%" />
+  </colgroup>
+  <tr>
+    <td style="${lbl}">Applicant Name</td>
+    <td style="${val}" colspan="3">${applicant}</td>
   </tr>
+  <tr>
+    <td style="${lbl}">Applicant Address</td>
+    <td style="${val}" colspan="3">${formatApplicantAddress(data.address)}</td>
+  </tr>
+  ${buildApplicationMetaRowsHtml(data)}
+</table>`;
+}
+
+/** Application No. + IS Code table — continuation pages (under letterhead). */
+function buildApplicationMetaGridHtml(data: Cmpf305LetterData): string {
+  return `
+<table class="cmpf-header-grid cmpf-meta-grid" style="width:100%;margin:0 0 8px;">
+  <colgroup>
+    <col style="width:18%" />
+    <col style="width:32%" />
+    <col style="width:22%" />
+    <col style="width:28%" />
+  </colgroup>
+  ${buildApplicationMetaRowsHtml(data)}
 </table>`;
 }
 
@@ -170,13 +206,14 @@ function buildFooterHtml(data: Cmpf305LetterData): string {
 
   const box =
     "border:1px solid #111;padding:0;vertical-align:top;width:50%;";
+  // Previous ~213px box + another ~30% height.
   const cellInner =
-    "display:flex;flex-direction:column;min-height:142px;height:100%;";
-  const declBlock = "padding:5px 7px 2px;font-size:8px;line-height:1.35;";
+    "display:flex;flex-direction:column;min-height:277px;height:100%;";
+  const declBlock = "padding:6px 8px 4px;font-size:9.5px;line-height:1.4;";
   const sigArea =
-    "flex:1;background:#eef2f7;padding:5px 7px;display:flex;flex-direction:column;min-height:70px;";
-  const sigSpacer = "flex:1;min-height:17px;";
-  const sigLine = "font-size:8px;line-height:1.4;";
+    "flex:1;background:#eef2f7;padding:6px 8px;display:flex;flex-direction:column;min-height:137px;";
+  const sigSpacer = "flex:1;min-height:34px;";
+  const sigLine = "font-size:9.5px;line-height:1.45;";
 
   return `
 <p class="cmpf-extra-note"><em>Note: Attach Extra Sheet, If Required</em></p>
@@ -196,13 +233,13 @@ function buildFooterHtml(data: Cmpf305LetterData): string {
           <div style="${sigSpacer}"></div>
           <div style="${sigLine}">
             <div>Sig. of Firm's Representative :-</div>
-            <div style="position:relative;display:inline-block;min-width:200px;">
+            <div style="position:relative;display:inline-block;min-width:210px;padding-right:95px;">
               ${signatorySignatureOverlayHtml(data.signatureImageUrl, {
-                left: "12mm",
-                top: "calc(-36px + 4mm)",
-                right: "auto",
-                maxHeight: "42px",
-                maxWidth: "120px",
+                left: "auto",
+                right: "0",
+                top: "calc(-40px + 1mm)",
+                maxHeight: "46px",
+                maxWidth: "110px",
               })}
               <div style="position:relative;z-index:1;">Name :- ${firmName}</div>
             </div>
@@ -237,14 +274,9 @@ function buildFooterHtml(data: Cmpf305LetterData): string {
 </p>`;
 }
 
-function padPageNum(n: number): string {
-  return String(n).padStart(2, "0");
-}
-
-/** How many machinery rows fit on a sheet for the selected Page Settings. */
+/** How many machinery rows fit on a table sheet (Form-I + signatures are always page 1). */
 export function cmpf305RowsCapacity(
   settings: PrintSettings,
-  kind: "single" | "first" | "middle" | "last",
 ): number {
   const { heightMm } = iframeSizeForPrintSettings(settings);
   const usable = Math.max(
@@ -253,20 +285,20 @@ export function cmpf305RowsCapacity(
   );
   // Compact 8px table rows ≈ 4.5–5mm each in portrait.
   const rowMm = settings.orientation === "landscape" ? 4.2 : 4.8;
-  // Measured from Form-I layout: title+grid ≈ 50mm, To ≈ 15mm, thead ≈ 6mm, signatures ≈ 50mm.
-  const headerBlock = 50;
-  const toBlock = 15;
-  const tableHead = 6;
-  const footerBlock = 50;
+  // Page 2+ always repeats letterhead + Application No/IS Code meta + TM signature.
+  const letterheadBlock = settings.show_letterhead ? 28 : 0;
+  const metaGrid = 16;
+  const tableHead = 8;
+  const signatureBlock = 32;
+  const overhead = letterheadBlock + metaGrid + tableHead + signatureBlock;
 
-  let overhead = headerBlock + tableHead;
-  if (kind === "single" || kind === "first") overhead += toBlock;
-  if (kind === "single" || kind === "last") overhead += footerBlock;
-
-  return Math.max(4, Math.floor((usable - overhead) / rowMm));
+  return Math.max(6, Math.floor((usable - overhead) / rowMm));
 }
 
-/** Paginate machinery rows into print sheets for current Page Settings. */
+/**
+ * Paginate machinery rows into TABLE sheets only.
+ * Form-I (header + To + signatures) is always a separate first page — see buildFormBody.
+ */
 export function paginateCmpf305ForPrint(
   rows: Cmpf305MachineryStored[],
   settings: PrintSettings,
@@ -274,34 +306,24 @@ export function paginateCmpf305ForPrint(
   const visible = rows.filter(rowHasContent);
   if (visible.length === 0) return [[]];
 
-  // Prefer one page whenever header + To + all rows + signatures fit.
-  const singleCap = cmpf305RowsCapacity(settings, "single");
-  if (visible.length <= singleCap) return [visible];
-
-  const firstCap = cmpf305RowsCapacity(settings, "first");
-  const middleCap = cmpf305RowsCapacity(settings, "middle");
-  const lastCap = cmpf305RowsCapacity(settings, "last");
+  const tableCap = cmpf305RowsCapacity(settings);
+  if (visible.length <= tableCap) return [visible];
 
   const pages: Cmpf305MachineryStored[][] = [];
   let index = 0;
 
-  // First page (header + To, no footer) — leave at least one row for a later page.
-  const firstTake = Math.min(firstCap, Math.max(1, visible.length - 1));
-  pages.push(visible.slice(index, index + firstTake));
-  index += firstTake;
-
   while (index < visible.length) {
     const remaining = visible.length - index;
-    if (remaining <= lastCap) {
-      pages.push(visible.slice(index));
-      break;
-    }
-    const take = Math.min(middleCap, Math.max(1, remaining - 1));
+    const take = Math.min(tableCap, remaining);
     pages.push(visible.slice(index, index + take));
     index += take;
   }
 
   return pages;
+}
+
+function padPageNum(n: number): string {
+  return String(n).padStart(2, "0");
 }
 
 function buildPageIndicatorHtml(pageNum: number, totalPages: number): string {
@@ -313,56 +335,147 @@ function buildPageGapHtml(pageNum: number, totalPages: number): string {
   return `<div class="cmpf-page-gap" aria-hidden="true">Page break · ${padPageNum(pageNum - 1)} → ${padPageNum(pageNum)}</div>`;
 }
 
-function buildSinglePageHtml(
-  data: Cmpf305LetterData,
-  pageRows: Cmpf305MachineryStored[],
-  pageNum: number,
-  totalPages: number,
-  startIndex: number,
-  isLastPage: boolean,
-  settings: PrintSettings,
-): string {
-  const toBlock = `
+function buildDummyPlantMachineryTableHtml(settings: PrintSettings): string {
+  const th = "cmpf-cell cmpf-th";
+  const td = "cmpf-cell cmpf-td";
+  const tdLeft = "cmpf-cell cmpf-td cmpf-col-name";
+  const thSr = `${th} cmpf-col-sr`;
+  const tdSr = `${td} cmpf-col-sr`;
+  const thCompact = `${th} cmpf-col-compact`;
+  const tdCompact = `${td} cmpf-col-compact`;
+  const thName = `${th} cmpf-col-name`;
+
+  const emptyRow = (sr: number) => `
+<tr>
+  <td class="${tdSr}">${sr}</td>
+  <td class="${tdLeft}">&nbsp;</td>
+  <td class="${tdCompact}">&nbsp;</td>
+  <td class="${tdCompact}">&nbsp;</td>
+  <td class="${tdCompact}">&nbsp;</td>
+  <td class="${tdCompact}">&nbsp;</td>
+</tr>`;
+
+  const mergedRow = `
+<tr>
+  <td class="${td} cmpf-dummy-merge" colspan="6">(List of Plant &amp; Machinery is Attached)</td>
+</tr>`;
+
+  return `
+<table class="cmpf-machinery-table cmpf-dummy-machinery-table">
+  ${machineryTableColgroup(settings)}
+  <thead>
+    <tr>
+      <th class="${thSr}">Sr<br/>No</th>
+      <th class="${thName}">Machinery Name</th>
+      <th class="${thCompact}">Make</th>
+      <th class="${thCompact}">Production Capacity / Day<br>(If Applicable)</th>
+      <th class="${thCompact}">Number</th>
+      <th class="${thCompact}">Remarks</th>
+    </tr>
+  </thead>
+  <tbody>
+    ${emptyRow(1)}
+    ${emptyRow(2)}
+    ${mergedRow}
+    ${emptyRow(4)}
+    ${emptyRow(5)}
+  </tbody>
+</table>`;
+}
+
+function buildToBlockHtml(data: Cmpf305LetterData): string {
+  return `
 <div class="cmpf-to-block">
   To<br/>
   The Director &amp; Head<br/>
   Bureau of Indian Standard<br/>
   ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
 </div>`;
+}
 
+/** Page 1 — Form-I + Applicant + To + dummy machinery table + declaration. */
+function buildFormCoverPageHtml(
+  data: Cmpf305LetterData,
+  totalPages: number,
+  settings: PrintSettings,
+): string {
+  return `
+${buildPageGapHtml(1, totalPages)}
+<div class="cmpf-sheet">
+  <div class="cmpf-sheet-body">
+    ${buildFormCoverHeaderHtml(data)}
+    ${buildToBlockHtml(data)}
+    ${buildDummyPlantMachineryTableHtml(settings)}
+    <div class="cmpf-footer-wrap">${buildFooterHtml(data)}</div>
+  </div>
+  ${buildPageIndicatorHtml(1, totalPages)}
+</div>`;
+}
+
+/** Top Management–style signatory block for continuation pages. */
+function buildContinuationSignatoryHtml(data: Cmpf305LetterData): string {
+  const sigName = esc(data.firmRepName) || esc(data.contactPerson) || "—";
+  const sigDesig = esc(data.firmRepDesignation) || "—";
+  return buildRightAlignedSignatoryBlockHtml({
+    companyName: esc(data.companyName) || "—",
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  });
+}
+
+/** Page 2+ — letterhead + Application meta + machinery table + TM-style signature. */
+function buildTablePageHtml(
+  data: Cmpf305LetterData,
+  pageRows: Cmpf305MachineryStored[],
+  pageNum: number,
+  totalPages: number,
+  startIndex: number,
+  settings: PrintSettings,
+  company: PrintCompanyInfo,
+): string {
+  const letterheadHtml = buildLetterheadHtml(company, settings);
   return `
 ${buildPageGapHtml(pageNum, totalPages)}
 <div class="cmpf-sheet${pageNum > 1 ? " page-break" : ""}">
   <div class="cmpf-sheet-body">
-    ${buildHeaderGridHtml(data)}
-    ${pageNum === 1 ? toBlock : ""}
+    ${letterheadHtml}
+    ${buildApplicationMetaGridHtml(data)}
     ${buildMachineryTableHtml(pageRows, startIndex, settings)}
-    ${isLastPage ? `<div class="cmpf-footer-wrap">${buildFooterHtml(data)}</div>` : ""}
+    <div class="cmpf-continuation-signatory">${buildContinuationSignatoryHtml(data)}</div>
   </div>
   ${buildPageIndicatorHtml(pageNum, totalPages)}
 </div>`;
 }
 
-function buildFormBody(data: Cmpf305LetterData, settings: PrintSettings): string {
-  const pages = paginateCmpf305ForPrint(data.rows, settings);
-  const totalPages = pages.length;
+function buildFormBody(
+  data: Cmpf305LetterData,
+  settings: PrintSettings,
+  company: PrintCompanyInfo,
+): string {
+  const tablePages = paginateCmpf305ForPrint(data.rows, settings);
+  const totalPages = 1 + tablePages.length;
   let startIndex = 0;
 
-  return pages
+  const cover = buildFormCoverPageHtml(data, totalPages, settings);
+  const tables = tablePages
     .map((pageRows, i) => {
-      const html = buildSinglePageHtml(
+      const pageNum = i + 2;
+      const html = buildTablePageHtml(
         data,
         pageRows,
-        i + 1,
+        pageNum,
         totalPages,
         startIndex,
-        i === totalPages - 1,
         settings,
+        company,
       );
       startIndex += pageRows.length;
       return html;
     })
     .join("");
+
+  return `${cover}${tables}`;
 }
 
 export type Cmpf305PrintAssets = Partial<
@@ -418,6 +531,7 @@ export function buildCmpf305Html(
   assets?: Cmpf305PrintAssets,
 ): string {
   const letterheadSettings = cmpf305LetterheadSettings(settings);
+  const company = buildCmpf305Company(data, assets);
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
   const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `
@@ -460,6 +574,23 @@ export function buildCmpf305Html(
     }
     .cmpf-header-grid {
       flex-shrink: 0;
+      border-collapse: collapse;
+      border-spacing: 0;
+      border: none;
+    }
+    .cmpf-header-grid td {
+      border: 1px solid #111;
+      border-width: 1px;
+    }
+    .cmpf-meta-grid {
+      flex-shrink: 0;
+    }
+    /* Continuation pages embed their own letterhead inside the sheet. */
+    .cmpf-sheet .lh-wrap {
+      flex-shrink: 0;
+      margin-bottom: 6px !important;
+      padding-top: 4px !important;
+      padding-bottom: 6px !important;
     }
     .cmpf-page-indicator {
       position: absolute;
@@ -477,12 +608,12 @@ export function buildCmpf305Html(
     }
     .cmpf-extra-note {
       margin: 14px 0 4px;
-      font-size: 10px;
+      font-size: 11px;
       text-align: left;
     }
     .cmpf-footnote {
       margin: 10px 0 0;
-      font-size: 8px;
+      font-size: 9px;
       font-weight: 700;
       line-height: 1.4;
       text-align: justify;
@@ -490,14 +621,17 @@ export function buildCmpf305Html(
     .cmpf-machinery-table {
       width: 100%;
       border-collapse: collapse;
+      border-spacing: 0;
       table-layout: fixed;
       margin-top: 10px;
+      border: none;
     }
     .cmpf-machinery-table thead {
       display: table-header-group;
     }
     .cmpf-machinery-table .cmpf-cell {
       border: 1px solid #111;
+      border-width: 1px;
       padding: 4px 5px;
       vertical-align: middle;
       line-height: 1.3;
@@ -524,10 +658,29 @@ export function buildCmpf305Html(
     .cmpf-machinery-table .cmpf-col-name {
       text-align: left;
     }
+    .cmpf-dummy-machinery-table {
+      margin-top: 8px;
+      margin-bottom: 4px;
+      flex-shrink: 0;
+    }
+    .cmpf-dummy-machinery-table .cmpf-dummy-merge {
+      text-align: center;
+      font-weight: 700;
+      font-size: 10px;
+      padding: 10px 6px;
+    }
     .cmpf-footer-wrap {
       flex-shrink: 0;
       margin-top: auto;
       padding-top: 4px;
+    }
+    .cmpf-continuation-signatory {
+      flex-shrink: 0;
+      margin-top: 8px;
+      padding-top: 0;
+    }
+    .cmpf-continuation-signatory > div {
+      margin-top: 8px !important;
     }
     .page-break { page-break-before: always; break-before: page; }
     @media screen {
@@ -564,10 +717,10 @@ export function buildCmpf305Html(
 
   return buildPrintDocument({
     title: "CMPF 305 — Declaration Regarding Manufacturing Machinery",
-    bodyHtml: buildFormBody(data, letterheadSettings),
+    bodyHtml: buildFormBody(data, letterheadSettings, company),
     extraStyles: styles,
     settings: letterheadSettings,
-    company: buildCmpf305Company(data, assets),
+    company,
   });
 }
 
@@ -575,8 +728,11 @@ export function cmpf305PrintPageCount(
   data: Cmpf305LetterData,
   settings: PrintSettings,
 ): number {
-  return paginateCmpf305ForPrint(data.rows, cmpf305LetterheadSettings(settings))
-    .length;
+  // Form-I cover + machinery table page(s).
+  return (
+    1 +
+    paginateCmpf305ForPrint(data.rows, cmpf305LetterheadSettings(settings)).length
+  );
 }
 
 export function iframeSizeForCmpf305PrintSettings(

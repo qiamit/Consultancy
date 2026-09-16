@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { RAW_MATERIAL_BIS_MARK_OPTIONS } from "@backend/modules/bis/raw-material-details";
+import { RAW_MATERIAL_BIS_MARK_OPTIONS, rowHasContent } from "@backend/modules/bis/raw-material-details";
 import {
   defaultRawMaterialAddFormValues,
   defaultRawMaterialFormEntry,
@@ -34,10 +34,21 @@ export function RawMaterialDetailsAddForm({
     ...defaultRawMaterialAddFormValues(),
     materialEntries: formEntriesFromEditorRows(initialRows),
   }));
+  const isFirstSyncRef = useRef(true);
 
   useEffect(() => {
     const nextRows = editorRowsFromFormEntries(form.materialEntries, rowsRef.current);
+    const prevHadContent = rowsRef.current.some(rowHasContent);
     rowsRef.current = nextRows;
+
+    // First sync after mount: never push an empty list over existing parent rows.
+    // (Print Preview remount / HMR used to wipe saved Raw Material rows this way.)
+    if (isFirstSyncRef.current) {
+      isFirstSyncRef.current = false;
+      if (nextRows.length === 0 && prevHadContent) return;
+      if (nextRows.length === 0) return;
+    }
+
     onRowsChange(nextRows);
   }, [form, onRowsChange]);
 

@@ -3,6 +3,7 @@ import {
   BorderStyle,
   Document,
   ImageRun,
+  PageBreak,
   Packer,
   Paragraph,
   ShadingType,
@@ -36,7 +37,7 @@ import { formatDisplayDate } from "@backend/shared/format-date";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 20;
-const DOCX_FOOTER_SIZE = 16; // 8pt — matches Print Preview declaration box
+const DOCX_FOOTER_SIZE = 19; // ~9.5pt — matches Print Preview declaration box
 
 const THIN_BORDER = {
   style: BorderStyle.SINGLE,
@@ -315,7 +316,7 @@ function metaCell(text: string, opts?: { bold?: boolean; width: number; fill?: s
   });
 }
 
-function buildHeaderGrid(data: Cmpf305LetterData, widthTwip: number): Table {
+function buildApplicantHeaderGrid(data: Cmpf305LetterData, widthTwip: number): Table {
   const c1 = Math.round(widthTwip * 0.18);
   const c2 = Math.round(widthTwip * 0.32);
   const c3 = Math.round(widthTwip * 0.18);
@@ -358,6 +359,20 @@ function buildHeaderGrid(data: Cmpf305LetterData, widthTwip: number): Table {
           }),
         ],
       }),
+    ],
+  });
+}
+
+function buildApplicationMetaGrid(data: Cmpf305LetterData, widthTwip: number): Table {
+  const c1 = Math.round(widthTwip * 0.18);
+  const c2 = Math.round(widthTwip * 0.32);
+  const c3 = Math.round(widthTwip * 0.18);
+  const c4 = widthTwip - c1 - c2 - c3;
+
+  return new Table({
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: [c1, c2, c3, c4],
+    rows: [
       new TableRow({
         children: [
           metaCell("Application No.", { bold: true, width: c1, fill: "EEF2F7" }),
@@ -379,6 +394,148 @@ function buildHeaderGrid(data: Cmpf305LetterData, widthTwip: number): Table {
       }),
     ],
   });
+}
+
+function dummyPlantMachineryTable(widthTwip: number): Table {
+  const widths = [
+    Math.round(widthTwip * 0.08),
+    Math.round(widthTwip * 0.28),
+    Math.round(widthTwip * 0.16),
+    Math.round(widthTwip * 0.2),
+    Math.round(widthTwip * 0.1),
+  ];
+  widths.push(widthTwip - widths.reduce((a, b) => a + b, 0));
+
+  const headers: { label: string; lines?: string[] }[] = [
+    { label: "Sr No.", lines: ["Sr", "No"] },
+    { label: "Machinery Name" },
+    { label: "Make" },
+    { label: "Production Capacity / Day" },
+    { label: "Number" },
+    { label: "Remarks" },
+  ];
+
+  const headerCells = headers.map(
+    (col, i) =>
+      new TableCell({
+        width: { size: widths[i]!, type: WidthType.DXA },
+        borders: CELL_BORDERS,
+        shading: { type: ShadingType.CLEAR, fill: "EEF2F7" },
+        children: (col.lines ?? [col.label]).map(
+          (line) =>
+            new Paragraph({
+              alignment: AlignmentType.CENTER,
+              spacing: { after: 0 },
+              children: [bodyRun(line, true, 16)],
+            }),
+        ),
+      }),
+  );
+
+  function emptyDataRow(sr: number): TableRow {
+    return new TableRow({
+      children: [String(sr), "", "", "", "", ""].map(
+        (text, colIndex) =>
+          new TableCell({
+            width: { size: widths[colIndex]!, type: WidthType.DXA },
+            borders: CELL_BORDERS,
+            children: [
+              new Paragraph({
+                alignment: AlignmentType.CENTER,
+                spacing: { after: 0 },
+                children: [bodyRun(text || " ", false, 18)],
+              }),
+            ],
+          }),
+      ),
+    });
+  }
+
+  const mergedRow = new TableRow({
+    children: [
+      new TableCell({
+        columnSpan: 6,
+        width: { size: widthTwip, type: WidthType.DXA },
+        borders: CELL_BORDERS,
+        children: [
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 60, after: 60 },
+            children: [bodyRun("(List of Plant & Machinery is Attached)", true, 18)],
+          }),
+        ],
+      }),
+    ],
+  });
+
+  return new Table({
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: widths,
+    rows: [
+      new TableRow({ children: headerCells }),
+      emptyDataRow(1),
+      emptyDataRow(2),
+      mergedRow,
+      emptyDataRow(4),
+      emptyDataRow(5),
+    ],
+  });
+}
+
+async function buildTmStyleSignatoryParagraphs(
+  data: Cmpf305LetterData,
+): Promise<Paragraph[]> {
+  const sigName = data.firmRepName?.trim() || data.contactPerson?.trim() || "—";
+  const sigDesig = data.firmRepDesignation?.trim() || "—";
+  const out: Paragraph[] = [
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { before: 280, after: 0 },
+      children: [bodyRun(`For ${data.companyName || "—"}`, true)],
+    }),
+  ];
+
+  const sigImg = await loadImageFromUrl(data.signatureImageUrl?.trim() || null);
+  if (sigImg) {
+    out.push(
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { before: 120, after: 40 },
+        children: [
+          new ImageRun({
+            type: sigImg.type,
+            data: sigImg.data,
+            transformation: { width: 120, height: 48 },
+            altText: {
+              title: "Signature",
+              description: "Signatory signature",
+              name: "signature",
+            },
+          }),
+        ],
+      }),
+    );
+  } else {
+    out.push(new Paragraph({ spacing: { before: 280, after: 0 }, children: [] }));
+  }
+
+  out.push(
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8", space: 1 },
+      },
+      spacing: { before: 40, after: 0 },
+      children: [bodyRun(`Name: ${sigName}`, false, 18)],
+    }),
+    new Paragraph({
+      alignment: AlignmentType.RIGHT,
+      spacing: { after: 0 },
+      children: [bodyRun(`Designation: ${sigDesig}`, false, 18)],
+    }),
+  );
+
+  return out;
 }
 
 function machineryTableSection(
@@ -486,13 +643,21 @@ async function buildCmpf305Docx(
       },
       children: [bodyRun("Declaration Regarding Manufacturing Machinery", true, 28)],
     }),
-    buildHeaderGrid(data, widthTwip),
+    buildApplicantHeaderGrid(data, widthTwip),
+    buildApplicationMetaGrid(data, widthTwip),
     plainParagraph("To", { before: 160, after: 40 }),
     plainParagraph("The Director & Head", { after: 20 }),
     plainParagraph("Bureau of Indian Standard", { after: 20 }),
-    plainParagraph(bisLine, { after: 160 }),
-    ...machineryTableSection(data.rows, widthTwip),
+    plainParagraph(bisLine, { after: 80 }),
+    dummyPlantMachineryTable(widthTwip),
     ...(await buildDeclarationSignatureBox(data, widthTwip)),
+    // Page 2+ — letterhead + Application No/IS Code + machinery table.
+    new Paragraph({ spacing: { after: 0 }, children: [new PageBreak()] }),
+    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
+    buildApplicationMetaGrid(data, widthTwip),
+    new Paragraph({ spacing: { after: 120 }, children: [] }),
+    ...machineryTableSection(data.rows, widthTwip),
+    ...(await buildTmStyleSignatoryParagraphs(data)),
     ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
 

@@ -1,4 +1,6 @@
-export const RAW_MATERIAL_ROWS_PER_PAGE = 9;
+export const RAW_MATERIAL_ROWS_PER_PAGE = 12;
+/** First page also has letter + intro, so keep slightly fewer data rows. */
+export const RAW_MATERIAL_ROWS_FIRST_PAGE = 10;
 
 export const RAW_MATERIAL_BIS_MARK_OPTIONS = ["With", "Without"] as const;
 
@@ -44,6 +46,10 @@ export function rowHasContent(row: RawMaterialStored): boolean {
     row.test_certificate.trim().length > 0 ||
     row.batches_packaging.trim().length > 0
   );
+}
+
+export function documentHasContent(rows: RawMaterialStored[]): boolean {
+  return rows.some(rowHasContent);
 }
 
 export function parseRawMaterialDetails(raw: unknown): RawMaterialStored[] {
@@ -95,14 +101,18 @@ export function storedFromEditor(rows: RawMaterialRow[]): RawMaterialStored[] {
 export function paginateRawMaterialRows(
   rows: RawMaterialStored[],
   rowsPerPage = RAW_MATERIAL_ROWS_PER_PAGE,
+  firstPageRows = RAW_MATERIAL_ROWS_FIRST_PAGE,
 ): RawMaterialStored[][] {
   const visible = rows.filter(rowHasContent);
   if (visible.length === 0) {
     return [[]];
   }
 
+  const firstCount = Math.max(1, Math.min(firstPageRows, rowsPerPage));
   const pages: RawMaterialStored[][] = [];
-  for (let i = 0; i < visible.length; i += rowsPerPage) {
+  pages.push(visible.slice(0, firstCount));
+
+  for (let i = firstCount; i < visible.length; i += rowsPerPage) {
     pages.push(visible.slice(i, i + rowsPerPage));
   }
   return pages;

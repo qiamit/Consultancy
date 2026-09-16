@@ -23,6 +23,7 @@ import { downloadUndertakingOption2Word } from "@backend/modules/print/undertaki
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as undertakingOption2HasContent,
   mergeUndertakingOption2WithDefaults,
   resolveUndertakingOption2Document,
   type UndertakingOption2Stored,
@@ -30,6 +31,7 @@ import {
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 const UNDERTAKING_OPTION2_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with the Undertaking for Simplified Procedure (Option 2):
@@ -113,7 +115,14 @@ export function UndertakingOption2Modal({
   );
 
   useEffect(() => {
-    setDocument(mergeUndertakingOption2WithDefaults(storedDocument, resolvedDefaults));
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        undertakingOption2HasContent,
+        (stored) => mergeUndertakingOption2WithDefaults(stored, resolvedDefaults),
+      ),
+    );
   }, [storedDocument, resolvedDefaults]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>

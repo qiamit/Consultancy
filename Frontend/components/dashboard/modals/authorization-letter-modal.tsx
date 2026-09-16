@@ -23,6 +23,7 @@ import { downloadAuthorizationLetterWord } from "@backend/modules/print/authoriz
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as authorizationLetterHasContent,
   mergeAuthorizationLetterWithDefaults,
   resolveAuthorizationLetterDocument,
   type AuthorizationLetterStored,
@@ -30,6 +31,7 @@ import {
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 const AUTH_LETTER_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with the Authorization Letter submitted with BIS licence applications:
@@ -102,7 +104,14 @@ export function AuthorizationLetterModal({
   );
 
   useEffect(() => {
-    setDocument(mergeAuthorizationLetterWithDefaults(storedDocument, resolvedDefaults));
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        authorizationLetterHasContent,
+        (stored) => mergeAuthorizationLetterWithDefaults(stored, resolvedDefaults),
+      ),
+    );
   }, [storedDocument, resolvedDefaults]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>

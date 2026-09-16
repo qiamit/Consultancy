@@ -16,6 +16,7 @@ import {
   buildUpdatedSchemeOfInspectionHtml,
   defaultUpdatedSchemeOfInspectionPrintSettings,
   iframeSizeForUpdatedSchemeOfInspectionPrintSettings,
+  usitPrintPageCount,
   type UpdatedSchemeOfInspectionLetterData,
   type UpdatedSchemeOfInspectionPrintAssets,
 } from "@backend/modules/print/updated-scheme-of-inspection";
@@ -26,12 +27,14 @@ import {
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as updatedSchemeOfInspectionHasContent,
   mergeUpdatedSchemeOfInspectionWithDefaults,
   resolveUpdatedSchemeOfInspectionDocument,
   type UpdatedSchemeOfInspectionStored,
 } from "@backend/modules/bis/updated-scheme-of-inspection";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 const labelClass =
   "block text-[10px] font-semibold uppercase tracking-wide text-zinc-400";
@@ -73,13 +76,21 @@ export function UpdatedSchemeOfInspectionModal({
   );
   const [printAssets, setPrintAssets] = useState<UpdatedSchemeOfInspectionPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   useEffect(() => {
-    setDocument(mergeUpdatedSchemeOfInspectionWithDefaults(storedDocument, resolvedDefaults));
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        updatedSchemeOfInspectionHasContent,
+        (stored) => mergeUpdatedSchemeOfInspectionWithDefaults(stored, resolvedDefaults),
+      ),
+    );
   }, [storedDocument, resolvedDefaults]);
 
   useEffect(() => {
@@ -163,10 +174,13 @@ export function UpdatedSchemeOfInspectionModal({
   }, [previewData, printSettings, printAssets]);
 
   useEffect(() => {
-    refreshPreview();
-  }, [refreshPreview]);
+    if (showPrintPreview) {
+      refreshPreview();
+    }
+  }, [showPrintPreview, refreshPreview]);
 
   const iframeSize = iframeSizeForUpdatedSchemeOfInspectionPrintSettings(printSettings);
+  const previewPageCount = usitPrintPageCount();
 
   function patchDocument(patch: Partial<UpdatedSchemeOfInspectionStored>) {
     setDocument((prev) => ({ ...prev, ...patch }));
@@ -249,6 +263,17 @@ export function UpdatedSchemeOfInspectionModal({
           </button>
           <button
             type="button"
+            onClick={() => setShowPrintPreview((prev) => !prev)}
+            className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+              showPrintPreview
+                ? "border-sky-500 bg-sky-600 text-white"
+                : "border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+            }`}
+          >
+            Print Preview
+          </button>
+          <button
+            type="button"
             onClick={handlePrint}
             className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
           >
@@ -301,84 +326,97 @@ export function UpdatedSchemeOfInspectionModal({
           </ModalToolbarActions>
       </div>
 
-      <div className="shrink-0 border-b border-zinc-800 bg-zinc-900 px-4 py-3">
-        <div className="mb-3 flex flex-wrap items-end gap-3">
-          <label className="min-w-[220px] flex-1">
-            <span className={labelClass}>PM Reference</span>
-            <input
-              value={document.pm_reference}
-              onChange={(e) => patchDocument({ pm_reference: e.target.value })}
-              className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-2 text-xs text-zinc-100 outline-none focus:border-sky-500"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => setShowAnnexText((prev) => !prev)}
-            className="rounded-lg border border-zinc-600 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-800"
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
+        {!showPrintPreview && (
+          <div
+            className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-zinc-900 ${
+              settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+            }`}
           >
-            {showAnnexText ? "Hide Annex Text" : "Edit Annex Text"}
-          </button>
-        </div>
+            <div className="border-b border-zinc-800 px-4 py-3">
+              <div className="mb-3 flex flex-wrap items-end gap-3">
+                <label className="min-w-[220px] flex-1">
+                  <span className={labelClass}>PM Reference</span>
+                  <input
+                    value={document.pm_reference}
+                    onChange={(e) => patchDocument({ pm_reference: e.target.value })}
+                    className="mt-1 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-2.5 py-2 text-xs text-zinc-100 outline-none focus:border-sky-500"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowAnnexText((prev) => !prev)}
+                  className="rounded-lg border border-zinc-600 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-800"
+                >
+                  {showAnnexText ? "Hide Annex Text" : "Edit Annex Text"}
+                </button>
+              </div>
 
-        {showAnnexText && (
-          <div className="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-            {(
-              [
-                ["laboratory_text", "Laboratory"],
-                ["test_records_text", "Test Records"],
-                ["labelling_marking_text", "Labelling & Marking"],
-                ["control_unit_text", "Control Unit"],
-                ["levels_of_control_text", "Levels of Control"],
-                ["standard_mark_text", "Standard Mark"],
-                ["rejections_text", "Rejections"],
-                ["note_1", "Note 1"],
-                ["note_2", "Note 2"],
-                ["note_3", "Note 3"],
-              ] as const
-            ).map(([key, label]) => (
-              <label key={key}>
-                <span className={labelClass}>{label}</span>
-                <textarea
-                  value={document[key]}
-                  onChange={(e) => patchDocument({ [key]: e.target.value })}
-                  className={textareaClass}
-                  rows={3}
-                />
-              </label>
-            ))}
+              {showAnnexText && (
+                <div className="mb-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+                  {(
+                    [
+                      ["laboratory_text", "Laboratory"],
+                      ["test_records_text", "Test Records"],
+                      ["labelling_marking_text", "Labelling & Marking"],
+                      ["control_unit_text", "Control Unit"],
+                      ["levels_of_control_text", "Levels of Control"],
+                      ["standard_mark_text", "Standard Mark"],
+                      ["rejections_text", "Rejections"],
+                      ["note_1", "Note 1"],
+                      ["note_2", "Note 2"],
+                      ["note_3", "Note 3"],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <label key={key}>
+                      <span className={labelClass}>{label}</span>
+                      <textarea
+                        value={document[key]}
+                        onChange={(e) => patchDocument({ [key]: e.target.value })}
+                        className={textareaClass}
+                        rows={3}
+                      />
+                    </label>
+                  ))}
+                </div>
+              )}
+
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                Table 1 — Test Details
+              </p>
+              <UpdatedSitTableEditor
+                rows={document.test_rows}
+                onChange={(test_rows) => patchDocument({ test_rows })}
+              />
+            </div>
           </div>
         )}
 
-        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-          Table 1 — Test Details
-        </p>
-        <UpdatedSitTableEditor
-          rows={document.test_rows}
-          onChange={(test_rows) => patchDocument({ test_rows })}
-        />
-      </div>
-
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
-        <div
-          className={`flex min-w-0 flex-1 flex-col bg-zinc-600 ${
-            settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
-          }`}
-        >
-          <div className="border-b border-zinc-700/80 px-4 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-              Form Preview — Updated Scheme of Inspection &amp; Testing
-            </p>
+        {showPrintPreview && (
+          <div
+            className={`flex min-w-0 flex-1 flex-col bg-zinc-600 ${
+              settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+            }`}
+          >
+            <div className="border-b border-zinc-700/80 px-4 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
+                Form Preview — Updated Scheme of Inspection &amp; Testing ({previewPageCount} pages)
+                <span className="ml-2 font-normal normal-case text-zinc-400">
+                  Page 1 portrait · Page 2 landscape
+                </span>
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+              <iframe
+                ref={iframeRef}
+                title="Updated Scheme of Inspection and Testing preview"
+                className="mx-auto max-w-full border-0 bg-white shadow-2xl"
+                scrolling="no"
+                style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
+              />
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 sm:p-6">
-            <iframe
-              ref={iframeRef}
-              title="Updated Scheme of Inspection and Testing preview"
-              className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-              scrolling="no"
-              style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
-            />
-          </div>
-        </div>
+        )}
 
         {settingsPanel && (
           <div className={splitModalSettingsPaneClass()}>

@@ -25,6 +25,7 @@ import { loadCompanyPrintContext } from "@backend/modules/print/load-company-pri
 import type { PrintSettings } from "@backend/modules/print/types";
 import type { IsCodeMarkingFeeSource } from "@backend/modules/bis/cmpf-310";
 import {
+  documentHasContent as undertakingMinimumMarkingFeeHasContent,
   mergeUndertakingMinimumMarkingFeeWithDefaults,
   resolveUndertakingMinimumMarkingFeeDocument,
   type UndertakingMinimumMarkingFeeStored,
@@ -35,6 +36,7 @@ import {resolvePrimaryTopManagementPerson,
 } from "@backend/modules/bis/top-management";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 const MMF_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with the Undertaking for Minimum Marking Fee submitted with BIS licence applications:
@@ -125,7 +127,14 @@ export function UndertakingMinimumMarkingFeeModal({
   );
 
   useEffect(() => {
-    setDocument(mergeUndertakingMinimumMarkingFeeWithDefaults(storedDocument, resolvedDefaults));
+    setDocument((prev) =>
+      preferLocalDocumentIfStoredEmpty(
+        storedDocument,
+        prev,
+        undertakingMinimumMarkingFeeHasContent,
+        (stored) => mergeUndertakingMinimumMarkingFeeWithDefaults(stored, resolvedDefaults),
+      ),
+    );
   }, [storedDocument, resolvedDefaults]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>

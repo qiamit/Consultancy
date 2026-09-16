@@ -30,6 +30,7 @@ import { loadCompanyPrintContext } from "@backend/modules/print/load-company-pri
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
   createTechnicalStaffRow,
+  documentHasContent as technicalStaffDocumentHasContent,
   editorRowsFromStored,
   storedFromEditor,
   type TechnicalStaffRow,
@@ -40,8 +41,10 @@ import {
   withDocumentSignatureImage,
   type TopManagementStored,
 } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 const TECH_STAFF_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with Technical Staff details for BIS licence applications:
@@ -66,6 +69,8 @@ export function TechnicalStaffModal({
   isCodeId,
   revisionYear,
   rows: initialStored,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -79,6 +84,8 @@ export function TechnicalStaffModal({
   isCodeId: string | null;
   revisionYear: number | null;
   rows: TechnicalStaffStored[];
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (rows: TechnicalStaffStored[]) => void;
   onClose: () => void;
 }) {
@@ -91,6 +98,7 @@ export function TechnicalStaffModal({
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [showIsCodeView, setShowIsCodeView] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [staffFormOpen, setStaffFormOpen] = useState(false);
   const [editingStaff, setEditingStaff] = useState<TechnicalStaffRow | null>(null);
   const [savedFlash, setSavedFlash] = useState(false);
@@ -243,6 +251,19 @@ export function TechnicalStaffModal({
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
 
+  function handleImportFromApplication(nextDocument: TechnicalStaffStored[]): boolean {
+    const current = storedFromEditor(rows);
+    if (technicalStaffDocumentHasContent(current)) {
+      const ok = window.confirm(
+        "Replace the current Technical Staff list with the imported persons?",
+      );
+      if (!ok) return false;
+    }
+    setRows(editorRowsFromStored(nextDocument));
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function openAddStaffForm() {
     setEditingStaff(null);
     setStaffFormOpen(true);
@@ -301,6 +322,14 @@ export function TechnicalStaffModal({
               className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
             >
               {saving ? "Saving…" : "Save"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowImportDialog(true)}
+              title="Import Technical Staff from Another Application or License"
+              className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+            >
+              Import
             </button>
             <button
               type="button"
@@ -442,6 +471,20 @@ export function TechnicalStaffModal({
         </div>
       </div>
 
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="technical_staff"
+          title="Import Technical Staff"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "technical_staff") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
+        />
+      )}
+
       {showIsCodeView && isCodeId && (
         <IsCodeViewModal
           isCodeId={isCodeId}
@@ -470,6 +513,8 @@ export function TechnicalStaffModal({
           letterData={letterData}
           topManagement={topManagement}
           initial={editingStaff}
+          clientId={clientId}
+          excludeImportSource={excludeImportSource}
           onSave={handleStaffFormSave}
           onClose={() => {
             setStaffFormOpen(false);

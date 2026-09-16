@@ -202,7 +202,20 @@ export function ProcessFlowChartModal({
     doc.open();
     doc.write(html);
     doc.close();
-    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
+    const fitOnePage = previewData.document.chart_settings?.print_chart_size !== "full";
+    requestAnimationFrame(() => {
+      if (fitOnePage) {
+        // Keep a locked A4 sheet; outer pane scrolls if viewport is shorter.
+        iframe.style.height = `${iframeSizeForProcessFlowChartPrintSettings(printSettings).heightMm}mm`;
+        iframe.style.minHeight = iframe.style.height;
+        iframe.style.overflow = "hidden";
+        iframe.setAttribute("scrolling", "no");
+        if (doc.documentElement) doc.documentElement.style.overflow = "hidden";
+        if (doc.body) doc.body.style.overflow = "hidden";
+        return;
+      }
+      syncPrintPreviewIframe(iframe);
+    });
   }, [previewData, printSettings, printAssets]);
 
   useEffect(() => {
@@ -365,6 +378,24 @@ export function ProcessFlowChartModal({
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
 
+  async function togglePrintPreview() {
+    if (showPrintPreview) {
+      setShowPrintPreview(false);
+      return;
+    }
+    // Capture clean chart (no selection outline) while editor is still mounted.
+    const snapshot = await canvasEditorRef.current?.captureSnapshot();
+    if (snapshot) {
+      setDocument((prev) => ({
+        ...prev,
+        drawing_data_url: snapshot.drawing_data_url,
+        shapes: snapshot.shapes,
+        outline_items: snapshot.outline_items,
+      }));
+    }
+    setShowPrintPreview(true);
+  }
+
   return (
     <>
       <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
@@ -388,7 +419,7 @@ export function ProcessFlowChartModal({
             </button>
             <button
               type="button"
-              onClick={() => setShowPrintPreview((prev) => !prev)}
+              onClick={() => void togglePrintPreview()}
               className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
                 showPrintPreview
                   ? "border-sky-500 bg-sky-600 text-white"
@@ -520,16 +551,12 @@ export function ProcessFlowChartModal({
                   Form Preview — Process Flow Chart
                 </p>
               </div>
-              <div
-                className={`flex min-h-0 flex-1 items-start justify-center p-3 sm:p-6 ${
-                  fitOnePagePreview ? "overflow-hidden" : "overflow-y-auto"
-                }`}
-              >
+              <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto p-3 sm:p-6">
                 <iframe
                   ref={iframeRef}
                   title="Process flow chart print preview"
                   className="max-w-full border-0 bg-white shadow-2xl"
-                  scrolling="no"
+                  scrolling={fitOnePagePreview ? "no" : "yes"}
                   style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
                 />
               </div>

@@ -24,6 +24,7 @@ import { downloadCmpf307Word } from "@backend/modules/print/cmpf-307-export";
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as cmpf307HasContent,
   editorRowsFromStored,
   storedFromEditor,
   type Cmpf307Stored,
@@ -33,8 +34,10 @@ import {
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 const CMPF307_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with CMPF 307 — Declaration of Brand Names Proposed to be Covered Under Certification:
@@ -59,6 +62,8 @@ export function Cmpf307Modal({
   dateOfInspection,
   topManagement,
   document: initialDocument,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -71,11 +76,16 @@ export function Cmpf307Modal({
   dateOfInspection: string;
   topManagement: TopManagementStored[];
   document: Cmpf307Stored;
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (document: Cmpf307Stored) => void;
   onClose: () => void;
 }) {
   const [rows, setRows] = useState(() => editorRowsFromStored(initialDocument));
-  const brandsWithoutMarkReasons = initialDocument.brands_without_mark_reasons;
+  const [brandsWithoutMarkReasons, setBrandsWithoutMarkReasons] = useState(
+    () => initialDocument.brands_without_mark_reasons,
+  );
+  const [brandFormKey, setBrandFormKey] = useState(0);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCmpf307PrintSettings(),
   );
@@ -83,6 +93,7 @@ export function Cmpf307Modal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
@@ -251,6 +262,21 @@ export function Cmpf307Modal({
     }
   }
 
+  function handleImportFromApplication(nextDocument: Cmpf307Stored): boolean {
+    const current = storedFromEditor(rows, brandsWithoutMarkReasons);
+    if (cmpf307HasContent(current)) {
+      const ok = window.confirm(
+        "Replace the current Brand Names list with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setRows(editorRowsFromStored(nextDocument));
+    setBrandsWithoutMarkReasons(nextDocument.brands_without_mark_reasons);
+    setBrandFormKey((key) => key + 1);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
@@ -273,6 +299,14 @@ export function Cmpf307Modal({
             className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowImportDialog(true)}
+            title="Import Brand Names from Another Application or License"
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            Import
           </button>
           <button
             type="button"
@@ -347,7 +381,11 @@ export function Cmpf307Modal({
             }`}
           >
             <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-              <Cmpf307AddBrandForm initialRows={rows} onRowsChange={setRows} />
+              <Cmpf307AddBrandForm
+                key={brandFormKey}
+                initialRows={rows}
+                onRowsChange={setRows}
+              />
             </div>
           </div>
         )}
@@ -397,6 +435,20 @@ export function Cmpf307Modal({
           accentColor="amber"
           overlayZIndexClass="z-[500]"
           onClose={() => setShowQeAssistant(false)}
+        />
+      )}
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="cmpf_307"
+          title="Import Brand Names"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "cmpf_307") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
         />
       )}
     </>

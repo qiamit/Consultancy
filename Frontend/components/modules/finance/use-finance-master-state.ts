@@ -117,8 +117,13 @@ export function useEditorRowsFromStored<TStored, TRow>(
   const [appliedKey, setAppliedKey] = useState(rowsKey);
   const [rows, setRows] = useState(() => fromStored(initialStored));
   if (rowsKey !== appliedKey) {
-    setAppliedKey(rowsKey);
-    setRows(fromStored(initialStored));
+    // Never let a late empty parent wipe in-progress / already-loaded editor rows.
+    if (Array.isArray(initialStored) && initialStored.length === 0) {
+      setAppliedKey(rowsKey);
+    } else {
+      setAppliedKey(rowsKey);
+      setRows(fromStored(initialStored));
+    }
   }
   return [rows, setRows];
 }

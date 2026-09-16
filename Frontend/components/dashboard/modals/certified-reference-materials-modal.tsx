@@ -26,16 +26,21 @@ import {
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  documentHasContent as certifiedReferenceMaterialsHasContent,
   editorRowsFromStored,
+  rowHasContent,
   storedFromEditor,
   type CertifiedReferenceMaterialStored,
 } from "@backend/modules/bis/certified-reference-materials";
-import {resolvePrimaryTopManagementPerson,
+import {
+  resolvePrimaryTopManagementPerson,
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
 
 export function CertifiedReferenceMaterialsModal({
   letterData,
@@ -44,6 +49,8 @@ export function CertifiedReferenceMaterialsModal({
   dateOfInspection,
   topManagement,
   rows: initialStored,
+  clientId = null,
+  excludeImportSource = null,
   onSave,
   onClose,
 }: {
@@ -56,17 +63,39 @@ export function CertifiedReferenceMaterialsModal({
   dateOfInspection: string;
   topManagement: TopManagementStored[];
   rows: CertifiedReferenceMaterialStored[];
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onSave: (rows: CertifiedReferenceMaterialStored[]) => void;
   onClose: () => void;
 }) {
   const [rows, setRows] = useState(() => editorRowsFromStored(initialStored));
   const [materialFormKey, setMaterialFormKey] = useState(0);
+  const parentRowsSigRef = useRef(
+    JSON.stringify(initialStored.filter((r) => rowHasContent(r))),
+  );
+
+  // Keep editor in sync when parent reloads notes (e.g. hydrate after open).
+  useEffect(() => {
+    const visible = initialStored.filter((r) => rowHasContent(r));
+    const sig = JSON.stringify(visible);
+    if (sig === parentRowsSigRef.current) return;
+    // Never let a late empty parent wipe in-progress / already-loaded rows.
+    if (visible.length === 0) {
+      parentRowsSigRef.current = sig;
+      return;
+    }
+    parentRowsSigRef.current = sig;
+    setRows(editorRowsFromStored(initialStored));
+    setMaterialFormKey((key) => key + 1);
+  }, [initialStored]);
+
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCertifiedReferenceMaterialsPrintSettings(),
   );
   const [printAssets, setPrintAssets] = useState<CertifiedReferenceMaterialsPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
@@ -233,11 +262,26 @@ export function CertifiedReferenceMaterialsModal({
     );
   }
 
+  function handleImportFromApplication(nextRows: CertifiedReferenceMaterialStored[]): boolean {
+    const current = storedFromEditor(rows);
+    if (certifiedReferenceMaterialsHasContent(current)) {
+      const ok = window.confirm(
+        "Replace the current Certified Reference Materials with the imported data?",
+      );
+      if (!ok) return false;
+    }
+    setRows(editorRowsFromStored(nextRows));
+    setMaterialFormKey((key) => key + 1);
+    setShowPrintPreview(false);
+    return true;
+  }
+
   function toggleSettingsPanel(panel: "page" | "print") {
     setSettingsPanel((prev) => (prev === panel ? null : panel));
   }
 
   return (
+    <>
     <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
       <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 bg-zinc-900 px-4 py-3">
         <div className="min-w-0 flex-1">
@@ -259,6 +303,14 @@ export function CertifiedReferenceMaterialsModal({
             className="shrink-0 whitespace-nowrap rounded-lg bg-sky-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
           >
             {saving ? "Saving…" : "Save"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setShowImportDialog(true)}
+            title="Import Certified Reference Materials from Another Application or License"
+            className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            Import
           </button>
           <button
             type="button"
@@ -377,5 +429,20 @@ export function CertifiedReferenceMaterialsModal({
         )}
       </div>
     </div>
+
+      {showImportDialog && (
+        <ChecklistDocumentImportDialog
+          documentKey="certified_reference_materials"
+          title="Import Certified Reference Materials"
+          defaultClientId={clientId}
+          exclude={excludeImportSource}
+          onImport={(payload) => {
+            if (payload.key !== "certified_reference_materials") return false;
+            return handleImportFromApplication(payload.document);
+          }}
+          onClose={() => setShowImportDialog(false)}
+        />
+      )}
+    </>
   );
 }

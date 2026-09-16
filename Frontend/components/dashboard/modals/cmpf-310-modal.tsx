@@ -17,8 +17,8 @@ import { downloadCmpf310Word } from "@backend/modules/print/cmpf-310-export";
 import { loadCompanyPrintContext } from "@backend/modules/print/load-company-print-context";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
-  formatCmpf310RupeeDisplay,
-  resolveCmpf310Document,
+  mergeCmpf310WithDefaults,
+  resolveCmpf310Defaults,
   type Cmpf310Stored,
   type IsCodeMarkingFeeSource,
 } from "@backend/modules/bis/cmpf-310";
@@ -50,6 +50,9 @@ const CMPF310_QE_STARTERS = [
   "What should we cite as reference letter details?",
 ];
 
+const FIELD_INPUT_CLASS =
+  "mt-1 block w-full rounded-md border border-zinc-700 bg-zinc-950 px-2.5 py-1.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30";
+
 export function Cmpf310Modal({
   letterData,
   applicationNumber,
@@ -58,6 +61,7 @@ export function Cmpf310Modal({
   isCode,
   companyScale,
   topManagement,
+  document: initialDocument,
   appDropdownOptions,
   onReloadDropdowns,
   onFirmScaleChange,
@@ -74,22 +78,25 @@ export function Cmpf310Modal({
   isCode: IsCodeMarkingFeeSource | null;
   companyScale: string | null;
   topManagement: TopManagementStored[];
+  document: Cmpf310Stored;
   appDropdownOptions: Record<string, AppDropdownOptionRow[]>;
   onReloadDropdowns: () => void;
   onFirmScaleChange: (value: string) => void;
   onSave: (document: Cmpf310Stored) => void;
   onClose: () => void;
 }) {
-  const document = useMemo(
-    () =>
-      resolveCmpf310Document({
+  const [document, setDocument] = useState(() =>
+    mergeCmpf310WithDefaults(
+      initialDocument,
+      resolveCmpf310Defaults({
         isCode,
         companyScale,
         contactPerson: letterData.contactPerson,
         topManagement,
       }),
-    [isCode, companyScale, letterData.contactPerson, topManagement],
+    ),
   );
+  const skipAutoRateSync = useRef(true);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultCmpf310PrintSettings(),
@@ -102,6 +109,70 @@ export function Cmpf310Modal({
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
   const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  // When Firm Scale / IS Code changes, re-auto-pick rate fields (user can still edit after).
+  useEffect(() => {
+    const defaults = resolveCmpf310Defaults({
+      isCode,
+      companyScale,
+      contactPerson: letterData.contactPerson,
+      topManagement,
+    });
+    if (skipAutoRateSync.current) {
+      skipAutoRateSync.current = false;
+      setDocument((prev) => mergeCmpf310WithDefaults(prev, defaults));
+      return;
+    }
+    setDocument((prev) => ({
+      ...prev,
+      unit: defaults.unit || "",
+      firm_scale: defaults.firm_scale || "",
+      unit_rate_rs: defaults.unit_rate_rs || "",
+      marking_fee_rs: defaults.marking_fee_rs || "",
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-pick rates when scale / IS fee source changes
+  }, [
+    companyScale,
+    isCode?.unit_of_is,
+    isCode?.slab_1_rate,
+    isCode?.mmf_micro_scale,
+    isCode?.mmf_small_scale,
+    isCode?.mmf_medium_scale,
+    isCode?.mmf_large_scale,
+  ]);
+
+  // Fill empty signatory from Top Management / contact without overwriting edits.
+  useEffect(() => {
+    const defaults = resolveCmpf310Defaults({
+      isCode,
+      companyScale,
+      contactPerson: letterData.contactPerson,
+      topManagement,
+    });
+    setDocument((prev) => {
+      const nextName = prev.signatory_name.trim()
+        ? prev.signatory_name
+        : defaults.signatory_name || "";
+      const nextDesignation = prev.signatory_designation.trim()
+        ? prev.signatory_designation
+        : defaults.signatory_designation || "";
+      if (
+        nextName === prev.signatory_name &&
+        nextDesignation === prev.signatory_designation
+      ) {
+        return prev;
+      }
+      return {
+        ...prev,
+        signatory_name: nextName,
+        signatory_designation: nextDesignation,
+      };
+    });
+  }, [topManagement, letterData.contactPerson, isCode, companyScale]);
+
+  function patchDocument(patch: Partial<Cmpf310Stored>) {
+    setDocument((prev) => ({ ...prev, ...patch }));
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -358,30 +429,117 @@ export function Cmpf310Modal({
               <p className="mb-4 text-xs font-semibold uppercase tracking-wide text-zinc-400">
                 Marking Fee Details
               </p>
-              <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                {[
-                  ["Unit", document.unit || "—"],
-                  ["Firm Scale", document.firm_scale || "—"],
-                  ["Unit Rate", formatCmpf310RupeeDisplay(document.unit_rate_rs)],
-                  ["Marking Fee (MMF)", formatCmpf310RupeeDisplay(document.marking_fee_rs)],
-                  ["Reference Letter No.", document.reference_letter_no || "—"],
-                  ["Reference Letter Date", document.reference_letter_date || "—"],
-                  ["Signatory", document.signatory_name || "—"],
-                  ["Designation", document.signatory_designation || "—"],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2"
-                  >
-                    <dt className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                      {label}
-                    </dt>
-                    <dd className="mt-1 text-zinc-200">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Unit
+                  </span>
+                  <input
+                    type="text"
+                    value={document.unit}
+                    onChange={(e) => patchDocument({ unit: e.target.value })}
+                    placeholder="e.g. 1 Piece"
+                    className={FIELD_INPUT_CLASS}
+                  />
+                </label>
+                <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Firm Scale
+                  </span>
+                  <input
+                    type="text"
+                    value={document.firm_scale}
+                    onChange={(e) => patchDocument({ firm_scale: e.target.value })}
+                    placeholder="From Firm Scale above"
+                    className={FIELD_INPUT_CLASS}
+                  />
+                </label>
+                <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Unit Rate (₹)
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={document.unit_rate_rs}
+                    onChange={(e) => patchDocument({ unit_rate_rs: e.target.value })}
+                    placeholder="Auto from IS Code"
+                    className={FIELD_INPUT_CLASS}
+                  />
+                </label>
+                <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Marking Fee / MMF (₹)
+                  </span>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={document.marking_fee_rs}
+                    onChange={(e) => patchDocument({ marking_fee_rs: e.target.value })}
+                    placeholder="Auto from Firm Scale"
+                    className={FIELD_INPUT_CLASS}
+                  />
+                </label>
+                <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Reference Letter No.
+                  </span>
+                  <input
+                    type="text"
+                    value={document.reference_letter_no}
+                    onChange={(e) =>
+                      patchDocument({ reference_letter_no: e.target.value })
+                    }
+                    placeholder="Optional"
+                    className={FIELD_INPUT_CLASS}
+                  />
+                </label>
+                <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Reference Letter Date
+                  </span>
+                  <input
+                    type="text"
+                    value={document.reference_letter_date}
+                    onChange={(e) =>
+                      patchDocument({ reference_letter_date: e.target.value })
+                    }
+                    placeholder="DD/MM/YYYY"
+                    className={FIELD_INPUT_CLASS}
+                  />
+                </label>
+                <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Signatory
+                  </span>
+                  <input
+                    type="text"
+                    value={document.signatory_name}
+                    onChange={(e) =>
+                      patchDocument({ signatory_name: e.target.value })
+                    }
+                    placeholder="From Top Management"
+                    className={FIELD_INPUT_CLASS}
+                  />
+                </label>
+                <label className="rounded-lg border border-zinc-800 bg-zinc-950/60 px-3 py-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    Designation
+                  </span>
+                  <input
+                    type="text"
+                    value={document.signatory_designation}
+                    onChange={(e) =>
+                      patchDocument({ signatory_designation: e.target.value })
+                    }
+                    placeholder="From Top Management"
+                    className={FIELD_INPUT_CLASS}
+                  />
+                </label>
+              </div>
               <p className="mt-4 text-xs leading-relaxed text-zinc-500">
-                Edit Firm Scale above; rates load from the linked IS Code and selected scale. Use{" "}
+                Fields auto-fill from the linked IS Code and Firm Scale; you can edit any value.
+                Changing Firm Scale reloads Unit / Rate / MMF. Use{" "}
                 <strong className="text-zinc-300">Print Preview</strong> to view the full CMPF
                 310 letter.
               </p>

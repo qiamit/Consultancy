@@ -256,14 +256,24 @@ const IsCodeViewModal = dynamic(
 );
 import {
   buildApplicationChecklistPayload,
+  mergeApplicationMetaPreferFilled,
   parseApplicationChecklistNotes,
+  preferNonEmptyDocument,
+  preferNonEmptyRows,
   type ApplicationMeta,
   type LicenseScopeFormat,
   type LicenseScopeTableRow,
 } from "@backend/modules/bis/application-checklist-notes";
 import { parseBisProjectLicenseScopeNotes } from "@backend/modules/bis/bis-project-license-scope-notes";
-import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
-import type { TopManagementStored } from "@backend/modules/bis/top-management";
+import {
+  rowHasContent as oslSampleRowHasContent,
+  type OslSampleRequirementStored,
+} from "@backend/modules/bis/osl-sample-requirements";
+import {
+  rowHasContent as topManagementRowHasContent,
+  resolvePrimaryTopManagementPerson,
+  type TopManagementStored,
+} from "@backend/modules/bis/top-management";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
 import { isApplicationProjectKind, isPendingApplicationRow, type BisApplicationSource } from "@backend/modules/bis/bis-project-kind";
 import {
@@ -273,29 +283,101 @@ import {
   type BisApplicationStage,
 } from "@backend/modules/bis/application-stage";
 import { resolveSampleOfferLetterDate } from "@backend/modules/bis/sample-offer-letter-date";
-import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff";
-import type { FactoryTestReportStored, FtrSampleSource } from "@backend/modules/bis/factory-test-report";
-import type { SubcontractedTestStored, SubcontractedTestsDocumentStored } from "@backend/modules/bis/subcontracted-tests";
-import type { Cmpf305MachineryStored } from "@backend/modules/bis/cmpf-305";
-import type { RawMaterialStored } from "@backend/modules/bis/raw-material-details";
-import type { CertifiedReferenceMaterialStored } from "@backend/modules/bis/certified-reference-materials";
-import type { Cmpf306Stored } from "@backend/modules/bis/cmpf-306";
-import type { Cmpf307Stored } from "@backend/modules/bis/cmpf-307";
-import type { Cmpf310Stored } from "@backend/modules/bis/cmpf-310";
-import type { Cmpf311Stored } from "@backend/modules/bis/cmpf-311";
-import type { UndertakingOption2Stored } from "@backend/modules/bis/undertaking-option-2";
-import type { UndertakingLongDurationTestStored } from "@backend/modules/bis/undertaking-long-duration-test";
-import type { UndertakingMinimumMarkingFeeStored } from "@backend/modules/bis/undertaking-minimum-marking-fee";
-import type { UndertakingGeneralIssStored } from "@backend/modules/bis/undertaking-general-iss";
-import type { AuthorizationLetterStored } from "@backend/modules/bis/authorization-letter";
-import type { LocationMapStored } from "@backend/modules/bis/location-map";
-import type { PlantLayoutStored } from "@backend/modules/bis/plant-layout";
-import type { ProcessFlowChartStored } from "@backend/modules/bis/process-flow-chart";
-import type { ProcessDescriptionStored } from "@backend/modules/bis/process-description";
-import type { UpdatedSchemeOfInspectionStored } from "@backend/modules/bis/updated-scheme-of-inspection";
-import type { SelfEvaluationFormStored } from "@backend/modules/bis/self-evaluation-form";
+import {
+  rowHasContent as technicalStaffRowHasContent,
+  type TechnicalStaffStored,
+} from "@backend/modules/bis/technical-staff";
+import {
+  serializeLicenseScopeText,
+  storedRowsToEditorRows,
+} from "@backend/modules/bis/license-scope-format";
+import { openBisForm1Preview } from "@backend/modules/print/bis-form-1";
+import {
+  ftrReportHasContent,
+  type FactoryTestReportStored,
+  type FtrSampleSource,
+} from "@backend/modules/bis/factory-test-report";
+import {
+  documentHasContent as subcontractedTestsDocumentHasContent,
+  rowHasContent as subcontractedTestRowHasContent,
+  type SubcontractedTestStored,
+  type SubcontractedTestsDocumentStored,
+} from "@backend/modules/bis/subcontracted-tests";
+import {
+  rowHasContent as cmpf305RowHasContent,
+  type Cmpf305MachineryStored,
+} from "@backend/modules/bis/cmpf-305";
+import {
+  rowHasContent as rawMaterialRowHasContent,
+  type RawMaterialStored,
+} from "@backend/modules/bis/raw-material-details";
+import {
+  rowHasContent as certifiedReferenceMaterialRowHasContent,
+  type CertifiedReferenceMaterialStored,
+} from "@backend/modules/bis/certified-reference-materials";
+import {
+  documentHasContent as cmpf306DocumentHasContent,
+  type Cmpf306Stored,
+} from "@backend/modules/bis/cmpf-306";
+import {
+  documentHasContent as cmpf307DocumentHasContent,
+  type Cmpf307Stored,
+} from "@backend/modules/bis/cmpf-307";
+import {
+  documentHasContent as cmpf310DocumentHasContent,
+  type Cmpf310Stored,
+} from "@backend/modules/bis/cmpf-310";
+import {
+  documentHasContent as cmpf311DocumentHasContent,
+  type Cmpf311Stored,
+} from "@backend/modules/bis/cmpf-311";
+import {
+  documentHasContent as undertakingOption2DocumentHasContent,
+  type UndertakingOption2Stored,
+} from "@backend/modules/bis/undertaking-option-2";
+import {
+  documentHasContent as undertakingLongDurationTestDocumentHasContent,
+  type UndertakingLongDurationTestStored,
+} from "@backend/modules/bis/undertaking-long-duration-test";
+import {
+  documentHasContent as undertakingMinimumMarkingFeeDocumentHasContent,
+  type UndertakingMinimumMarkingFeeStored,
+} from "@backend/modules/bis/undertaking-minimum-marking-fee";
+import {
+  documentHasContent as undertakingGeneralIssDocumentHasContent,
+  type UndertakingGeneralIssStored,
+} from "@backend/modules/bis/undertaking-general-iss";
+import {
+  documentHasContent as authorizationLetterDocumentHasContent,
+  type AuthorizationLetterStored,
+} from "@backend/modules/bis/authorization-letter";
+import {
+  documentHasContent as locationMapDocumentHasContent,
+  type LocationMapStored,
+} from "@backend/modules/bis/location-map";
+import {
+  documentHasContent as plantLayoutDocumentHasContent,
+  type PlantLayoutStored,
+} from "@backend/modules/bis/plant-layout";
+import {
+  documentHasContent as processFlowChartDocumentHasContent,
+  type ProcessFlowChartStored,
+} from "@backend/modules/bis/process-flow-chart";
+import {
+  documentHasContent as processDescriptionDocumentHasContent,
+  type ProcessDescriptionStored,
+} from "@backend/modules/bis/process-description";
+import {
+  documentHasContent as updatedSchemeOfInspectionDocumentHasContent,
+  type UpdatedSchemeOfInspectionStored,
+} from "@backend/modules/bis/updated-scheme-of-inspection";
+import {
+  documentHasContent as selfEvaluationFormDocumentHasContent,
+  type SelfEvaluationFormStored,
+} from "@backend/modules/bis/self-evaluation-form";
 import {
   editorRowsFromStored,
+  rowHasContent as legalDocumentRowHasContent,
   storedFromEditor,
   type LegalDocumentRow,
   type LegalDocumentStored,
@@ -839,6 +921,7 @@ function ApplicationFormModal({
   const [showSelfEvaluationForm, setShowSelfEvaluationForm] = useState(false);
   const [showUndertakingGeneralIss, setShowUndertakingGeneralIss] = useState(false);
   const [showChecklistBulkPrint, setShowChecklistBulkPrint] = useState(false);
+  const [checklistBulkPrintKey, setChecklistBulkPrintKey] = useState(0);
   const [reopenFtrAfterSampleEdit, setReopenFtrAfterSampleEdit] = useState(false);
   const [sampleOfferLetterFocusIndex, setSampleOfferLetterFocusIndex] = useState<number | null>(
     null,
@@ -874,7 +957,12 @@ function ApplicationFormModal({
     setShowUndertakingGeneralIss(key === "undertaking-general-iss");
     setShowClientEdit(key === "client-edit");
     setShowIsCodeEdit(key === "is-code-edit");
-    setShowChecklistBulkPrint(key === "bulk-print");
+    if (key === "bulk-print") {
+      setChecklistBulkPrintKey((n) => n + 1);
+      setShowChecklistBulkPrint(true);
+    } else {
+      setShowChecklistBulkPrint(false);
+    }
   }, []);
 
   const openDoc = useCallback(
@@ -1017,8 +1105,9 @@ function ApplicationFormModal({
     initialNotes.selfEvaluationForm,
   );
   const [applicationMeta, setApplicationMeta] = useState<ApplicationMeta>(initialNotes.meta);
+  // Keep ref as the live source of truth for saves. Do not mirror from state on every
+  // render — a late empty hydrate can briefly commit empty state and would wipe the ref.
   const applicationMetaRef = useRef(applicationMeta);
-  applicationMetaRef.current = applicationMeta;
   const [legalDocumentRows, setLegalDocumentRows] = useState<LegalDocumentRow[]>(() =>
     editorRowsFromStored(initialNotes.legalDocuments),
   );
@@ -1027,6 +1116,7 @@ function ApplicationFormModal({
   );
   const notesHydratedRef = useRef(Boolean((row.notes ?? "").trim()));
   const notesLoadGenRef = useRef(0);
+  const notesSaveGenRef = useRef(0);
   const productManualPrefilledRef = useRef(false);
   const [saving, startSave] = useTransition();
   const saveNotesTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1064,47 +1154,120 @@ function ApplicationFormModal({
     legalDocuments?: LegalDocumentStored[];
   }>({});
 
+  // Live snapshot for flush — avoids stale empty closures wiping sections after Save.
+  const checklistStateRef = useRef({
+    items,
+    licenseScope,
+    licenseScopeFormat,
+    licenseScopeRows,
+    oslSampleRequirements,
+    piSampleRequirements,
+    topManagement,
+    technicalStaff,
+    factoryTestReports,
+    subcontractedTests,
+    subcontractedTestsDocument,
+    cmpf305Machinery,
+    rawMaterialDetails,
+    certifiedReferenceMaterials,
+    cmpf306,
+    cmpf307,
+    cmpf310,
+    cmpf311,
+    undertakingOption2,
+    undertakingGeneralIss,
+    authorizationLetter,
+    undertakingLongDurationTest,
+    undertakingMinimumMarkingFee,
+    locationMap,
+    plantLayout,
+    processFlowChart,
+    processDescription,
+    updatedSchemeOfInspection,
+    selfEvaluationForm,
+    legalDocumentRows,
+  });
+  checklistStateRef.current = {
+    items,
+    licenseScope,
+    licenseScopeFormat,
+    licenseScopeRows,
+    oslSampleRequirements,
+    piSampleRequirements,
+    topManagement,
+    technicalStaff,
+    factoryTestReports,
+    subcontractedTests,
+    subcontractedTestsDocument,
+    cmpf305Machinery,
+    rawMaterialDetails,
+    certifiedReferenceMaterials,
+    cmpf306,
+    cmpf307,
+    cmpf310,
+    cmpf311,
+    undertakingOption2,
+    undertakingGeneralIss,
+    authorizationLetter,
+    undertakingLongDurationTest,
+    undertakingMinimumMarkingFee,
+    locationMap,
+    plantLayout,
+    processFlowChart,
+    processDescription,
+    updatedSchemeOfInspection,
+    selfEvaluationForm,
+    legalDocumentRows,
+  };
+
   const flushNotesSave = useCallback(() => {
     const overrides = pendingNotesSaveRef.current;
     pendingNotesSaveRef.current = {};
+    const saveGen = ++notesSaveGenRef.current;
+    const state = checklistStateRef.current;
+    // Capture meta from live ref so concurrent edits are not dropped mid-flight.
+    const metaSnapshot = mergeApplicationMetaPreferFilled(
+      overrides.meta,
+      applicationMetaRef.current,
+    );
     startSave(async () => {
       const payload = buildApplicationChecklistPayload({
-        items: overrides.items ?? items,
-        licenseScope: overrides.licenseScope ?? licenseScope,
-        licenseScopeFormat: overrides.licenseScopeFormat ?? licenseScopeFormat,
-        licenseScopeRows: overrides.licenseScopeRows ?? licenseScopeRows,
-        oslSampleRequirements: overrides.oslSampleRequirements ?? oslSampleRequirements,
-        piSampleRequirements: overrides.piSampleRequirements ?? piSampleRequirements,
-        topManagement: overrides.topManagement ?? topManagement,
-        technicalStaff: overrides.technicalStaff ?? technicalStaff,
-        factoryTestReports: overrides.factoryTestReports ?? factoryTestReports,
-        subcontractedTests: overrides.subcontractedTests ?? subcontractedTests,
+        items: overrides.items ?? state.items,
+        licenseScope: overrides.licenseScope ?? state.licenseScope,
+        licenseScopeFormat: overrides.licenseScopeFormat ?? state.licenseScopeFormat,
+        licenseScopeRows: overrides.licenseScopeRows ?? state.licenseScopeRows,
+        oslSampleRequirements: overrides.oslSampleRequirements ?? state.oslSampleRequirements,
+        piSampleRequirements: overrides.piSampleRequirements ?? state.piSampleRequirements,
+        topManagement: overrides.topManagement ?? state.topManagement,
+        technicalStaff: overrides.technicalStaff ?? state.technicalStaff,
+        factoryTestReports: overrides.factoryTestReports ?? state.factoryTestReports,
+        subcontractedTests: overrides.subcontractedTests ?? state.subcontractedTests,
         subcontractedTestsDocument:
-          overrides.subcontractedTestsDocument ?? subcontractedTestsDocument,
-        cmpf305Machinery: overrides.cmpf305Machinery ?? cmpf305Machinery,
-        rawMaterialDetails: overrides.rawMaterialDetails ?? rawMaterialDetails,
+          overrides.subcontractedTestsDocument ?? state.subcontractedTestsDocument,
+        cmpf305Machinery: overrides.cmpf305Machinery ?? state.cmpf305Machinery,
+        rawMaterialDetails: overrides.rawMaterialDetails ?? state.rawMaterialDetails,
         certifiedReferenceMaterials:
-          overrides.certifiedReferenceMaterials ?? certifiedReferenceMaterials,
-        cmpf306: overrides.cmpf306 ?? cmpf306,
-        cmpf307: overrides.cmpf307 ?? cmpf307,
-        cmpf310: overrides.cmpf310 ?? cmpf310,
-        cmpf311: overrides.cmpf311 ?? cmpf311,
-        undertakingOption2: overrides.undertakingOption2 ?? undertakingOption2,
-        undertakingGeneralIss: overrides.undertakingGeneralIss ?? undertakingGeneralIss,
-        authorizationLetter: overrides.authorizationLetter ?? authorizationLetter,
+          overrides.certifiedReferenceMaterials ?? state.certifiedReferenceMaterials,
+        cmpf306: overrides.cmpf306 ?? state.cmpf306,
+        cmpf307: overrides.cmpf307 ?? state.cmpf307,
+        cmpf310: overrides.cmpf310 ?? state.cmpf310,
+        cmpf311: overrides.cmpf311 ?? state.cmpf311,
+        undertakingOption2: overrides.undertakingOption2 ?? state.undertakingOption2,
+        undertakingGeneralIss: overrides.undertakingGeneralIss ?? state.undertakingGeneralIss,
+        authorizationLetter: overrides.authorizationLetter ?? state.authorizationLetter,
         undertakingLongDurationTest:
-          overrides.undertakingLongDurationTest ?? undertakingLongDurationTest,
+          overrides.undertakingLongDurationTest ?? state.undertakingLongDurationTest,
         undertakingMinimumMarkingFee:
-          overrides.undertakingMinimumMarkingFee ?? undertakingMinimumMarkingFee,
-        locationMap: overrides.locationMap ?? locationMap,
-        plantLayout: overrides.plantLayout ?? plantLayout,
-        processFlowChart: overrides.processFlowChart ?? processFlowChart,
-        processDescription: overrides.processDescription ?? processDescription,
+          overrides.undertakingMinimumMarkingFee ?? state.undertakingMinimumMarkingFee,
+        locationMap: overrides.locationMap ?? state.locationMap,
+        plantLayout: overrides.plantLayout ?? state.plantLayout,
+        processFlowChart: overrides.processFlowChart ?? state.processFlowChart,
+        processDescription: overrides.processDescription ?? state.processDescription,
         updatedSchemeOfInspection:
-          overrides.updatedSchemeOfInspection ?? updatedSchemeOfInspection,
-        selfEvaluationForm: overrides.selfEvaluationForm ?? selfEvaluationForm,
-        legalDocuments: overrides.legalDocuments ?? storedFromEditor(legalDocumentRows),
-        meta: overrides.meta ?? applicationMetaRef.current,
+          overrides.updatedSchemeOfInspection ?? state.updatedSchemeOfInspection,
+        selfEvaluationForm: overrides.selfEvaluationForm ?? state.selfEvaluationForm,
+        legalDocuments: overrides.legalDocuments ?? storedFromEditor(state.legalDocumentRows),
+        meta: metaSnapshot,
       });
 
       // Merge with existing DB notes so a partial/stale local state cannot wipe
@@ -1117,6 +1280,7 @@ function ApplicationFormModal({
         .select("notes")
         .eq("id", row.id)
         .maybeSingle();
+      if (saveGen !== notesSaveGenRef.current) return;
       let mergedPayload = payload;
       try {
         const existingObj = JSON.parse(
@@ -1170,21 +1334,38 @@ function ApplicationFormModal({
               newObj[key] = existingObj[key];
             }
           }
+          // Prefer filled Application Details fields so a stale concurrent flush
+          // cannot wipe values the user just typed / saved.
+          if (
+            existingObj.meta &&
+            typeof existingObj.meta === "object" &&
+            newObj.meta &&
+            typeof newObj.meta === "object"
+          ) {
+            newObj.meta = mergeApplicationMetaPreferFilled(
+              existingObj.meta as ApplicationMeta,
+              newObj.meta as ApplicationMeta,
+              applicationMetaRef.current,
+            );
+          }
           mergedPayload = JSON.stringify(newObj);
         }
       } catch {
         // If existing notes are not JSON, keep the newly built payload.
       }
 
+      if (saveGen !== notesSaveGenRef.current) return;
+
       const res =
         row.source === "bis_new_applications"
           ? await updateBisNewApplicationNotes(row.id, mergedPayload)
           : await updateBisProjectNotes(row.id, mergedPayload);
+      if (saveGen !== notesSaveGenRef.current) return;
       if (!res.ok) {
         window.alert(`Could not save application data: ${res.error}`);
       }
     });
-  }, [row.id, row.source, items, licenseScope, licenseScopeFormat, licenseScopeRows, oslSampleRequirements, piSampleRequirements, topManagement, technicalStaff, factoryTestReports, subcontractedTests, subcontractedTestsDocument, cmpf305Machinery, rawMaterialDetails, certifiedReferenceMaterials, cmpf306, cmpf307, cmpf310, cmpf311, undertakingOption2, undertakingGeneralIss, authorizationLetter, undertakingLongDurationTest, undertakingMinimumMarkingFee, locationMap, plantLayout, processFlowChart, processDescription, updatedSchemeOfInspection, selfEvaluationForm, legalDocumentRows, applicationMeta]);
+  }, [row.id, row.source]);
 
   const flushNotesSaveRef = useRef(flushNotesSave);
   flushNotesSaveRef.current = flushNotesSave;
@@ -1223,6 +1404,81 @@ function ApplicationFormModal({
       selfEvaluationForm?: SelfEvaluationFormStored;
       legalDocuments?: LegalDocumentStored[];
     }) => {
+      if (overrides) {
+        // Keep live snapshot ahead of React setState so rapid Saves cannot drop
+        // a section that another flush already cleared from pending overrides.
+        const live = checklistStateRef.current;
+        if (overrides.items !== undefined) live.items = overrides.items;
+        if (overrides.licenseScope !== undefined) live.licenseScope = overrides.licenseScope;
+        if (overrides.licenseScopeFormat !== undefined) {
+          live.licenseScopeFormat = overrides.licenseScopeFormat;
+        }
+        if (overrides.licenseScopeRows !== undefined) {
+          live.licenseScopeRows = overrides.licenseScopeRows;
+        }
+        if (overrides.oslSampleRequirements !== undefined) {
+          live.oslSampleRequirements = overrides.oslSampleRequirements;
+        }
+        if (overrides.piSampleRequirements !== undefined) {
+          live.piSampleRequirements = overrides.piSampleRequirements;
+        }
+        if (overrides.topManagement !== undefined) live.topManagement = overrides.topManagement;
+        if (overrides.technicalStaff !== undefined) live.technicalStaff = overrides.technicalStaff;
+        if (overrides.factoryTestReports !== undefined) {
+          live.factoryTestReports = overrides.factoryTestReports;
+        }
+        if (overrides.subcontractedTests !== undefined) {
+          live.subcontractedTests = overrides.subcontractedTests;
+        }
+        if (overrides.subcontractedTestsDocument !== undefined) {
+          live.subcontractedTestsDocument = overrides.subcontractedTestsDocument;
+        }
+        if (overrides.cmpf305Machinery !== undefined) {
+          live.cmpf305Machinery = overrides.cmpf305Machinery;
+        }
+        if (overrides.rawMaterialDetails !== undefined) {
+          live.rawMaterialDetails = overrides.rawMaterialDetails;
+        }
+        if (overrides.certifiedReferenceMaterials !== undefined) {
+          live.certifiedReferenceMaterials = overrides.certifiedReferenceMaterials;
+        }
+        if (overrides.cmpf306 !== undefined) live.cmpf306 = overrides.cmpf306;
+        if (overrides.cmpf307 !== undefined) live.cmpf307 = overrides.cmpf307;
+        if (overrides.cmpf310 !== undefined) live.cmpf310 = overrides.cmpf310;
+        if (overrides.cmpf311 !== undefined) live.cmpf311 = overrides.cmpf311;
+        if (overrides.undertakingOption2 !== undefined) {
+          live.undertakingOption2 = overrides.undertakingOption2;
+        }
+        if (overrides.undertakingGeneralIss !== undefined) {
+          live.undertakingGeneralIss = overrides.undertakingGeneralIss;
+        }
+        if (overrides.authorizationLetter !== undefined) {
+          live.authorizationLetter = overrides.authorizationLetter;
+        }
+        if (overrides.undertakingLongDurationTest !== undefined) {
+          live.undertakingLongDurationTest = overrides.undertakingLongDurationTest;
+        }
+        if (overrides.undertakingMinimumMarkingFee !== undefined) {
+          live.undertakingMinimumMarkingFee = overrides.undertakingMinimumMarkingFee;
+        }
+        if (overrides.locationMap !== undefined) live.locationMap = overrides.locationMap;
+        if (overrides.plantLayout !== undefined) live.plantLayout = overrides.plantLayout;
+        if (overrides.processFlowChart !== undefined) {
+          live.processFlowChart = overrides.processFlowChart;
+        }
+        if (overrides.processDescription !== undefined) {
+          live.processDescription = overrides.processDescription;
+        }
+        if (overrides.updatedSchemeOfInspection !== undefined) {
+          live.updatedSchemeOfInspection = overrides.updatedSchemeOfInspection;
+        }
+        if (overrides.selfEvaluationForm !== undefined) {
+          live.selfEvaluationForm = overrides.selfEvaluationForm;
+        }
+        if (overrides.legalDocuments !== undefined) {
+          live.legalDocumentRows = editorRowsFromStored(overrides.legalDocuments);
+        }
+      }
       pendingNotesSaveRef.current = {
         ...pendingNotesSaveRef.current,
         ...overrides,
@@ -1248,6 +1504,17 @@ function ApplicationFormModal({
     },
     [],
   );
+
+  /** Immediate flush for document Save buttons (skip 500ms debounce). */
+  const saveNotesNow = useCallback((overrides?: Parameters<typeof saveNotesToDb>[0]) => {
+    saveNotesToDb(overrides);
+    if (!notesHydratedRef.current) return;
+    if (saveNotesTimerRef.current) {
+      clearTimeout(saveNotesTimerRef.current);
+      saveNotesTimerRef.current = null;
+    }
+    flushNotesSaveRef.current();
+  }, [saveNotesToDb]);
 
   useEffect(() => {
     return () => {
@@ -1342,6 +1609,8 @@ function ApplicationFormModal({
           .maybeSingle()
           .then(({ data }) => {
             if (cancelled || loadGen !== notesLoadGenRef.current) return;
+            // One hydrate per open — a late response must not wipe in-progress edits / post-Save UI.
+            if (notesHydratedRef.current) return;
             const parsed = parseApplicationChecklistNotes(data?.notes ?? row.notes);
             const scope = parseBisProjectLicenseScopeNotes(data?.notes ?? row.notes);
             setItems(
@@ -1361,43 +1630,206 @@ function ApplicationFormModal({
             );
             setLicenseScopeFormat(scope.scopeType);
             setLicenseScopeRows(scope.rows.length > 0 ? scope.rows : parsed.licenseScopeRows);
-            setOslSampleRequirements(parsed.oslSampleRequirements);
-            setPiSampleRequirements(parsed.piSampleRequirements);
-            setTopManagement(parsed.topManagement);
-            setTechnicalStaff(parsed.technicalStaff);
-            setFactoryTestReports(parsed.factoryTestReports);
-            setSubcontractedTests(parsed.subcontractedTests);
-            setSubcontractedTestsDocument(parsed.subcontractedTestsDocument);
-            setCmpf305Machinery(parsed.cmpf305Machinery);
-            setRawMaterialDetails(parsed.rawMaterialDetails);
-            setCertifiedReferenceMaterials(parsed.certifiedReferenceMaterials);
-            setCmpf306(parsed.cmpf306);
-            setCmpf307(parsed.cmpf307);
-            setCmpf310(parsed.cmpf310);
-            setCmpf311(parsed.cmpf311);
-            setUndertakingOption2(parsed.undertakingOption2);
-            setUndertakingGeneralIss(parsed.undertakingGeneralIss);
-            setAuthorizationLetter(parsed.authorizationLetter);
-            setUndertakingLongDurationTest(parsed.undertakingLongDurationTest);
-            setUndertakingMinimumMarkingFee(parsed.undertakingMinimumMarkingFee);
-            setLocationMap(parsed.locationMap);
-            setPlantLayout(parsed.plantLayout);
-            setProcessFlowChart(parsed.processFlowChart);
-            setProcessDescription(parsed.processDescription);
-            setUpdatedSchemeOfInspection(parsed.updatedSchemeOfInspection);
-            setSelfEvaluationForm(parsed.selfEvaluationForm);
-            setLegalDocumentRows(editorRowsFromStored(parsed.legalDocuments));
-            setApplicationMeta(() => {
+            const pending = pendingNotesSaveRef.current;
+            setOslSampleRequirements((prev) =>
+              preferNonEmptyRows(
+                parsed.oslSampleRequirements,
+                prev,
+                pending.oslSampleRequirements,
+                oslSampleRowHasContent,
+              ),
+            );
+            setPiSampleRequirements((prev) =>
+              preferNonEmptyRows(
+                parsed.piSampleRequirements,
+                prev,
+                pending.piSampleRequirements,
+                oslSampleRowHasContent,
+              ),
+            );
+            setTopManagement((prev) =>
+              preferNonEmptyRows(
+                parsed.topManagement,
+                prev,
+                pending.topManagement,
+                topManagementRowHasContent,
+              ),
+            );
+            setTechnicalStaff((prev) =>
+              preferNonEmptyRows(
+                parsed.technicalStaff,
+                prev,
+                pending.technicalStaff,
+                technicalStaffRowHasContent,
+              ),
+            );
+            setFactoryTestReports((prev) =>
+              preferNonEmptyRows(
+                parsed.factoryTestReports,
+                prev,
+                pending.factoryTestReports,
+                ftrReportHasContent,
+              ),
+            );
+            setSubcontractedTests((prev) =>
+              preferNonEmptyRows(
+                parsed.subcontractedTests,
+                prev,
+                pending.subcontractedTests,
+                subcontractedTestRowHasContent,
+              ),
+            );
+            setSubcontractedTestsDocument((prev) =>
+              preferNonEmptyDocument(
+                parsed.subcontractedTestsDocument,
+                prev,
+                pending.subcontractedTestsDocument,
+                subcontractedTestsDocumentHasContent,
+              ),
+            );
+            setCmpf305Machinery((prev) =>
+              preferNonEmptyRows(
+                parsed.cmpf305Machinery,
+                prev,
+                pending.cmpf305Machinery,
+                cmpf305RowHasContent,
+              ),
+            );
+            setRawMaterialDetails((prev) =>
+              preferNonEmptyRows(
+                parsed.rawMaterialDetails,
+                prev,
+                pending.rawMaterialDetails,
+                rawMaterialRowHasContent,
+              ),
+            );
+            setCertifiedReferenceMaterials((prev) =>
+              preferNonEmptyRows(
+                parsed.certifiedReferenceMaterials,
+                prev,
+                pending.certifiedReferenceMaterials,
+                certifiedReferenceMaterialRowHasContent,
+              ),
+            );
+            setCmpf306((prev) =>
+              preferNonEmptyDocument(parsed.cmpf306, prev, pending.cmpf306, cmpf306DocumentHasContent),
+            );
+            setCmpf307((prev) =>
+              preferNonEmptyDocument(parsed.cmpf307, prev, pending.cmpf307, cmpf307DocumentHasContent),
+            );
+            setCmpf310((prev) =>
+              preferNonEmptyDocument(parsed.cmpf310, prev, pending.cmpf310, cmpf310DocumentHasContent),
+            );
+            setCmpf311((prev) =>
+              preferNonEmptyDocument(parsed.cmpf311, prev, pending.cmpf311, cmpf311DocumentHasContent),
+            );
+            setUndertakingOption2((prev) =>
+              preferNonEmptyDocument(
+                parsed.undertakingOption2,
+                prev,
+                pending.undertakingOption2,
+                undertakingOption2DocumentHasContent,
+              ),
+            );
+            setUndertakingGeneralIss((prev) =>
+              preferNonEmptyDocument(
+                parsed.undertakingGeneralIss,
+                prev,
+                pending.undertakingGeneralIss,
+                undertakingGeneralIssDocumentHasContent,
+              ),
+            );
+            setAuthorizationLetter((prev) =>
+              preferNonEmptyDocument(
+                parsed.authorizationLetter,
+                prev,
+                pending.authorizationLetter,
+                authorizationLetterDocumentHasContent,
+              ),
+            );
+            setUndertakingLongDurationTest((prev) =>
+              preferNonEmptyDocument(
+                parsed.undertakingLongDurationTest,
+                prev,
+                pending.undertakingLongDurationTest,
+                undertakingLongDurationTestDocumentHasContent,
+              ),
+            );
+            setUndertakingMinimumMarkingFee((prev) =>
+              preferNonEmptyDocument(
+                parsed.undertakingMinimumMarkingFee,
+                prev,
+                pending.undertakingMinimumMarkingFee,
+                undertakingMinimumMarkingFeeDocumentHasContent,
+              ),
+            );
+            setLocationMap((prev) =>
+              preferNonEmptyDocument(
+                parsed.locationMap,
+                prev,
+                pending.locationMap,
+                locationMapDocumentHasContent,
+              ),
+            );
+            setPlantLayout((prev) =>
+              preferNonEmptyDocument(
+                parsed.plantLayout,
+                prev,
+                pending.plantLayout,
+                plantLayoutDocumentHasContent,
+              ),
+            );
+            setProcessFlowChart((prev) =>
+              preferNonEmptyDocument(
+                parsed.processFlowChart,
+                prev,
+                pending.processFlowChart,
+                processFlowChartDocumentHasContent,
+              ),
+            );
+            setProcessDescription((prev) =>
+              preferNonEmptyDocument(
+                parsed.processDescription,
+                prev,
+                pending.processDescription,
+                processDescriptionDocumentHasContent,
+              ),
+            );
+            setUpdatedSchemeOfInspection((prev) =>
+              preferNonEmptyDocument(
+                parsed.updatedSchemeOfInspection,
+                prev,
+                pending.updatedSchemeOfInspection,
+                updatedSchemeOfInspectionDocumentHasContent,
+              ),
+            );
+            setSelfEvaluationForm((prev) =>
+              preferNonEmptyDocument(
+                parsed.selfEvaluationForm,
+                prev,
+                pending.selfEvaluationForm,
+                selfEvaluationFormDocumentHasContent,
+              ),
+            );
+            setLegalDocumentRows((prev) => {
+              const nextStored = preferNonEmptyRows(
+                parsed.legalDocuments,
+                storedFromEditor(prev),
+                pending.legalDocuments,
+                legalDocumentRowHasContent,
+              );
+              return editorRowsFromStored(nextStored);
+            });
+            setApplicationMeta((prev) => {
               const pendingMeta = pendingNotesSaveRef.current.meta;
-              // Prefer in-flight edits over freshly loaded notes so a slow hydrate
-              // cannot wipe fields the user already typed.
-              let meta: ApplicationMeta = pendingMeta
-                ? { ...parsed.meta, ...pendingMeta }
-                : parsed.meta;
-              const scaleFromClient = clientRef.current?.company_scale?.trim() ?? "";
-              if (!meta.firm_scale.trim() && scaleFromClient) {
-                meta = { ...meta, firm_scale: scaleFromClient };
-              }
+              // Prefer live ref (may be ahead of React state) so a stale empty
+              // fetch cannot wipe fields the user just typed / Saved.
+              const meta = mergeApplicationMetaPreferFilled(
+                parsed.meta,
+                prev,
+                applicationMetaRef.current,
+                pendingMeta,
+              );
               applicationMetaRef.current = meta;
               return meta;
             });
@@ -1486,9 +1918,13 @@ function ApplicationFormModal({
       clearTimeout(saveNotesTimerRef.current);
       saveNotesTimerRef.current = null;
     }
+    const meta = applicationMetaRef.current;
+    // Keep React state aligned with the ref we are about to persist so a concurrent
+    // hydrate/update cannot flash empty fields after a successful Save.
+    setApplicationMeta(meta);
     pendingNotesSaveRef.current = {
       ...pendingNotesSaveRef.current,
-      meta: applicationMetaRef.current,
+      meta,
       legalDocuments: storedFromEditor(legalDocumentRows),
     };
     flushNotesSave();
@@ -1569,7 +2005,7 @@ function ApplicationFormModal({
     setLicenseScope(payload.licenseScope);
     setLicenseScopeFormat(payload.format);
     setLicenseScopeRows(payload.rows);
-    saveNotesToDb({
+    saveNotesNow({
       licenseScope: payload.licenseScope,
       licenseScopeFormat: payload.format,
       licenseScopeRows: payload.rows,
@@ -1578,27 +2014,27 @@ function ApplicationFormModal({
 
   function saveOslSampleRequirements(rows: OslSampleRequirementStored[]) {
     setOslSampleRequirements(rows);
-    saveNotesToDb({ oslSampleRequirements: rows });
+    saveNotesNow({ oslSampleRequirements: rows });
   }
 
   function savePiSampleRequirements(rows: OslSampleRequirementStored[]) {
     setPiSampleRequirements(rows);
-    saveNotesToDb({ piSampleRequirements: rows });
+    saveNotesNow({ piSampleRequirements: rows });
   }
 
   function saveTopManagement(rows: TopManagementStored[]) {
     setTopManagement(rows);
-    saveNotesToDb({ topManagement: rows });
+    saveNotesNow({ topManagement: rows });
   }
 
   function saveTechnicalStaff(rows: TechnicalStaffStored[]) {
     setTechnicalStaff(rows);
-    saveNotesToDb({ technicalStaff: rows });
+    saveNotesNow({ technicalStaff: rows });
   }
 
   function saveFactoryTestReports(rows: FactoryTestReportStored[]) {
     setFactoryTestReports(rows);
-    saveNotesToDb({ factoryTestReports: rows });
+    saveNotesNow({ factoryTestReports: rows });
   }
 
   function saveSubcontractedTests(payload: {
@@ -1607,7 +2043,7 @@ function ApplicationFormModal({
   }) {
     setSubcontractedTests(payload.rows);
     setSubcontractedTestsDocument(payload.document);
-    saveNotesToDb({
+    saveNotesNow({
       subcontractedTests: payload.rows,
       subcontractedTestsDocument: payload.document,
     });
@@ -1615,92 +2051,92 @@ function ApplicationFormModal({
 
   function saveCmpf305Machinery(rows: Cmpf305MachineryStored[]) {
     setCmpf305Machinery(rows);
-    saveNotesToDb({ cmpf305Machinery: rows });
+    saveNotesNow({ cmpf305Machinery: rows });
   }
 
   function saveRawMaterialDetails(rows: RawMaterialStored[]) {
     setRawMaterialDetails(rows);
-    saveNotesToDb({ rawMaterialDetails: rows });
+    saveNotesNow({ rawMaterialDetails: rows });
   }
 
   function saveCertifiedReferenceMaterials(rows: CertifiedReferenceMaterialStored[]) {
     setCertifiedReferenceMaterials(rows);
-    saveNotesToDb({ certifiedReferenceMaterials: rows });
+    saveNotesNow({ certifiedReferenceMaterials: rows });
   }
 
   function saveCmpf306(document: Cmpf306Stored) {
     setCmpf306(document);
-    saveNotesToDb({ cmpf306: document });
+    saveNotesNow({ cmpf306: document });
   }
 
   function saveCmpf307(document: Cmpf307Stored) {
     setCmpf307(document);
-    saveNotesToDb({ cmpf307: document });
+    saveNotesNow({ cmpf307: document });
   }
 
   function saveCmpf310(document: Cmpf310Stored) {
     setCmpf310(document);
-    saveNotesToDb({ cmpf310: document });
+    saveNotesNow({ cmpf310: document });
   }
 
   function saveCmpf311(document: Cmpf311Stored) {
     setCmpf311(document);
-    saveNotesToDb({ cmpf311: document });
+    saveNotesNow({ cmpf311: document });
   }
 
   function saveUndertakingOption2(document: UndertakingOption2Stored) {
     setUndertakingOption2(document);
-    saveNotesToDb({ undertakingOption2: document });
+    saveNotesNow({ undertakingOption2: document });
   }
 
   function saveUndertakingGeneralIss(document: UndertakingGeneralIssStored) {
     setUndertakingGeneralIss(document);
-    saveNotesToDb({ undertakingGeneralIss: document });
+    saveNotesNow({ undertakingGeneralIss: document });
   }
 
   function saveAuthorizationLetter(document: AuthorizationLetterStored) {
     setAuthorizationLetter(document);
-    saveNotesToDb({ authorizationLetter: document });
+    saveNotesNow({ authorizationLetter: document });
   }
 
   function saveUndertakingLongDurationTest(document: UndertakingLongDurationTestStored) {
     setUndertakingLongDurationTest(document);
-    saveNotesToDb({ undertakingLongDurationTest: document });
+    saveNotesNow({ undertakingLongDurationTest: document });
   }
 
   function saveUndertakingMinimumMarkingFee(document: UndertakingMinimumMarkingFeeStored) {
     setUndertakingMinimumMarkingFee(document);
-    saveNotesToDb({ undertakingMinimumMarkingFee: document });
+    saveNotesNow({ undertakingMinimumMarkingFee: document });
   }
 
   function saveLocationMap(document: LocationMapStored) {
     setLocationMap(document);
-    saveNotesToDb({ locationMap: document });
+    saveNotesNow({ locationMap: document });
   }
 
   function savePlantLayout(document: PlantLayoutStored) {
     setPlantLayout(document);
-    saveNotesToDb({ plantLayout: document });
+    saveNotesNow({ plantLayout: document });
   }
 
   function saveProcessFlowChart(document: ProcessFlowChartStored) {
     setProcessFlowChart(document);
-    saveNotesToDb({ processFlowChart: document });
+    saveNotesNow({ processFlowChart: document });
   }
 
   function saveProcessDescription(document: ProcessDescriptionStored) {
     setProcessDescription(document);
-    saveNotesToDb({ processDescription: document });
+    saveNotesNow({ processDescription: document });
   }
 
   function saveUpdatedSchemeOfInspection(document: UpdatedSchemeOfInspectionStored) {
     setUpdatedSchemeOfInspection(document);
-    saveNotesToDb({ updatedSchemeOfInspection: document });
+    saveNotesNow({ updatedSchemeOfInspection: document });
   }
 
   function saveSelfEvaluationForm(document: SelfEvaluationFormStored) {
     setSelfEvaluationForm(document);
-    saveNotesToDb({ selfEvaluationForm: document });
+    saveNotesNow({ selfEvaluationForm: document });
   }
 
   function handleEditSampleFromFtr(source: FtrSampleSource, sampleIndex: number) {
@@ -1770,6 +2206,89 @@ function ApplicationFormModal({
     };
   }
 
+  function buildBisForm1Data() {
+    const street = (client?.address ?? "").trim();
+    const city = (client?.city ?? "").trim();
+    const state = (client?.state ?? "").trim();
+    const country = (client?.country ?? "").trim() || "INDIA";
+    const pin = (client?.pin_code ?? "").trim();
+    const phoneDigits = (client?.phone ?? "").trim();
+    const phoneCode = (client?.phone_country_code ?? "").trim();
+    const mobile = phoneDigits
+      ? [phoneCode, phoneDigits].filter(Boolean).join(" ")
+      : "";
+    const email = (client?.email ?? "").trim();
+    const contactPerson = (client?.contact_person_name ?? "").trim();
+    const product =
+      (isCode?.is_code_title ?? row.is_code_title ?? "").trim() ||
+      (isFullNumber !== "—" ? isFullNumber : "");
+    const isNumberRaw = (isCode?.is_number ?? row.is_number ?? "").trim();
+    const isNumber = isNumberRaw
+      ? /^is\b/i.test(isNumberRaw)
+        ? isNumberRaw
+        : `IS ${isNumberRaw}`
+      : "";
+    const gradesText = serializeLicenseScopeText(
+      licenseScopeFormat,
+      licenseScope,
+      storedRowsToEditorRows(licenseScopeRows),
+    );
+    const primary = resolvePrimaryTopManagementPerson(topManagement);
+    const licenceHeld = row.cm_l_digits
+      ? formatCmDisplay(row.project_kind, row.cm_l_digits)
+      : "";
+
+    return {
+      applicationNumber: applicationMeta.application_number.trim(),
+      companyName: (client?.company_name ?? row.client_name ?? "").trim(),
+      officeAddress: street,
+      factoryAddress: street,
+      city,
+      district: city,
+      state,
+      country,
+      pinCode: pin,
+      officeTel: mobile,
+      officeFax: "-",
+      officeEmail: email,
+      factoryTel: mobile ? `Mobile: ${mobile}` : "",
+      factoryFax: "-",
+      factoryEmail: email,
+      correspondenceAddress: "Factory",
+      scale:
+        applicationMeta.firm_scale.trim() ||
+        (client?.company_scale ?? "").trim(),
+      sector: (client?.company_type ?? "").trim(),
+      topManagement: topManagement
+        .filter(topManagementRowHasContent)
+        .map((r) => ({
+          name: r.person_name.trim(),
+          designation: r.designation.trim(),
+        })),
+      technicalManagement: technicalStaff
+        .filter(technicalStaffRowHasContent)
+        .map((r) => ({
+          name: r.person_name.trim(),
+          designation: r.designation.trim(),
+        })),
+      contactPersonLine: [contactPerson || primary.person_name, mobile]
+        .filter(Boolean)
+        .join(" "),
+      productName: product,
+      isNumber,
+      isPart: "",
+      isSection: "",
+      gradesText,
+      unitsOfProduction: (isCode?.unit_of_is ?? "").trim() || "0.00",
+      quantity: "0.00",
+      valueRs: "",
+      bisLicensesHeld: licenceHeld,
+      signatoryName: primary.person_name || contactPerson,
+      signatoryDesignation: primary.designation,
+      dateOfApplication: applicationMeta.date_of_application,
+    };
+  }
+
   function buildChecklistBulkPrintContext() {
     return {
       letterData: buildDeclarationData(),
@@ -1799,6 +2318,7 @@ function ApplicationFormModal({
       processDescription,
       updatedSchemeOfInspection,
       selfEvaluationForm,
+      legalDocuments: storedFromEditor(legalDocumentRows),
       applicationNumber: applicationMeta.application_number,
       dateOfApplication: applicationMeta.date_of_application,
       dateOfInspection: applicationMeta.date_of_inspection,
@@ -1811,6 +2331,9 @@ function ApplicationFormModal({
       licenceNumber: row.cm_l_digits
         ? formatCmDisplay(row.project_kind, row.cm_l_digits)
         : "",
+      firmScale:
+        applicationMeta.firm_scale.trim() || client?.company_scale?.trim() || "",
+      sector: client?.company_type?.trim() || "",
     };
   }
 
@@ -2292,8 +2815,11 @@ function ApplicationFormModal({
 
       {showChecklistBulkPrint && (
         <ApplicationChecklistBulkPrintModal
+          key={`checklist-bulk-print-${checklistBulkPrintKey}`}
+          selectionResetKey={checklistBulkPrintKey}
           ctx={buildChecklistBulkPrintContext()}
           onClose={clearDoc}
+          onEditDoc={(preparationDocKey) => openDoc(preparationDocKey)}
         />
       )}
 
@@ -2347,6 +2873,14 @@ function ApplicationFormModal({
           isCodeId={row.is_code_id}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={oslSampleRequirements}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveOslSampleRequirements}
           onClose={closeOslSampleRequirementsModal}
           initialFocusSampleIndex={sampleOfferLetterFocusIndex}
@@ -2362,6 +2896,14 @@ function ApplicationFormModal({
           isCodeId={row.is_code_id}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={piSampleRequirements}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={savePiSampleRequirements}
           onClose={closePiSampleRequirementsModal}
           initialFocusSampleIndex={sampleOfferLetterFocusIndex}
@@ -2375,6 +2917,14 @@ function ApplicationFormModal({
           isCodeId={row.is_code_id}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={topManagement}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveTopManagement}
           onClose={clearDoc}
         />
@@ -2389,6 +2939,14 @@ function ApplicationFormModal({
           isCodeId={row.is_code_id}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
           rows={technicalStaff}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveTechnicalStaff}
           onClose={clearDoc}
         />
@@ -2501,6 +3059,14 @@ function ApplicationFormModal({
           dateOfInspection={applicationMeta.date_of_inspection}
           topManagement={topManagement}
           rows={rawMaterialDetails}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveRawMaterialDetails}
           onClose={clearDoc}
         />
@@ -2514,6 +3080,14 @@ function ApplicationFormModal({
           dateOfInspection={applicationMeta.date_of_inspection}
           topManagement={topManagement}
           rows={certifiedReferenceMaterials}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveCertifiedReferenceMaterials}
           onClose={clearDoc}
         />
@@ -2527,6 +3101,14 @@ function ApplicationFormModal({
           dateOfInspection={applicationMeta.date_of_inspection}
           topManagement={topManagement}
           document={cmpf307}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveCmpf307}
           onClose={clearDoc}
         />
@@ -2543,6 +3125,7 @@ function ApplicationFormModal({
             applicationMeta.firm_scale.trim() || client?.company_scale || null
           }
           topManagement={topManagement}
+          document={cmpf310}
           appDropdownOptions={appDropdownOptions}
           onReloadDropdowns={reloadApplicationDropdowns}
           onFirmScaleChange={updateFirmScale}
@@ -2560,6 +3143,15 @@ function ApplicationFormModal({
           productManualNumber={applicationMeta.product_manual_number}
           isCodeProductManualNumber={isCode?.product_manual_number}
           topManagement={topManagement}
+          document={cmpf311}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onUpdateMeta={updateMeta}
           onSave={saveCmpf311}
           onClose={clearDoc}
@@ -2590,6 +3182,25 @@ function ApplicationFormModal({
           legalDocumentRows={legalDocumentRows}
           onLegalDocumentsChange={updateLegalDocuments}
           onSave={saveApplicationDetailsNow}
+          onOpenApplicationForm={() => openBisForm1Preview(buildBisForm1Data())}
+          onImportApplicationDetails={({ meta, legalDocuments }) => {
+            applicationMetaRef.current = meta;
+            setApplicationMeta(meta);
+            const nextLegalRows = editorRowsFromStored(legalDocuments);
+            setLegalDocumentRows(nextLegalRows);
+            saveNotesToDb({
+              meta,
+              legalDocuments: storedFromEditor(nextLegalRows),
+            });
+          }}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           saving={saving}
           onClose={clearDoc}
         />
@@ -2609,6 +3220,14 @@ function ApplicationFormModal({
           appDropdownOptions={appDropdownOptions}
           onReloadDropdowns={reloadApplicationDropdowns}
           onUpdateMeta={updateMeta}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveUndertakingGeneralIss}
           onClose={clearDoc}
         />
@@ -2649,6 +3268,14 @@ function ApplicationFormModal({
           dateOfApplication={applicationMeta.date_of_application}
           topManagement={topManagement}
           storedDocument={locationMap}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveLocationMap}
           onClose={clearDoc}
         />
@@ -2746,6 +3373,14 @@ function ApplicationFormModal({
           cmpf307={cmpf307}
           topManagement={topManagement}
           storedDocument={selfEvaluationForm}
+          clientId={row.client_id}
+          excludeImportSource={{
+            id: row.id,
+            source:
+              row.source === "bis_new_applications"
+                ? "bis_new_applications"
+                : "bis_projects",
+          }}
           onSave={saveSelfEvaluationForm}
           onClose={clearDoc}
         />

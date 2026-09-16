@@ -15,16 +15,7 @@ import {
 
 import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
 
-import {
-  SplitModalPaneTabs,
-  type SplitModalPane,
-} from "@/components/dashboard/modals/split-modal-pane-tabs";
-import {
-  splitModalBodyClass,
-  splitModalEditorPaneClass,
-  splitModalPreviewPaneClass,
-  splitModalSettingsPaneClass,
-} from "@/components/dashboard/modals/split-modal-layout";
+import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
   buildAppointmentLetterHtml,
@@ -46,6 +37,12 @@ import {
 } from "@backend/modules/bis/top-management";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
+import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
+import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-document-import-meta";
+import {
+  rowHasContent as technicalStaffRowHasContent,
+  type TechnicalStaffStored,
+} from "@backend/modules/bis/technical-staff";
 
 const APPOINTMENT_LETTER_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with appointment letters for technical staff in BIS licence applications:
@@ -74,6 +71,8 @@ export function AppointmentLetterCreatorModal({
   letterData,
   topManagement,
   person,
+  clientId = null,
+  excludeImportSource = null,
   onCreated,
   onClose,
 }: {
@@ -90,6 +89,8 @@ export function AppointmentLetterCreatorModal({
     educational_qualification: string;
     experience_years: string;
   };
+  clientId?: string | null;
+  excludeImportSource?: ChecklistImportExclude | null;
   onCreated: (url: string) => void;
   onClose: () => void;
 }) {
@@ -101,7 +102,8 @@ export function AppointmentLetterCreatorModal({
   );
   const [printAssets, setPrintAssets] = useState<AppointmentLetterPrintAssets>({});
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
-  const [mobilePane, setMobilePane] = useState<SplitModalPane>("editor");
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [showImportDialog, setShowImportDialog] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
@@ -217,6 +219,10 @@ export function AppointmentLetterCreatorModal({
     refreshPreview();
   }, [refreshPreview]);
 
+  useEffect(() => {
+    if (showPrintPreview) refreshPreview();
+  }, [showPrintPreview, refreshPreview]);
+
   const iframeSize = iframeSizeForPrintSettings(printSettings);
 
   function patchDraft(patch: Partial<AppointmentLetterData>) {
@@ -229,6 +235,39 @@ export function AppointmentLetterCreatorModal({
       ...patch,
       letterhead_layout: "logo-na",
     }));
+  }
+
+  function togglePrintPreview() {
+    setShowPrintPreview((prev) => {
+      const next = !prev;
+      if (next) setMobilePane("preview");
+      return next;
+    });
+  }
+
+  function fillRemainingFromTechnicalStaff(
+    staffRows: TechnicalStaffStored[],
+  ): boolean {
+    const withContent = staffRows.filter(technicalStaffRowHasContent);
+    if (withContent.length === 0) {
+      window.alert("Selected record has no Technical Staff details to import.");
+      return false;
+    }
+    const nameKey = draft.person_name.trim().toLowerCase();
+    const match =
+      (nameKey
+        ? withContent.find((r) => r.person_name.trim().toLowerCase() === nameKey)
+        : null) ?? withContent[0];
+
+    setDraft((prev) => ({
+      ...prev,
+      person_name: prev.person_name.trim() || match.person_name,
+      designation: prev.designation.trim() || match.designation,
+      educational_qualification:
+        prev.educational_qualification.trim() || match.educational_qualification,
+      experience_years: prev.experience_years.trim() || match.experience_years,
+    }));
+    return true;
   }
 
   function handlePrint() {
@@ -325,6 +364,25 @@ export function AppointmentLetterCreatorModal({
         </button>
         <button
           type="button"
+          onClick={() => setShowImportDialog(true)}
+          title="Import remaining form fields from Technical Staff on another Application or License"
+          className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+        >
+          Import
+        </button>
+        <button
+          type="button"
+          onClick={togglePrintPreview}
+          className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
+            showPrintPreview
+              ? "border-sky-500 bg-sky-600 text-white"
+              : "border-zinc-600 bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
+          }`}
+        >
+          Print Preview
+        </button>
+        <button
+          type="button"
           onClick={handlePrint}
           className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
         >
@@ -383,118 +441,123 @@ export function AppointmentLetterCreatorModal({
         </div>
       ) : null}
 
-      <SplitModalPaneTabs
-        active={mobilePane}
-        onChange={setMobilePane}
-        editorLabel="Letter Details"
-        previewLabel="Print Preview"
-      />
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
+        {!showPrintPreview && (
+          <div
+            className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
+              settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+            }`}
+          >
+            <div className="min-h-0 flex-1 overflow-y-auto p-4">
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="al_person_name" className={labelClass}>
+                      Name of Person
+                    </label>
+                    <input
+                      id="al_person_name"
+                      type="text"
+                      value={draft.person_name}
+                      onChange={(e) => patchDraft({ person_name: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="al_designation" className={labelClass}>
+                      Designation
+                    </label>
+                    <input
+                      id="al_designation"
+                      type="text"
+                      value={draft.designation}
+                      onChange={(e) => patchDraft({ designation: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+                </div>
 
-      <div className={splitModalBodyClass()}>
-        <div className={splitModalEditorPaneClass(mobilePane, Boolean(settingsPanel))}>
-          <div className="min-h-0 flex-1 overflow-y-auto p-4">
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="al_person_name" className={labelClass}>
-                    Name of Person
-                  </label>
-                  <input
-                    id="al_person_name"
-                    type="text"
-                    value={draft.person_name}
-                    onChange={(e) => patchDraft({ person_name: e.target.value })}
-                    className={inputClass}
-                  />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="al_qualification" className={labelClass}>
+                      Educational Qualification
+                    </label>
+                    <input
+                      id="al_qualification"
+                      type="text"
+                      value={draft.educational_qualification}
+                      onChange={(e) => patchDraft({ educational_qualification: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="al_experience" className={labelClass}>
+                      Experience in Year
+                    </label>
+                    <input
+                      id="al_experience"
+                      type="text"
+                      value={draft.experience_years}
+                      onChange={(e) => patchDraft({ experience_years: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label htmlFor="al_designation" className={labelClass}>
-                    Designation
-                  </label>
-                  <input
-                    id="al_designation"
-                    type="text"
-                    value={draft.designation}
-                    onChange={(e) => patchDraft({ designation: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="al_qualification" className={labelClass}>
-                    Educational Qualification
-                  </label>
-                  <input
-                    id="al_qualification"
-                    type="text"
-                    value={draft.educational_qualification}
-                    onChange={(e) => patchDraft({ educational_qualification: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="al_experience" className={labelClass}>
-                    Experience in Year
-                  </label>
-                  <input
-                    id="al_experience"
-                    type="text"
-                    value={draft.experience_years}
-                    onChange={(e) => patchDraft({ experience_years: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <div>
-                  <label htmlFor="al_date" className={labelClass}>
-                    Appointment Date
-                  </label>
-                  <input
-                    id="al_date"
-                    type="date"
-                    value={draft.appointment_date}
-                    onChange={(e) => patchDraft({ appointment_date: e.target.value })}
-                    className={inputClass}
-                  />
-                </div>
-                <div>
-                  <label htmlFor="al_ref" className={labelClass}>
-                    Reference No.
-                  </label>
-                  <input
-                    id="al_ref"
-                    type="text"
-                    value={draft.reference_no}
-                    onChange={(e) => patchDraft({ reference_no: e.target.value })}
-                    placeholder="Optional…"
-                    className={inputClass}
-                  />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <div>
+                    <label htmlFor="al_date" className={labelClass}>
+                      Appointment Date
+                    </label>
+                    <input
+                      id="al_date"
+                      type="date"
+                      value={draft.appointment_date}
+                      onChange={(e) => patchDraft({ appointment_date: e.target.value })}
+                      className={inputClass}
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="al_ref" className={labelClass}>
+                      Reference No.
+                    </label>
+                    <input
+                      id="al_ref"
+                      type="text"
+                      value={draft.reference_no}
+                      onChange={(e) => patchDraft({ reference_no: e.target.value })}
+                      placeholder="Optional…"
+                      className={inputClass}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        <div className={splitModalPreviewPaneClass(mobilePane, Boolean(settingsPanel))}>
-          <div className="border-b border-zinc-700/80 px-4 py-2">
-            <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-              Print Preview
-            </p>
+        {showPrintPreview && (
+          <div
+            className={`flex min-w-0 flex-1 flex-col bg-zinc-600 ${
+              settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
+            }`}
+          >
+            <div className="border-b border-zinc-700/80 px-4 py-2">
+              <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
+                Print Preview
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 sm:p-6">
+              <iframe
+                ref={iframeRef}
+                title="Appointment letter print preview"
+                className="mx-auto max-w-full border-0 bg-white shadow-2xl"
+                scrolling="no"
+                style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
+              />
+            </div>
           </div>
-          <div className="flex-1 overflow-y-auto p-3 sm:p-6">
-            <iframe
-              ref={iframeRef}
-              title="Appointment letter print preview"
-              className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-              scrolling="no"
-              style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
-            />
-          </div>
-        </div>
+        )}
 
         {settingsPanel && (
           <div className={splitModalSettingsPaneClass()}>
@@ -508,6 +571,20 @@ export function AppointmentLetterCreatorModal({
         )}
       </div>
     </div>
+
+    {showImportDialog && (
+      <ChecklistDocumentImportDialog
+        documentKey="technical_staff"
+        title="Import Remaining Form Data"
+        defaultClientId={clientId}
+        exclude={excludeImportSource}
+        onImport={(payload) => {
+          if (payload.key !== "technical_staff") return false;
+          return fillRemainingFromTechnicalStaff(payload.document);
+        }}
+        onClose={() => setShowImportDialog(false)}
+      />
+    )}
 
     {showQeAssistant && (
       <AiChatModal
