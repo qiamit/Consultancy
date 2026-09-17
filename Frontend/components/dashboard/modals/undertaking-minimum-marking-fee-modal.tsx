@@ -25,12 +25,18 @@ import { loadCompanyPrintContext } from "@backend/modules/print/load-company-pri
 import type { PrintSettings } from "@backend/modules/print/types";
 import type { IsCodeMarkingFeeSource } from "@backend/modules/bis/cmpf-310";
 import {
+  buildDefaultSlab1Text,
+  computeMarkingFeeCalculation,
   documentHasContent as undertakingMinimumMarkingFeeHasContent,
+  firmStatusFromFirmScale,
+  formatMarkingFeeInr,
+  formatMarkingFeeUnitRate,
   mergeUndertakingMinimumMarkingFeeWithDefaults,
   resolveUndertakingMinimumMarkingFeeDocument,
   type UndertakingMinimumMarkingFeeStored,
 } from "@backend/modules/bis/undertaking-minimum-marking-fee";
-import {resolvePrimaryTopManagementPerson,
+import {
+  resolvePrimaryTopManagementPerson,
   type TopManagementStored,
   withDocumentSignatureImage,
 } from "@backend/modules/bis/top-management";
@@ -39,50 +45,197 @@ import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-mo
 import { preferLocalDocumentIfStoredEmpty } from "@/components/dashboard/modals/prefer-stored-document-sync";
 
 const MMF_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
-You help with the Undertaking for Minimum Marking Fee submitted with BIS licence applications:
-- Unit of sale, annual production capacity, and production/cost figures for MMF determination
+You help with Marking Fee Calculation (Annex-1) for BIS licence applications:
+- Components: Testing (2 FS + 2 MS), cost of market samples, BIS overhead (Rs. 37,000)
+- MMF rounding: Large Scale rounded up to next thousand; MSME = 80% of LS rounded up
+- Unit rate: MMF ÷ annual production; band 0.01%–0.2% of cost of production; round to 0.05 paisa
 - Scheme-I of Schedule-II under BIS (Conformity Assessment) Regulations, 2018
-- How minimum marking fee is calculated from production and market cost data
-- Reference values from the applicable Indian Standard and licence scope
 
-Be concise, practical, and use Indian BIS/ISI certification context. When asked to refine wording, use formal, professional language suitable for a BIS undertaking letter.`;
+Be concise, practical, and use Indian BIS/ISI certification context.`;
 
 const MMF_QE_STARTERS = [
-  "Explain the minimum marking fee undertaking for BIS",
-  "What production and cost details should we declare?",
-  "How is annual production capacity determined for MMF?",
+  "Explain Annex-1 marking fee calculation steps",
+  "How is effective testing rate chosen (BIS lab vs OSL)?",
+  "What inputs are needed for MMF and unit rate?",
 ];
 
-const FIELD_ROWS: {
+type FieldDef = {
   key: keyof UndertakingMinimumMarkingFeeStored;
   label: string;
   hint?: string;
-}[] = [
-  { key: "unit_of_sale", label: "Unit of Sale" },
+  multiline?: boolean;
+  /** Columns out of 4 on xl; 2 on sm. Default 2. */
+  span?: 1 | 2 | 4;
+};
+
+const SECTIONS: { title: string; fields: FieldDef[] }[] = [
   {
-    key: "annual_production_capacity",
-    label: "Annual Production Capacity",
-    hint: "e.g. 1000.00 Tonne / Year (As Provided in Application)",
+    title: "1 — Header & Product",
+    fields: [
+      {
+        key: "firm_status",
+        label: "Firm Status (MSME / LS)",
+        hint: "Auto from Firm Scale",
+        span: 1,
+      },
+      {
+        key: "bis_branch",
+        label: "BO Branch",
+        hint: "Auto from Application",
+        span: 1,
+      },
+      {
+        key: "is_product_line",
+        label: "IS & Product Line",
+        hint: "e.g. IS 10054: 2025 Product: …",
+        span: 4,
+      },
+    ],
   },
   {
-    key: "value_of_production_per_unit",
-    label: "Value of Production (Per Unit)",
-    hint: "e.g. ₹ 7,55,000.00 (As Provided in Application)",
+    title: "2 — Installed Capacity",
+    fields: [
+      { key: "unit_of_sale", label: "Unit of Sale", span: 1 },
+      {
+        key: "annual_production_qty",
+        label: "Annual Production Qty (numeric)",
+        hint: "e.g. 18000000",
+        span: 1,
+      },
+      {
+        key: "annual_production_capacity",
+        label: "Annual Production Capacity (display)",
+        hint: "e.g. 1,80,00,000 Square Meter Per Annum",
+        span: 2,
+      },
+      {
+        key: "value_of_production_per_unit",
+        label: "Value of Production (Per Unit)",
+        span: 2,
+      },
+      {
+        key: "cost_of_production_per_unit",
+        label: "Cost of Production (Per Unit)",
+        span: 2,
+      },
+    ],
   },
   {
-    key: "cost_of_production_per_unit",
-    label: "Cost of Production (Per Unit)",
-    hint: "e.g. ₹ 7,30,000.00 / Tonne",
+    title: "3 — Market Surveillance",
+    fields: [
+      {
+        key: "market_surveillance_plan",
+        label: "Market Surveillance Plan (proposed)",
+        multiline: true,
+        span: 4,
+      },
+    ],
   },
   {
-    key: "market_cost_most_common_variety",
-    label: "Cost (Market Cost) of Most Common Variety",
-    hint: "e.g. ₹ 7,55,000.00 / Tonne",
+    title: "4 — Testing Charges",
+    fields: [
+      {
+        key: "bis_lab_testing_charges",
+        label: "BIS Lab Testing Charges (Rs.)",
+        hint: "Leave blank if not available",
+        span: 2,
+      },
+      {
+        key: "osl_avg_testing_charges",
+        label: "OSL Average Testing Charges (Rs.)",
+        span: 2,
+      },
+      { key: "factory_sample_count", label: "Factory Sample Count", hint: "Default: 2", span: 1 },
+      { key: "market_sample_count", label: "Market Sample Count", hint: "Default: 2", span: 1 },
+      {
+        key: "factory_sample_rate",
+        label: "Factory Sample Rate (Rs.)",
+        hint: "Blank = effective testing rate",
+        span: 1,
+      },
+      {
+        key: "market_sample_rate",
+        label: "Market Sample Rate (Rs.)",
+        hint: "Blank = effective testing rate",
+        span: 1,
+      },
+    ],
+  },
+  {
+    title: "5 — Cost of Market Sample",
+    fields: [
+      { key: "market_sample_quantity", label: "Quantity per Market Sample", span: 2 },
+      { key: "market_sample_cost", label: "Cost of Market Sample (Rs.)", span: 2 },
+    ],
+  },
+  {
+    title: "6 — Overhead & MMF Overrides",
+    fields: [
+      { key: "overhead_cost", label: "Direct Cost of Overhead (Rs.)", hint: "Default: 37000", span: 2 },
+      {
+        key: "mmf_large_override",
+        label: "MMF Large Scale Override (Rs.)",
+        hint: "Optional",
+        span: 1,
+      },
+      {
+        key: "mmf_msme_override",
+        label: "MMF MSME Override (Rs.)",
+        hint: "Optional",
+        span: 1,
+      },
+    ],
+  },
+  {
+    title: "9 — Final Unit Rate & Slabs",
+    fields: [
+      {
+        key: "final_unit_rate",
+        label: "Final Unit Rate",
+        hint: "Auto-filled from suggested if empty",
+        span: 2,
+      },
+      {
+        key: "slab_1_text",
+        label: "Slab-1 Text",
+        hint: "Auto-filled from suggested if empty",
+        span: 2,
+      },
+      { key: "slab_2_text", label: "Slab-2 Text", span: 2 },
+      { key: "slab_3_text", label: "Slab-3 Text", span: 2 },
+    ],
+  },
+  {
+    title: "Signatory",
+    fields: [
+      { key: "signatory_name", label: "Signatory Name", span: 2 },
+      { key: "signatory_designation", label: "Designation", span: 2 },
+    ],
   },
 ];
 
+function fieldSpanClass(span: FieldDef["span"]): string {
+  switch (span ?? 2) {
+    case 1:
+      return "sm:col-span-1 xl:col-span-1";
+    case 4:
+      return "sm:col-span-2 xl:col-span-4";
+    default:
+      return "sm:col-span-1 xl:col-span-2";
+  }
+}
+
 function fieldInputClass(): string {
   return "w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40";
+}
+
+function summaryRow(label: string, value: string): React.ReactNode {
+  return (
+    <div className="flex items-start justify-between gap-3 border-b border-zinc-800/80 py-1 text-xs last:border-b-0">
+      <span className="text-zinc-400">{label}</span>
+      <span className="text-right font-medium text-zinc-100">{value}</span>
+    </div>
+  );
 }
 
 export function UndertakingMinimumMarkingFeeModal({
@@ -94,6 +247,8 @@ export function UndertakingMinimumMarkingFeeModal({
   licenseScopeRows,
   topManagement,
   storedDocument,
+  firmScale,
+  bisBranchName,
   onSave,
   onClose,
 }: {
@@ -108,9 +263,13 @@ export function UndertakingMinimumMarkingFeeModal({
   licenseScopeRows: LicenseScopeTableRow[];
   topManagement: TopManagementStored[];
   storedDocument: UndertakingMinimumMarkingFeeStored;
+  firmScale: string;
+  bisBranchName: string;
   onSave: (document: UndertakingMinimumMarkingFeeStored) => void;
   onClose: () => void;
 }) {
+  const isFullNumber = letterData.isNumber?.trim() || "—";
+
   const resolvedDefaults = useMemo(
     () =>
       resolveUndertakingMinimumMarkingFeeDocument({
@@ -118,8 +277,21 @@ export function UndertakingMinimumMarkingFeeModal({
         contactPerson: letterData.contactPerson,
         topManagement,
         licenseScopeRows,
+        firmScale,
+        bisBranchName,
+        isNumber: letterData.isNumber,
+        isTitle: letterData.isTitle,
       }),
-    [isCode, letterData.contactPerson, topManagement, licenseScopeRows],
+    [
+      isCode,
+      letterData.contactPerson,
+      letterData.isNumber,
+      letterData.isTitle,
+      topManagement,
+      licenseScopeRows,
+      firmScale,
+      bisBranchName,
+    ],
   );
 
   const [document, setDocument] = useState<UndertakingMinimumMarkingFeeStored>(() =>
@@ -127,15 +299,65 @@ export function UndertakingMinimumMarkingFeeModal({
   );
 
   useEffect(() => {
-    setDocument((prev) =>
-      preferLocalDocumentIfStoredEmpty(
+    setDocument((prev) => {
+      const synced = preferLocalDocumentIfStoredEmpty(
         storedDocument,
         prev,
         undertakingMinimumMarkingFeeHasContent,
         (stored) => mergeUndertakingMinimumMarkingFeeWithDefaults(stored, resolvedDefaults),
-      ),
-    );
-  }, [storedDocument, resolvedDefaults]);
+      );
+      // Prefer-local can keep an earlier empty-status draft when stored is still empty;
+      // fill Firm Status / BO from Application once sources are available (editable after).
+      const fromScale = firmStatusFromFirmScale(firmScale);
+      const fromBranch =
+        bisBranchName.trim() || letterData.bisBranchName.trim() || "";
+      const next = { ...synced };
+      let changed = synced !== prev;
+      if (!next.firm_status.trim() && fromScale) {
+        next.firm_status = fromScale;
+        changed = true;
+      }
+      if (!next.bis_branch.trim() && fromBranch) {
+        next.bis_branch = fromBranch;
+        changed = true;
+      }
+      return changed ? next : prev;
+    });
+  }, [
+    storedDocument,
+    resolvedDefaults,
+    firmScale,
+    bisBranchName,
+    letterData.bisBranchName,
+  ]);
+
+  const calculation = useMemo(() => computeMarkingFeeCalculation(document), [document]);
+
+  useEffect(() => {
+    setDocument((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      if (!prev.final_unit_rate.trim() && calculation.suggestedUnitRate != null) {
+        next.final_unit_rate = formatMarkingFeeUnitRate(calculation.suggestedUnitRate);
+        changed = true;
+      }
+      if (!prev.slab_1_text.trim() && calculation.suggestedUnitRate != null) {
+        next.slab_1_text = buildDefaultSlab1Text(
+          calculation.suggestedUnitRate,
+          prev.unit_of_sale,
+        );
+        changed = true;
+      }
+
+      return changed ? next : prev;
+    });
+  }, [
+    calculation.suggestedUnitRate,
+    document.unit_of_sale,
+    document.final_unit_rate,
+    document.slab_1_text,
+  ]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultUndertakingMinimumMarkingFeePrintSettings(),
@@ -144,6 +366,7 @@ export function UndertakingMinimumMarkingFeeModal({
   const [settingsPanel, setSettingsPanel] = useState<"page" | "print" | null>(null);
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
+  const [showCalcSummary, setShowCalcSummary] = useState(false);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
@@ -194,7 +417,6 @@ export function UndertakingMinimumMarkingFeeModal({
     };
   }, []);
 
-  // Keep Minimum Marking Fee margin defaults in sync (matches Top Management / Plant & Machinery).
   useEffect(() => {
     const defaults = defaultUndertakingMinimumMarkingFeePrintSettings();
     setPrintSettings((prev) => ({
@@ -209,8 +431,6 @@ export function UndertakingMinimumMarkingFeeModal({
     }));
   }, []);
 
-  const isFullNumber = letterData.isNumber?.trim() || "—";
-
   const { firmRepName, firmRepDesignation } = useMemo(() => {
     const primary = resolvePrimaryTopManagementPerson(topManagement);
     return {
@@ -219,16 +439,19 @@ export function UndertakingMinimumMarkingFeeModal({
     };
   }, [topManagement, letterData.contactPerson]);
 
-  const previewData = useMemo((): UndertakingMinimumMarkingFeeLetterData  => {
-    return withDocumentSignatureImage({
-      ...letterData,
-      applicationNumber,
-      dateOfApplication,
-      dateOfInspection,
-      firmRepName,
-      firmRepDesignation,
-      document,
-    }, topManagement);
+  const previewData = useMemo((): UndertakingMinimumMarkingFeeLetterData => {
+    return withDocumentSignatureImage(
+      {
+        ...letterData,
+        applicationNumber,
+        dateOfApplication,
+        dateOfInspection,
+        firmRepName,
+        firmRepDesignation,
+        document,
+      },
+      topManagement,
+    );
   }, [
     letterData,
     applicationNumber,
@@ -237,7 +460,8 @@ export function UndertakingMinimumMarkingFeeModal({
     firmRepName,
     firmRepDesignation,
     document,
-    topManagement]);
+    topManagement,
+  ]);
 
   const refreshPreview = useCallback(() => {
     const iframe = iframeRef.current;
@@ -262,13 +486,21 @@ export function UndertakingMinimumMarkingFeeModal({
     setPrintSettings((prev) => ({
       ...prev,
       ...patch,
-      // Keep letterhead logo-free even if Print Settings changes layout.
       letterhead_layout: "logo-na",
     }));
   }
 
   function patchDocument(patch: Partial<UndertakingMinimumMarkingFeeStored>) {
-    setDocument((prev) => ({ ...prev, ...patch }));
+    setDocument((prev) => {
+      const next = { ...prev, ...patch };
+      if ("market_sample_cost" in patch && patch.market_sample_cost !== undefined) {
+        next.market_cost_most_common_variety = patch.market_sample_cost;
+      }
+      if ("market_cost_most_common_variety" in patch && patch.market_cost_most_common_variety !== undefined) {
+        next.market_sample_cost = patch.market_cost_most_common_variety;
+      }
+      return next;
+    });
   }
 
   function handleSave() {
@@ -297,7 +529,7 @@ export function UndertakingMinimumMarkingFeeModal({
       const html = buildUndertakingMinimumMarkingFeeHtml(previewData, printSettings, printAssets);
       await downloadPrintHtmlAsPdf({
         html,
-        filename: `Undertaking_Minimum_Marking_Fee_${safePdfFilenamePart(letterData.companyName)}.pdf`,
+        filename: `Marking_Fee_Calculation_Annex1_${safePdfFilenamePart(letterData.companyName)}.pdf`,
         settings: printSettings,
       });
     } catch (err) {
@@ -317,7 +549,7 @@ export function UndertakingMinimumMarkingFeeModal({
         <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 bg-zinc-900 px-4 py-3">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-white">
-              Undertaking for Minimum Marking Fee
+              Marking Fee Calculation (Annex-1)
             </h2>
             <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isFullNumber} />
           </div>
@@ -405,37 +637,122 @@ export function UndertakingMinimumMarkingFeeModal({
               }`}
             >
               <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-                <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-zinc-400">
-                  Production &amp; Cost Details
-                </p>
-                <div className="space-y-3">
-                  {FIELD_ROWS.map((field, index) => (
-                    <div
-                      key={field.key}
-                      className="grid gap-1.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)] sm:items-start sm:gap-4"
-                    >
-                      <label
-                        htmlFor={`mmf_${field.key}`}
-                        className="pt-2 text-sm font-medium text-zinc-200"
-                      >
-                        {index + 1}. {field.label}
-                      </label>
-                      <div>
-                        <input
-                          id={`mmf_${field.key}`}
-                          type="text"
-                          value={document[field.key]}
-                          onChange={(event) => patchDocument({ [field.key]: event.target.value })}
-                          placeholder={field.hint}
-                          className={fieldInputClass()}
-                        />
-                        {field.hint ? (
-                          <p className="mt-1 text-xs text-zinc-500">{field.hint}</p>
-                        ) : null}
-                      </div>
+                <div className="mb-4 rounded-lg border border-sky-900/50 bg-sky-950/20">
+                  <button
+                    type="button"
+                    onClick={() => setShowCalcSummary((open) => !open)}
+                    className="flex w-full items-center justify-between gap-3 px-3 py-2.5 text-left hover:bg-sky-950/40"
+                    aria-expanded={showCalcSummary}
+                  >
+                    <span className="text-xs font-semibold uppercase tracking-wide text-sky-300">
+                      Live Calculation Summary
+                    </span>
+                    <span className="flex min-w-0 items-center gap-2">
+                      {!showCalcSummary ? (
+                        <span className="truncate text-[11px] font-medium text-zinc-300">
+                          LS {formatMarkingFeeInr(calculation.mmfLarge)} · MSME{" "}
+                          {formatMarkingFeeInr(calculation.mmfMsme)}
+                        </span>
+                      ) : null}
+                      <span className="shrink-0 text-sky-400" aria-hidden>
+                        {showCalcSummary ? "▾" : "▸"}
+                      </span>
+                    </span>
+                  </button>
+                  {showCalcSummary ? (
+                    <div className="border-t border-sky-900/40 px-3 pb-3 pt-1">
+                      {summaryRow(
+                        "Effective Testing Rate",
+                        calculation.effectiveTestingRate != null
+                          ? formatMarkingFeeInr(calculation.effectiveTestingRate)
+                          : "—",
+                      )}
+                      {summaryRow(
+                        "Factory Testing",
+                        `${calculation.factorySampleCount} × ${formatMarkingFeeInr(calculation.factorySampleRate)} = ${formatMarkingFeeInr(calculation.factoryTestingAmount)}`,
+                      )}
+                      {summaryRow(
+                        "Market Testing",
+                        `${calculation.marketSampleCount} × ${formatMarkingFeeInr(calculation.marketSampleRate)} = ${formatMarkingFeeInr(calculation.marketTestingAmount)}`,
+                      )}
+                      {summaryRow(
+                        "Market Sample Cost",
+                        `${calculation.marketSampleCount} × ${formatMarkingFeeInr(calculation.marketSampleUnitCost)} = ${formatMarkingFeeInr(calculation.marketSampleCostAmount)}`,
+                      )}
+                      {summaryRow("Overhead", formatMarkingFeeInr(calculation.overheadAmount))}
+                      {summaryRow("TOTAL (raw)", formatMarkingFeeInr(calculation.totalRaw))}
+                      {summaryRow("MMF — Large Scale", formatMarkingFeeInr(calculation.mmfLarge))}
+                      {summaryRow(
+                        "MMF — MSME",
+                        `${formatMarkingFeeInr(calculation.mmfMsmeRaw)} → ${formatMarkingFeeInr(calculation.mmfMsme)}`,
+                      )}
+                      {summaryRow(
+                        "Probable Unit Rate",
+                        calculation.probableUnitRate != null
+                          ? formatMarkingFeeUnitRate(calculation.probableUnitRate)
+                          : "—",
+                      )}
+                      {summaryRow(
+                        "Band (0.01% – 0.2%)",
+                        calculation.bandMin != null && calculation.bandMax != null
+                          ? `${formatMarkingFeeUnitRate(calculation.bandMin)} – ${formatMarkingFeeUnitRate(calculation.bandMax)}`
+                          : "—",
+                      )}
+                      {summaryRow(
+                        "Suggested Unit Rate",
+                        calculation.suggestedUnitRate != null
+                          ? formatMarkingFeeUnitRate(calculation.suggestedUnitRate)
+                          : "—",
+                      )}
                     </div>
-                  ))}
+                  ) : null}
                 </div>
+
+                {SECTIONS.map((section) => (
+                  <div key={section.title} className="mb-5">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-zinc-400">
+                      {section.title}
+                    </p>
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {section.fields.map((field) => (
+                        <div key={field.key} className={`min-w-0 ${fieldSpanClass(field.span)}`}>
+                          <label
+                            htmlFor={`mmf_${field.key}`}
+                            className="mb-1 block text-sm font-medium text-zinc-200"
+                          >
+                            {field.label}
+                          </label>
+                          {field.multiline ? (
+                            <textarea
+                              id={`mmf_${field.key}`}
+                              rows={3}
+                              value={document[field.key]}
+                              onChange={(event) =>
+                                patchDocument({ [field.key]: event.target.value })
+                              }
+                              placeholder={field.hint}
+                              className={fieldInputClass()}
+                            />
+                          ) : (
+                            <input
+                              id={`mmf_${field.key}`}
+                              type="text"
+                              value={document[field.key]}
+                              onChange={(event) =>
+                                patchDocument({ [field.key]: event.target.value })
+                              }
+                              placeholder={field.hint}
+                              className={fieldInputClass()}
+                            />
+                          )}
+                          {field.hint ? (
+                            <p className="mt-1 text-[11px] text-zinc-500">{field.hint}</p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
               </div>
             </div>
           )}
@@ -448,13 +765,13 @@ export function UndertakingMinimumMarkingFeeModal({
             >
               <div className="border-b border-zinc-700/80 px-4 py-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-                  Form Preview — Undertaking for Minimum Marking Fee
+                  Form Preview — Marking Fee Calculation (Annex-1)
                 </p>
               </div>
               <div className="flex-1 overflow-y-auto p-3 sm:p-6">
                 <iframe
                   ref={iframeRef}
-                  title="Undertaking for Minimum Marking Fee form preview"
+                  title="Marking Fee Calculation Annex-1 preview"
                   className="mx-auto max-w-full border-0 bg-white shadow-2xl"
                   scrolling="no"
                   style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
@@ -479,7 +796,7 @@ export function UndertakingMinimumMarkingFeeModal({
       {showQeAssistant && (
         <AiChatModal
           title="QE Assistant"
-          subtitle="Undertaking for Minimum Marking Fee · BIS Application"
+          subtitle="Marking Fee Calculation (Annex-1) · BIS Application"
           systemPrompt={MMF_QE_PROMPT}
           starterQuestions={MMF_QE_STARTERS}
           accentColor="amber"

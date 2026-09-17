@@ -6,7 +6,6 @@ import {
   type ManufacturingScopeDeclarationData,
 } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
-  LONG_DURATION_TEST_ROW_COUNT,
   type UndertakingLongDurationTestStored,
 } from "@backend/modules/bis/undertaking-long-duration-test";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
@@ -119,16 +118,22 @@ function buildTestTableHtml(document: UndertakingLongDurationTestStored): string
   const td =
     "border:1px solid #111;padding:5px 6px;font-size:9px;text-align:center;vertical-align:middle;";
 
-  const rows = Array.from({ length: LONG_DURATION_TEST_ROW_COUNT }, (_, index) => {
-    const row = document.test_rows[index];
-    return `
+  const source =
+    document.test_rows.length > 0
+      ? document.test_rows
+      : [{ type_of_test: "", duration_of_test: "", date_of_completion: "" }];
+
+  const rows = source
+    .map((row, index) => {
+      return `
     <tr>
       <td style="${td}width:8%;">${index + 1}</td>
-      <td style="${td}">${blankOr(row?.type_of_test ?? "", "&nbsp;")}</td>
-      <td style="${td}">${blankOr(row?.duration_of_test ?? "", "&nbsp;")}</td>
-      <td style="${td}">${row?.date_of_completion?.trim() ? esc(formatMetaDate(row.date_of_completion)) : "&nbsp;"}</td>
+      <td style="${td}">${blankOr(row.type_of_test ?? "", "&nbsp;")}</td>
+      <td style="${td}">${blankOr(row.duration_of_test ?? "", "&nbsp;")}</td>
+      <td style="${td}">${row.date_of_completion?.trim() ? esc(formatMetaDate(row.date_of_completion)) : "&nbsp;"}</td>
     </tr>`;
-  }).join("");
+    })
+    .join("");
 
   return `
 <table style="width:100%;border-collapse:collapse;table-layout:fixed;margin:10px 0;">

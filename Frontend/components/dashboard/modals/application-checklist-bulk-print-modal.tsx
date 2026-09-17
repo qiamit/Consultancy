@@ -5,7 +5,7 @@ import {
   APPLICATION_CHECKLIST_PRINT_DOCS,
   buildChecklistBulkListRows,
   buildChecklistBulkPackItems,
-  buildCombinedHtmlFromPackItems,
+  buildCombinedHtmlFromAllPackItems,
   buildFactoryTestReportSampleHtml,
   buildSelectedChecklistPrintDocs,
   downloadChecklistAttachmentPdf,
@@ -137,23 +137,10 @@ export function ApplicationChecklistBulkPrintModal({
       }
 
       if (kind === "word") {
-        const wordRows = selectedRows.filter(
-          (r) => r.kind === "print" || r.kind === "ftr_sample",
-        );
-        if (wordRows.length === 0) {
-          throw new Error(
-            "Select at least one checklist document with data to export as Word. Attachments are not included in the Word file.",
-          );
-        }
-        const items = await buildChecklistBulkPackItems(wordRows, ctx);
-        const htmlDocs = items.filter(
-          (item): item is Extract<typeof item, { kind: "html" }> => item.kind === "html",
-        );
-        if (htmlDocs.length === 0) {
-          throw new Error("None of the selected checklist documents have content to export.");
-        }
+        const items = await buildChecklistBulkPackItems(selectedRows, ctx);
+        const html = await buildCombinedHtmlFromAllPackItems(items);
         downloadChecklistCombinedWord({
-          html: buildCombinedHtmlFromPackItems(htmlDocs),
+          html,
           companyName: ctx.letterData.companyName,
         });
         return;
@@ -462,7 +449,7 @@ export function ApplicationChecklistBulkPrintModal({
             type="button"
             onClick={() => void runBulkAction("print")}
             disabled={anyBusy || selectedCount === 0}
-            title="Print selected documents"
+            title="Print selected documents + attachments as one PDF (same as preview)"
             className="rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs font-semibold text-white hover:bg-zinc-700 disabled:opacity-50"
           >
             {busy?.scope === "bulk" && busy.kind === "print" ? "Preparing…" : "Selected Print"}
@@ -471,7 +458,7 @@ export function ApplicationChecklistBulkPrintModal({
             type="button"
             onClick={() => void runBulkAction("word")}
             disabled={anyBusy || selectedCount === 0}
-            title="Download selected documents as one Word file"
+            title="Download selected documents + attachments as one Word file"
             className="rounded-lg border border-emerald-700/60 bg-emerald-950/40 px-3 py-2 text-xs font-semibold text-emerald-200 hover:bg-emerald-950/70 disabled:opacity-50"
           >
             {busy?.scope === "bulk" && busy.kind === "word" ? "Preparing…" : "Selected Word"}
@@ -480,7 +467,7 @@ export function ApplicationChecklistBulkPrintModal({
             type="button"
             onClick={() => void runBulkAction("pdf")}
             disabled={anyBusy || selectedCount === 0}
-            title="Download selected documents as one PDF"
+            title="Download selected documents + attachments as one PDF (no blank pages)"
             className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
           >
             {busy?.scope === "bulk" && busy.kind === "pdf" ? "Downloading…" : "Selected PDF (Single)"}

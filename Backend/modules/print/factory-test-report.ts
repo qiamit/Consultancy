@@ -180,11 +180,6 @@ function buildPageIndicatorHtml(pageNum: number, totalPages: number): string {
   return `<div class="ftr-page-indicator">Page ${padPageNum(pageNum)} of ${padPageNum(totalPages)}</div>`;
 }
 
-function buildPageGapHtml(pageNum: number, totalPages: number): string {
-  if (pageNum <= 1 || totalPages <= 1) return "";
-  return `<div class="ftr-page-gap" aria-hidden="true">Page break · ${padPageNum(pageNum - 1)} → ${padPageNum(pageNum)}</div>`;
-}
-
 function buildMetaTableHtml(report: FactoryTestReportStored): string {
   return `<table class="ftr-meta">
         <colgroup>
@@ -259,6 +254,10 @@ function buildSignaturesHtml(
   return `<div class="ftr-signatures">${left}${right}</div>`;
 }
 
+function buildEndOfReportHtml(): string {
+  return `<p class="ftr-end-of-report">*** End of Report ***</p>`;
+}
+
 function buildSingleReportHtml(
   report: FactoryTestReportStored,
   reportIndex: number,
@@ -273,28 +272,27 @@ function buildSingleReportHtml(
   return testPages
     .map((pageRows, pageIndex) => {
       const isFirstPage = pageIndex === 0;
+      const isLastPage = pageIndex === totalPages - 1;
       const pageNum = pageIndex + 1;
       const needsBreak = (reportIndex > 0 && isFirstPage) || pageIndex > 0;
       const letterheadBlock = letterheadHtml
         ? `<div class="ftr-sheet-letterhead">${letterheadHtml}</div>`
         : "";
-      // Across reports, still show a screen gap before the next report's first page.
-      const gapHtml =
-        reportIndex > 0 && isFirstPage
-          ? `<div class="ftr-page-gap" aria-hidden="true">Page break</div>`
-          : buildPageGapHtml(pageNum, totalPages);
 
       return `
-    ${gapHtml}
     <div class="ftr-sheet${needsBreak ? " ftr-page-break" : ""}">
       <div class="ftr-sheet-inner">
         ${letterheadBlock}
         <div class="ftr-sheet-body">
-          ${isFirstPage ? `<h1 class="ftr-title">Factory Test Report</h1>${buildMetaTableHtml(report)}` : ""}
+          <h1 class="ftr-title">Factory Test Report</h1>
+          ${buildMetaTableHtml(report)}
           ${buildTestTableHtmlFromRows(pageRows)}
+          <div class="ftr-sheet-closing">
+            ${isLastPage ? buildEndOfReportHtml() : ""}
+            ${buildSignaturesHtml(data, settings)}
+          </div>
         </div>
         <div class="ftr-sheet-footer">
-          ${buildSignaturesHtml(data, settings)}
           ${buildPageIndicatorHtml(pageNum, totalPages)}
         </div>
       </div>
@@ -376,6 +374,8 @@ export function buildFactoryTestReportHtml(
           .join("")
       : `<p style="text-align:center;color:#64748b;padding:40px;">No factory test reports. Add samples in Sample for OSL / PI first.</p>`;
 
+  const pageWidthMm = pageSize.widthMm;
+  const pageHeightMm = pageSize.heightMm;
   const styles = `
     .ftr-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -384,17 +384,21 @@ export function buildFactoryTestReportHtml(
       position: relative;
       width: 100%;
       box-sizing: border-box;
+      height: ${sheetMinHeight};
       min-height: ${sheetMinHeight};
+      max-height: ${sheetMinHeight};
+      overflow: hidden;
       display: flex;
       flex-direction: column;
       page-break-after: auto;
       break-after: auto;
+      background: #fff;
     }
     .ftr-sheet-inner {
       display: flex;
       flex-direction: column;
       flex: 1;
-      min-height: 100%;
+      min-height: 0;
       height: 100%;
       width: 100%;
     }
@@ -405,12 +409,20 @@ export function buildFactoryTestReportHtml(
       flex: 1 1 auto;
       min-height: 0;
       width: 100%;
+      display: flex;
+      flex-direction: column;
+    }
+    .ftr-sheet-closing {
+      flex-shrink: 0;
+      margin-top: 10px;
+      width: 100%;
     }
     .ftr-sheet-footer {
       flex-shrink: 0;
       margin-top: auto;
       position: relative;
-      padding-bottom: 14px;
+      min-height: 14px;
+      padding-bottom: 2px;
       width: 100%;
     }
     .ftr-title { text-align: center; font-size: 16px; font-weight: 700; margin: 0 0 12px; }
@@ -421,9 +433,6 @@ export function buildFactoryTestReportHtml(
       font-size: 10px;
       font-weight: 600;
       text-align: right;
-    }
-    .ftr-page-gap {
-      display: none;
     }
     .ftr-meta { width: 100%; border-collapse: collapse; margin-bottom: 8px; table-layout: fixed; font-size: 9px; }
     .ftr-meta .lbl { font-weight: 600; padding: 2px 3px; vertical-align: middle; white-space: nowrap; }
@@ -438,7 +447,25 @@ export function buildFactoryTestReportHtml(
       white-space: nowrap;
       overflow: hidden;
     }
-    .ftr-signatures { display: flex; justify-content: space-between; align-items: flex-start; gap: 32px; margin-top: 12px; width: 100%; }
+    .ftr-signatures {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 32px;
+      margin-top: 10px;
+      margin-bottom: 8px;
+      width: 100%;
+      flex-shrink: 0;
+    }
+    .ftr-end-of-report {
+      margin: 14px 0 6px;
+      text-align: center;
+      font-size: 10px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #111;
+    }
     .ftr-sig-block { flex: 0 0 42%; max-width: 42%; }
     .ftr-sig-left { text-align: left; margin-right: auto; }
     .ftr-sig-right { text-align: right; margin-left: auto; }
@@ -449,33 +476,36 @@ export function buildFactoryTestReportHtml(
     .sig-org { font-size: 9px; font-weight: 700; margin-top: 4px; line-height: 1.35; }
     .ftr-page-break { page-break-before: always; break-before: page; }
     @media screen {
-      .ftr-page-gap {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        height: 10mm;
-        margin: 4mm 0;
-        color: #64748b;
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        border-top: 2px dashed #94a3b8;
-        border-bottom: 2px dashed #94a3b8;
+      /* Separate paper sheets in preview — gap matches iframeSizeForPagedPrintSettings. */
+      .ftr-sheet + .ftr-sheet {
+        margin-top: 12mm;
+        box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.08);
+      }
+      .doc-page {
+        width: ${pageWidthMm}mm;
+        max-width: ${pageWidthMm}mm;
+        box-sizing: border-box;
       }
     }
     @media print {
-      .ftr-page-gap {
-        display: none !important;
+      .ftr-sheet + .ftr-sheet {
+        margin-top: 0;
+        box-shadow: none;
       }
       .ftr-sheet {
+        height: ${sheetMinHeight};
+        min-height: ${sheetMinHeight};
+        max-height: ${sheetMinHeight};
+        overflow: hidden;
         page-break-after: always;
         break-after: page;
       }
       .ftr-sheet:last-of-type {
         page-break-after: auto;
         break-after: auto;
+      }
+      @page {
+        size: ${pageWidthMm}mm ${pageHeightMm}mm;
       }
     }
   `;

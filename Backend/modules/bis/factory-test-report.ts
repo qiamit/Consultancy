@@ -445,29 +445,24 @@ function pageContentHeightMm(marginTopMm: number, marginBottomMm: number): numbe
 }
 
 function signaturesOverheadMm(options: FtrPrintPaginationOptions): number {
-  return options.showWitnessedBy || options.showTestedBy ? 26 : 0;
+  // "End of Report" line + Witnessed By / Tested By block under results.
+  return options.showWitnessedBy || options.showTestedBy ? 36 : 10;
 }
 
-function firstPageOverheadMm(options: FtrPrintPaginationOptions): number {
-  let overhead = 7 + 40 + 11 + 4 + signaturesOverheadMm(options);
-  if (options.showLetterhead) overhead += 30;
-  return overhead;
-}
-
-function continuationPageOverheadMm(options: FtrPrintPaginationOptions): number {
-  let overhead = 11 + 4 + signaturesOverheadMm(options);
-  if (options.showLetterhead) overhead += 30;
+/** Letterhead + title + sample-details meta + results table header — repeats on every page. */
+function pageHeaderOverheadMm(options: FtrPrintPaginationOptions): number {
+  let overhead = 10 + 48 + 9 + 6;
+  if (options.showLetterhead) overhead += 28;
   return overhead;
 }
 
 function estimateRowHeightMm(row: FtrTestRowStored): number {
-  const lineMm = 3.4;
-  const paddingMm = 2;
+  const lineMm = 3.6;
+  const paddingMm = 2.2;
   let lines = 1;
 
-  // Merged first column: Test Name + Clause No · IS Reference
   const testName = row.test_name ?? "";
-  lines = Math.max(lines, Math.ceil(testName.length / 32));
+  lines = Math.max(lines, Math.ceil(Math.max(1, testName.length) / 34));
 
   const meta = [row.clause_no, row.is_reference]
     .map((s) => (s ?? "").trim())
@@ -476,9 +471,14 @@ function estimateRowHeightMm(row: FtrTestRowStored): number {
   if (meta) lines = Math.max(lines, 2);
 
   const spec = row.specified_requirements ?? "";
-  lines = Math.max(lines, Math.ceil(spec.length / 40));
+  lines = Math.max(lines, Math.ceil(Math.max(1, spec.length) / 42));
 
-  return paddingMm + lines * lineMm;
+  const observed = row.observed_value ?? "";
+  if (observed.length > 18) {
+    lines = Math.max(lines, Math.ceil(observed.length / 24));
+  }
+
+  return Math.max(5.8, paddingMm + lines * lineMm);
 }
 
 export function paginateFtrPrintTestRows(
@@ -489,27 +489,32 @@ export function paginateFtrPrintTestRows(
   if (tests.length === 0) return [[]];
 
   const pageHeightMm = pageContentHeightMm(options.marginTopMm, options.marginBottomMm);
+  const headerMm = pageHeaderOverheadMm(options);
+  const sigMm = signaturesOverheadMm(options);
   const pages: FtrTestRowStored[][] = [];
   let index = 0;
-  let isFirstPage = true;
 
   while (index < tests.length) {
-    const overheadMm = isFirstPage
-      ? firstPageOverheadMm(options)
-      : continuationPageOverheadMm(options);
-    let remainingMm = pageHeightMm - overheadMm;
+    // Signature block prints on every page — reserve space on each sheet.
+    let remainingMm = pageHeightMm - headerMm - sigMm;
     const pageRows: FtrTestRowStored[] = [];
 
     while (index < tests.length) {
       const rowMm = estimateRowHeightMm(tests[index]!);
       if (pageRows.length > 0 && rowMm > remainingMm) break;
+
+      if (pageRows.length === 0 && rowMm > remainingMm) {
+        pageRows.push(tests[index]!);
+        index++;
+        break;
+      }
+
       pageRows.push(tests[index]!);
       remainingMm -= rowMm;
       index++;
     }
 
     pages.push(pageRows);
-    isFirstPage = false;
   }
 
   return pages;

@@ -80,6 +80,44 @@ function cell(s: string): string {
   return esc(dash(s, ""));
 }
 
+/** Convert mostly-ALL-CAPS text to Title Case; leave mixed/sentence case as-is. */
+function properCapitalize(raw: string): string {
+  const s = String(raw ?? "").trim();
+  if (!s) return s;
+  const letters = s.replace(/[^A-Za-z]/g, "");
+  if (!letters) return s;
+  const upperCount = (letters.match(/[A-Z]/g) ?? []).length;
+  if (upperCount / letters.length < 0.7) return s;
+
+  const acronyms = new Set([
+    "bis",
+    "is",
+    "ceo",
+    "cfo",
+    "gmd",
+    "qc",
+    "rs",
+    "hdpe",
+    "osl",
+    "mmf",
+    "cm",
+    "ltd",
+    "pvt",
+    "llc",
+    "inc",
+    "co",
+    "vpo",
+    "upo",
+  ]);
+
+  return s
+    .toLowerCase()
+    .replace(/(^|[^A-Za-z0-9])([A-Za-z0-9]+)/g, (_m, pre: string, word: string) => {
+      if (acronyms.has(word)) return `${pre}${word.toUpperCase()}`;
+      return `${pre}${word.charAt(0).toUpperCase()}${word.slice(1)}`;
+    });
+}
+
 function personRows(people: BisForm1Person[]): string {
   const filled = people.filter((p) => p.name.trim() || p.designation.trim());
   if (filled.length === 0) {
@@ -94,7 +132,6 @@ function personRows(people: BisForm1Person[]): string {
 }
 
 function addressBlock(opts: {
-  kindHi: string;
   kindEn: string;
   address: string;
   city: string;
@@ -110,49 +147,47 @@ function addressBlock(opts: {
 <table class="f1-box f1-addr">
   <tr>
     <td class="f1-addr-kind" rowspan="2">
-      <div class="f1-vlabel">पता</div>
       <div class="f1-vlabel">Address</div>
-      <div class="f1-kind">${esc(opts.kindHi)}</div>
       <div class="f1-kind">${esc(opts.kindEn)}</div>
     </td>
     <td class="f1-addr-main" colspan="5">
-      <div class="f1-mini">पता Address</div>
+      <div class="f1-mini">Address</div>
       <div class="f1-val">${nl2br(dash(opts.address, ""))}</div>
     </td>
     <td class="f1-contact-col" rowspan="2">
       <div class="f1-contact-row">
-        <div class="f1-mini">दूरभाष Tel.</div>
+        <div class="f1-mini">Tel.</div>
         <div class="f1-val">${esc(dash(opts.tel, "-"))}</div>
       </div>
       <div class="f1-contact-row">
-        <div class="f1-mini">फैक्स FAX</div>
+        <div class="f1-mini">Fax</div>
         <div class="f1-val">${esc(dash(opts.fax, "-"))}</div>
       </div>
       <div class="f1-contact-row">
-        <div class="f1-mini">ई-मेल* Email*</div>
+        <div class="f1-mini">Email*</div>
         <div class="f1-val">${esc(dash(opts.email, ""))}</div>
       </div>
     </td>
   </tr>
   <tr>
     <td class="f1-geo">
-      <div class="f1-mini">शहर City</div>
+      <div class="f1-mini">City</div>
       <div class="f1-val f1-center">${cell(opts.city)}</div>
     </td>
     <td class="f1-geo">
-      <div class="f1-mini">जिला District</div>
+      <div class="f1-mini">District</div>
       <div class="f1-val f1-center">${cell(opts.district)}</div>
     </td>
     <td class="f1-geo">
-      <div class="f1-mini">राज्य State</div>
+      <div class="f1-mini">State</div>
       <div class="f1-val f1-center">${cell(opts.state)}</div>
     </td>
     <td class="f1-geo">
-      <div class="f1-mini">देश Country</div>
+      <div class="f1-mini">Country</div>
       <div class="f1-val f1-center">${cell(opts.country)}</div>
     </td>
     <td class="f1-geo f1-pin">
-      <div class="f1-mini">पिन Pin</div>
+      <div class="f1-mini">Pin</div>
       <div class="f1-val f1-center">${cell(opts.pin)}</div>
     </td>
   </tr>
@@ -161,46 +196,52 @@ function addressBlock(opts: {
 
 function buildFormBody(data: BisForm1Data): string {
   const appNo = dash(data.applicationNumber, "");
-  const firm = dash(data.companyName, "");
-  const product = dash(data.productName, "");
+  const firm = properCapitalize(dash(data.companyName, ""));
+  const product = properCapitalize(dash(data.productName, ""));
   const isNo = dash(data.isNumber, "");
   const grades = dash(data.gradesText, "");
   const appDate = data.dateOfApplication
     ? formatDisplayDate(data.dateOfApplication, "")
     : "";
+  const city = properCapitalize(data.city);
+  const district = properCapitalize(data.district);
+  const state = properCapitalize(data.state);
+  const country = properCapitalize(data.country || "India");
+  const correspondence = properCapitalize(
+    dash(data.correspondenceAddress, "Factory"),
+  );
+  const scale = properCapitalize(dash(data.scale, ""));
+  const sector = properCapitalize(dash(data.sector, ""));
 
   return `
 <div class="print-sheet print-sheet-natural f1-sheet">
   <div class="print-sheet-body f1-fit-body">
     <div class="f1-header">
-      <div class="f1-form-title">प्रपत्र 1 Form 1</div>
-      <div class="f1-sub">[नियम 3 देखें] [See Regulation 3]</div>
-      <div class="f1-org">भारतीय मानक ब्यूरो</div>
-      <div class="f1-org">BUREAU OF INDIAN STANDARDS</div>
-      <div class="f1-scheme">उत्पाद प्रमाणन योजना / Product Certification Scheme</div>
-      <div class="f1-app-title">मानक चिह्न का उपयोग करने लाइसेंस के लिए आवेदन</div>
-      <div class="f1-app-title-en">APPLICATION FOR LICENCE TO USE THE STANDARD MARK</div>
+      <div class="f1-form-title">Form 1</div>
+      <div class="f1-sub">[See Regulation 3]</div>
+      <div class="f1-org">Bureau of Indian Standards</div>
+      <div class="f1-scheme">Product Certification Scheme</div>
+      <div class="f1-app-title-en">Application for Licence to Use the Standard Mark</div>
     </div>
 
     <table class="f1-box f1-row">
       <tr>
-        <td class="f1-label-cell">आवेदन संख्या<br/>Application Number</td>
+        <td class="f1-label-cell">Application Number</td>
         <td class="f1-value-cell">${esc(appNo)}</td>
       </tr>
       <tr>
-        <td class="f1-label-cell">आवेदक फर्म का पूरा नाम<br/>Full name of Applicant Firm</td>
+        <td class="f1-label-cell">Full Name of Applicant Firm</td>
         <td class="f1-value-cell">${esc(firm)}</td>
       </tr>
     </table>
 
     ${addressBlock({
-      kindHi: "कार्यालय",
       kindEn: "Office",
       address: data.officeAddress,
-      city: data.city,
-      district: data.district,
-      state: data.state,
-      country: data.country,
+      city,
+      district,
+      state,
+      country,
       pin: data.pinCode,
       tel: data.officeTel,
       fax: data.officeFax,
@@ -208,13 +249,12 @@ function buildFormBody(data: BisForm1Data): string {
     })}
 
     ${addressBlock({
-      kindHi: "फैक्टरी",
-      kindEn: "FACTORY",
+      kindEn: "Factory",
       address: data.factoryAddress,
-      city: data.city,
-      district: data.district,
-      state: data.state,
-      country: data.country,
+      city,
+      district,
+      state,
+      country,
       pin: data.pinCode,
       tel: data.factoryTel,
       fax: data.factoryFax,
@@ -223,38 +263,31 @@ function buildFormBody(data: BisForm1Data): string {
 
     <table class="f1-box f1-meta-row">
       <tr>
-        <td class="f1-meta-label">
-          <div>पत्राचार का पता</div>
-          <div>CORRESPONDENCE ADDRESS</div>
+        <td class="f1-meta-pair">
+          Correspondence Address — <strong>${esc(correspondence)}</strong>
         </td>
-        <td class="f1-meta-box">${esc(dash(data.correspondenceAddress, "Factory"))}</td>
-        <td class="f1-meta-label">
-          <div>स्तर</div>
-          <div>SCALE</div>
+        <td class="f1-meta-pair">
+          Scale — <strong>${esc(scale)}</strong>
         </td>
-        <td class="f1-meta-box">${esc(dash(data.scale, ""))}</td>
-        <td class="f1-meta-label">
-          <div>क्षेत्र</div>
-          <div>SECTOR</div>
+        <td class="f1-meta-pair">
+          Sector — <strong>${esc(sector)}</strong>
         </td>
-        <td class="f1-meta-box">${esc(dash(data.sector, ""))}</td>
       </tr>
     </table>
 
     <table class="f1-box f1-mgmt">
       <tr>
         <td class="f1-mgmt-side" rowspan="3">
-          <div class="f1-vlabel">प्रबंध</div>
-          <div class="f1-vlabel">MANAGEMENT</div>
+          <div class="f1-vlabel f1-vlabel-vert">Management</div>
         </td>
-        <td class="f1-mgmt-head" colspan="2">शीर्ष प्रबंध<br/>Top Management</td>
-        <td class="f1-mgmt-head" colspan="2">तकनीकी प्रबंध<br/>Technical Management</td>
+        <td class="f1-mgmt-head" colspan="2">Top Management</td>
+        <td class="f1-mgmt-head" colspan="2">Technical Management</td>
       </tr>
       <tr>
-        <td class="f1-mgmt-sub">नाम<br/>Name</td>
-        <td class="f1-mgmt-sub">पदनाम<br/>Designation</td>
-        <td class="f1-mgmt-sub">नाम<br/>Name</td>
-        <td class="f1-mgmt-sub">पदनाम<br/>Designation</td>
+        <td class="f1-mgmt-sub">Name</td>
+        <td class="f1-mgmt-sub">Designation</td>
+        <td class="f1-mgmt-sub">Name</td>
+        <td class="f1-mgmt-sub">Designation</td>
       </tr>
       <tr>
         <td colspan="2" class="f1-mgmt-body">
@@ -266,42 +299,38 @@ function buildFormBody(data: BisForm1Data): string {
       </tr>
       <tr>
         <td class="f1-contact-label" colspan="2">
-          संपर्क किए जाने वाले व्यक्ति और टेलीफोन / मोबाइल नंबर<br/>
-          CONTACT PERSON &amp; Tel/Mobile No.
+          Contact Person &amp; Tel/Mobile No.
         </td>
         <td class="f1-contact-value" colspan="3">${esc(dash(data.contactPersonLine, ""))}</td>
       </tr>
     </table>
-    <p class="f1-note">*Furnishing of correct and valid email id is a mandatory requirement and absence of this information shall make the application liable for rejection</p>
+    <p class="f1-note">*Furnishing of correct and valid email id is a mandatory requirement and absence of this information shall make the application liable for rejection.</p>
 
     <div class="f1-mark-line">
-      <div>यह आवेदन <span class="f1-fill">${esc(product)}</span> पर भारतीय मानक ब्यूरो की मानक के उपयोग के लिए किया जा रहा है ।</div>
-      <div>This application is being made to use the Bureau of Indian Standards (BIS) Standard Mark on <span class="f1-fill">${esc(product)}</span></div>
+      This application is being made to use the Bureau of Indian Standards (BIS) Standard Mark on <span class="f1-fill">${esc(product)}</span>
     </div>
 
     <table class="f1-box f1-product">
       <tr>
         <td class="f1-side-label">
-          <div class="f1-vlabel">उत्पाद</div>
-          <div class="f1-vlabel">PRODUCT</div>
+          <div class="f1-vlabel">Product</div>
         </td>
         <td class="f1-product-val">${esc(product)}</td>
       </tr>
       <tr>
         <td class="f1-side-label">
-          <div class="f1-vlabel-sm">भारतीय मानक उपयुक्त संशोधन सहित</div>
-          <div class="f1-vlabel-sm">INDIAN STANDARD WITH APPLICABLE AMENDMENTS</div>
+          <div class="f1-vlabel-sm">Indian Standard with Applicable Amendments</div>
         </td>
         <td class="f1-std-wrap">
           <table class="f1-std">
             <tr>
               <td class="f1-is-meta">
-                <div><strong>भा मा IS:</strong> ${esc(isNo)}</div>
-                <div><strong>भाग Part:</strong> ${esc(dash(data.isPart, ""))}</div>
-                <div><strong>खंड Sec:</strong> ${esc(dash(data.isSection, ""))}</div>
+                <div><strong>IS:</strong> ${esc(isNo)}</div>
+                <div><strong>Part:</strong> ${esc(dash(data.isPart, ""))}</div>
+                <div><strong>Sec:</strong> ${esc(dash(data.isSection, ""))}</div>
               </td>
               <td class="f1-grades">
-                <div class="f1-grades-head">GRADE/TYPE/CLASS</div>
+                <div class="f1-grades-head">Grade / Type / Class</div>
                 <div class="f1-grades-body">${nl2br(grades)}</div>
               </td>
             </tr>
@@ -313,20 +342,19 @@ function buildFormBody(data: BisForm1Data): string {
     <table class="f1-box f1-capacity">
       <tr>
         <td class="f1-cap-title">
-          वर्तमान स्थापित क्षमता<br/>
-          PRESENT INSTALLED CAPACITY<br/>
-          (उत्पादन प्रतिवर्ष) (Production per annum)
+          Present Installed Capacity<br/>
+          (Production per annum)
         </td>
         <td class="f1-cap-cell">
-          <div class="f1-mini">उत्पाद की इकाईयां<br/>Units of Production</div>
-          <div class="f1-val f1-center">${esc(dash(data.unitsOfProduction, "0.00"))}</div>
+          <div class="f1-mini">Units of Production</div>
+          <div class="f1-val f1-center">${esc(properCapitalize(dash(data.unitsOfProduction, "0.00")))}</div>
         </td>
         <td class="f1-cap-cell">
-          <div class="f1-mini">मात्रा<br/>Quantity</div>
+          <div class="f1-mini">Quantity</div>
           <div class="f1-val f1-center">${esc(dash(data.quantity, "0.00"))}</div>
         </td>
         <td class="f1-cap-cell">
-          <div class="f1-mini">मूल्य (रु.)<br/>Value (Rs.)</div>
+          <div class="f1-mini">Value (Rs.)</div>
           <div class="f1-val f1-center">${esc(dash(data.valueRs, ""))}</div>
         </td>
       </tr>
@@ -335,8 +363,7 @@ function buildFormBody(data: BisForm1Data): string {
     <table class="f1-box f1-licenses">
       <tr>
         <td>
-          <div class="f1-mini"><strong>भारतीय मानक ब्यूरो से धारित लाइसेंस</strong></div>
-          <div class="f1-mini"><strong>Bureau of Indian Standards (BIS) Licenses held</strong></div>
+          <div class="f1-mini"><strong>Bureau of Indian Standards (BIS) Licenses Held</strong></div>
           <div class="f1-licenses-body">${nl2br(dash(data.bisLicensesHeld, ""))}</div>
         </td>
       </tr>
@@ -346,7 +373,6 @@ function buildFormBody(data: BisForm1Data): string {
       <tr>
         <td>
           <p><strong>Declaration:</strong> The above information is true to the best of my knowledge and belief. I shall be responsible for any misleading information in the application. I understand and agree that in case of any wrong information in the application, the application shall be liable for rejection. I also agree that, if the license is granted on the basis of information which is later found to be incorrect, the license shall be liable for cancellation.</p>
-          <p><strong>घोषणा:</strong> उपरोक्त सूचना मेरी जानकारी एवं विश्वास से सच है। आवेदन में किसी भी भ्रामक सूचना के लिए मैं जिम्मेदार रहूँगा/रहूँगी। मैं समझता/समझती हूँ और सहमत हूँ कि आवेदन में गलत सूचना होने पर आवेदन अस्वीकृत किया जा सकता है। मैं यह भी सहमत हूँ कि यदि गलत सूचना के आधार पर लाइसेंस दिया जाता है और बाद में सूचना गलत पाई जाती है तो लाइसेंस रद्द किया जा सकता है।</p>
         </td>
       </tr>
     </table>
@@ -354,20 +380,19 @@ function buildFormBody(data: BisForm1Data): string {
     <table class="f1-box f1-sign">
       <tr>
         <td class="f1-seal">
-          <div class="f1-mini">फर्म की सील:<br/>Seal of the Firm:</div>
+          <div class="f1-mini">Seal of the Firm:</div>
           <div class="f1-seal-box"></div>
         </td>
         <td class="f1-sign-fields">
-          <div class="f1-sign-line">हस्ताक्षर (Signature) ______________________________</div>
-          <div class="f1-sign-line">नाम (Name) <span class="f1-fill">${esc(dash(data.signatoryName, "__________"))}</span></div>
-          <div class="f1-sign-line">पदनाम (Designation) <span class="f1-fill">${esc(dash(data.signatoryDesignation, "__________"))}</span></div>
-          <div class="f1-sign-line">आवेदन की तिथि (Date of Application) <span class="f1-fill">${esc(dash(appDate, "__________"))}</span></div>
+          <div class="f1-sign-line">Signature ______________________________</div>
+          <div class="f1-sign-line">Name <span class="f1-fill">${esc(dash(data.signatoryName, "__________"))}</span></div>
+          <div class="f1-sign-line">Designation <span class="f1-fill">${esc(dash(data.signatoryDesignation, "__________"))}</span></div>
+          <div class="f1-sign-line">Date of Application <span class="f1-fill">${esc(dash(appDate, "__________"))}</span></div>
         </td>
       </tr>
     </table>
 
-    <p class="f1-important">महत्वपूर्ण- आवेदन पर फर्म के सीईओ अथवा उनकी अनुपस्थिति में अधिकृत प्रतिनिधि के हस्ताक्षर हों ।</p>
-    <p class="f1-important">Important- Application should be signed by CEO of the firm, or in his absence by authorized representative.</p>
+    <p class="f1-important">Important — Application should be signed by CEO of the firm, or in his absence by authorized representative.</p>
   </div>
   ${printPageIndicatorHtml(1, 1)}
 </div>`;
@@ -382,7 +407,7 @@ export function defaultBisForm1PrintSettings(): PrintSettings {
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Arial",
-    font_size: 10,
+    font_size: 12,
     margin_top: 8,
     margin_bottom: 8,
     margin_left: 10,
@@ -435,72 +460,233 @@ function formStyles(settings: PrintSettings): string {
     .f1-sheet {
       font-family: Arial, Helvetica, sans-serif;
       color: #111;
-      font-size: 9px;
-      line-height: 1.3;
+      font-size: 11px;
+      line-height: 1.35;
     }
     .f1-fit-body {
       width: 100%;
       box-sizing: border-box;
     }
-    .f1-header { text-align: center; margin-bottom: 3px; }
-    .f1-form-title { font-size: 12.5px; font-weight: 700; }
-    .f1-sub { font-size: 8.5px; margin-top: 0; }
-    .f1-org { font-size: 11.5px; font-weight: 700; margin-top: 1px; }
-    .f1-scheme { font-size: 9.5px; margin-top: 1px; }
-    .f1-app-title { font-size: 10.5px; font-weight: 700; margin-top: 3px; }
-    .f1-app-title-en { font-size: 10.5px; font-weight: 800; text-transform: uppercase; }
-    .f1-box { width: 100%; border-collapse: collapse; margin-top: 3px; table-layout: fixed; }
-    .f1-box td, .f1-box th { border: 1px solid #111; vertical-align: top; padding: 2px 4px; }
-    .f1-label-cell { width: 32%; font-size: 8.5px; font-weight: 600; }
-    .f1-value-cell { font-size: 10.5px; font-weight: 700; }
-    .f1-mini { font-size: 7.5px; font-weight: 600; line-height: 1.15; color: #222; }
-    .f1-val { font-size: 9.5px; margin-top: 1px; word-break: break-word; }
+    .f1-header { text-align: center; margin-bottom: 6px; }
+    .f1-form-title { font-size: 15px; font-weight: 700; }
+    .f1-sub { font-size: 10px; margin-top: 2px; }
+    .f1-org { font-size: 13px; font-weight: 700; margin-top: 2px; }
+    .f1-scheme { font-size: 11px; margin-top: 2px; }
+    .f1-app-title-en {
+      font-size: 12px;
+      font-weight: 800;
+      margin-top: 4px;
+      letter-spacing: 0.02em;
+    }
+    .f1-box { width: 100%; border-collapse: collapse; margin-top: 4px; table-layout: fixed; }
+    .f1-box td, .f1-box th {
+      border: 1px solid #111;
+      vertical-align: middle;
+      padding: 4px 6px;
+      box-sizing: border-box;
+    }
+    .f1-label-cell { width: 32%; font-size: 10px; font-weight: 600; vertical-align: middle; }
+    .f1-value-cell { font-size: 12px; font-weight: 700; vertical-align: middle; }
+    .f1-mini {
+      font-size: 9px;
+      font-weight: 600;
+      line-height: 1.25;
+      color: #222;
+      margin-bottom: 2px;
+    }
+    .f1-val {
+      font-size: 11px;
+      margin-top: 0;
+      word-break: break-word;
+      line-height: 1.3;
+    }
     .f1-center { text-align: center; }
-    .f1-vlabel { font-weight: 700; font-size: 9px; writing-mode: horizontal-tb; }
-    .f1-vlabel-sm { font-weight: 700; font-size: 7.5px; line-height: 1.15; }
-    .f1-kind { font-weight: 700; font-size: 9px; margin-top: 1px; }
-    .f1-addr-kind { width: 9%; text-align: center; background: #fafafa; }
-    .f1-addr-main { width: 52%; }
-    .f1-contact-col { width: 22%; padding: 0 !important; }
-    .f1-contact-row { border-bottom: 1px solid #111; padding: 2px 4px; }
+    .f1-vlabel {
+      font-weight: 700;
+      font-size: 10px;
+      line-height: 1.25;
+      letter-spacing: 0.02em;
+    }
+    .f1-vlabel-sm {
+      font-weight: 700;
+      font-size: 8.5px;
+      line-height: 1.25;
+      padding: 2px 0;
+    }
+    .f1-kind { font-weight: 700; font-size: 11px; margin-top: 4px; }
+    .f1-addr-kind {
+      width: 10%;
+      text-align: center;
+      background: #fafafa;
+      vertical-align: middle;
+      padding: 6px 4px !important;
+    }
+    .f1-addr-main { width: 50%; vertical-align: top; }
+    .f1-contact-col { width: 22%; padding: 0 !important; vertical-align: top; }
+    .f1-contact-row {
+      border-bottom: 1px solid #111;
+      padding: 4px 6px;
+      box-sizing: border-box;
+    }
     .f1-contact-row:last-child { border-bottom: none; }
-    .f1-geo { width: 11%; }
+    .f1-geo {
+      width: 11%;
+      vertical-align: middle;
+      text-align: center;
+      padding: 5px 4px !important;
+    }
+    .f1-geo .f1-mini,
+    .f1-geo .f1-val {
+      text-align: center;
+    }
     .f1-pin { width: 10%; }
     .f1-meta-row td { vertical-align: middle; }
-    .f1-meta-label { width: 14%; font-size: 7.5px; font-weight: 700; text-align: center; line-height: 1.15; }
-    .f1-meta-box { width: 12%; text-align: center; font-weight: 700; font-size: 10px; }
-    .f1-mgmt-side { width: 8%; text-align: center; background: #fafafa; }
-    .f1-mgmt-head { text-align: center; font-weight: 700; font-size: 9px; background: #f3f3f3; }
-    .f1-mgmt-sub { text-align: center; font-size: 8px; font-weight: 600; width: 23%; }
+    .f1-meta-pair {
+      width: 33.33%;
+      text-align: center;
+      font-size: 11px;
+      font-weight: 600;
+      line-height: 1.35;
+      padding: 6px 8px !important;
+    }
+    .f1-meta-pair strong {
+      font-weight: 700;
+    }
+    .f1-mgmt-side {
+      width: 9%;
+      text-align: center;
+      background: #fafafa;
+      vertical-align: middle;
+      padding: 6px 2px !important;
+    }
+    .f1-vlabel-vert {
+      display: inline-block;
+      writing-mode: vertical-rl;
+      transform: rotate(180deg);
+      text-orientation: mixed;
+      letter-spacing: 0.18em;
+      white-space: nowrap;
+      font-size: 11px;
+      line-height: 1.1;
+    }
+    .f1-mgmt-head {
+      text-align: center;
+      font-weight: 700;
+      font-size: 11px;
+      background: #f3f3f3;
+      padding: 5px 4px !important;
+    }
+    .f1-mgmt-sub {
+      text-align: center;
+      font-size: 10px;
+      font-weight: 600;
+      width: 22.75%;
+      padding: 4px !important;
+    }
     .f1-mgmt-body { padding: 0 !important; vertical-align: top; }
     .f1-inner { width: 100%; border-collapse: collapse; }
-    .f1-inner td { border: none; border-bottom: 1px solid #ccc; padding: 2px 4px; font-size: 9.5px; width: 50%; }
+    .f1-inner td {
+      border: none;
+      border-bottom: 1px solid #ccc;
+      padding: 3px 5px;
+      font-size: 11px;
+      width: 50%;
+      vertical-align: middle;
+    }
     .f1-inner tr:last-child td { border-bottom: none; }
-    .f1-contact-label { font-size: 8px; font-weight: 600; background: #fafafa; }
-    .f1-contact-value { font-size: 10px; font-weight: 700; }
-    .f1-note { font-size: 7.5px; margin: 3px 0 4px; font-style: italic; }
-    .f1-mark-line { font-size: 9px; margin: 4px 0 3px; line-height: 1.3; }
+    .f1-contact-label {
+      font-size: 10px;
+      font-weight: 600;
+      background: #fafafa;
+      vertical-align: middle;
+    }
+    .f1-contact-value { font-size: 12px; font-weight: 700; vertical-align: middle; }
+    .f1-note { font-size: 9px; margin: 4px 0 5px; font-style: italic; line-height: 1.3; }
+    .f1-mark-line { font-size: 11px; margin: 5px 0 4px; line-height: 1.4; }
     .f1-fill { font-weight: 700; text-decoration: underline; }
-    .f1-side-label { width: 12%; text-align: center; background: #fafafa; }
-    .f1-product-val { font-size: 10.5px; font-weight: 700; text-transform: uppercase; }
+    .f1-side-label {
+      width: 14%;
+      text-align: center;
+      background: #fafafa;
+      vertical-align: middle;
+      padding: 6px 4px !important;
+    }
+    .f1-product-val {
+      font-size: 12px;
+      font-weight: 700;
+      vertical-align: middle;
+    }
     .f1-std-wrap { padding: 0 !important; }
     .f1-std { width: 100%; border-collapse: collapse; }
     .f1-std td { border: none; border-right: 1px solid #111; vertical-align: top; }
     .f1-std td:last-child { border-right: none; }
-    .f1-is-meta { width: 28%; font-size: 9px; line-height: 1.4; padding: 3px 5px !important; }
+    .f1-is-meta {
+      width: 28%;
+      font-size: 11px;
+      line-height: 1.45;
+      padding: 5px 6px !important;
+    }
     .f1-grades { width: 72%; padding: 0 !important; }
-    .f1-grades-head { text-align: center; font-weight: 700; font-size: 9px; border-bottom: 1px solid #111; padding: 2px; background: #f3f3f3; }
-    .f1-grades-body { padding: 3px 5px; font-size: 8.5px; line-height: 1.3; white-space: pre-wrap; }
-    .f1-cap-title { width: 34%; font-size: 8px; font-weight: 700; line-height: 1.2; }
-    .f1-cap-cell { width: 22%; }
-    .f1-licenses-body { margin-top: 2px; font-size: 9px; min-height: 12px; }
-    .f1-declaration p { margin: 0 0 4px; font-size: 8px; text-align: justify; line-height: 1.3; }
-    .f1-declaration p:last-child { margin-bottom: 0; }
-    .f1-seal { width: 34%; }
-    .f1-seal-box { width: 20mm; height: 20mm; border: 1px solid #111; margin-top: 3px; }
-    .f1-sign-fields { font-size: 9px; }
-    .f1-sign-line { margin: 4px 0; }
-    .f1-important { font-size: 8px; margin: 3px 0 0; font-weight: 600; }
+    .f1-grades-head {
+      text-align: center;
+      font-weight: 700;
+      font-size: 11px;
+      border-bottom: 1px solid #111;
+      padding: 4px;
+      background: #f3f3f3;
+    }
+    .f1-grades-body {
+      padding: 5px 6px;
+      font-size: 10px;
+      line-height: 1.35;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .f1-cap-title {
+      width: 34%;
+      font-size: 10px;
+      font-weight: 700;
+      line-height: 1.3;
+      vertical-align: middle;
+    }
+    .f1-cap-cell {
+      width: 22%;
+      vertical-align: middle;
+      text-align: center;
+      padding: 5px 4px !important;
+    }
+    .f1-cap-cell .f1-mini,
+    .f1-cap-cell .f1-val {
+      text-align: center;
+    }
+    .f1-licenses-body { margin-top: 3px; font-size: 11px; min-height: 16px; line-height: 1.35; }
+    .f1-declaration p {
+      margin: 0;
+      font-size: 9.5px;
+      text-align: justify;
+      line-height: 1.4;
+    }
+    .f1-seal {
+      width: 50%;
+      vertical-align: middle;
+      text-align: center;
+    }
+    .f1-seal .f1-mini {
+      text-align: center;
+    }
+    .f1-seal-box {
+      width: 22mm;
+      height: 22mm;
+      border: 1px solid #111;
+      margin: 6px auto 0;
+    }
+    .f1-sign-fields {
+      width: 50%;
+      font-size: 11px;
+      vertical-align: middle;
+    }
+    .f1-sign-line { margin: 6px 0; line-height: 1.35; }
+    .f1-important { font-size: 9.5px; margin: 5px 0 0; font-weight: 600; line-height: 1.35; }
     @media print {
       html, body { overflow: hidden !important; }
       .doc-page {

@@ -7,7 +7,6 @@ import {
 } from "docx";
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
-import { LONG_DURATION_TEST_ROW_COUNT } from "@backend/modules/bis/undertaking-long-duration-test";
 import {
   buildUndertakingLongDurationTestCompany,
   undertakingLongDurationTestLetterheadSettings,
@@ -104,11 +103,16 @@ async function buildUndertakingLongDurationTestDocx(
     ),
   ];
 
-  for (let i = 0; i < LONG_DURATION_TEST_ROW_COUNT; i += 1) {
-    const row = doc.test_rows[i];
+  const testRows =
+    doc.test_rows.length > 0
+      ? doc.test_rows
+      : [{ type_of_test: "", duration_of_test: "", date_of_completion: "" }];
+
+  for (let i = 0; i < testRows.length; i += 1) {
+    const row = testRows[i]!;
     children.push(
       plainParagraph(
-        `${i + 1}. Type of Test: ${row?.type_of_test || "—"} | Duration: ${row?.duration_of_test || "—"} | Date of Completion: ${row?.date_of_completion ? formatMetaDate(row.date_of_completion) : "—"}`,
+        `${i + 1}. Type of Test: ${row.type_of_test || "—"} | Duration: ${row.duration_of_test || "—"} | Date of Completion: ${row.date_of_completion ? formatMetaDate(row.date_of_completion) : "—"}`,
       ),
     );
   }
@@ -166,13 +170,18 @@ export async function downloadUndertakingLongDurationTestExcel(
     ["Sr. No.", "Type of Test", "Duration of Test", "Date of Completion of Test"],
   ];
 
-  for (let i = 0; i < LONG_DURATION_TEST_ROW_COUNT; i += 1) {
-    const row = doc.test_rows[i];
+  const testRows =
+    doc.test_rows.length > 0
+      ? doc.test_rows
+      : [{ type_of_test: "", duration_of_test: "", date_of_completion: "" }];
+
+  for (let i = 0; i < testRows.length; i += 1) {
+    const row = testRows[i]!;
     rows.push([
       i + 1,
-      row?.type_of_test || "",
-      row?.duration_of_test || "",
-      row?.date_of_completion ? formatMetaDate(row.date_of_completion) : "",
+      row.type_of_test || "",
+      row.duration_of_test || "",
+      row.date_of_completion ? formatMetaDate(row.date_of_completion) : "",
     ]);
   }
 

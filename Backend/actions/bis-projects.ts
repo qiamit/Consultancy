@@ -14,9 +14,11 @@ import {
 } from "@backend/shared/dropdown-keys";
 import {
   isApplicationProjectKind,
+  isInclusionProjectKind,
   isLicenseProjectKind,
   licenseProjectKindDbValue,
   applicationProjectKindDbValue,
+  inclusionProjectKindDbValue,
 } from "@backend/modules/bis/bis-project-kind";
 import {
   DEFAULT_BIS_APPLICATION_STAGE,
@@ -1178,5 +1180,96 @@ export async function convertLicenseToApplication(
   revalidatePath("/dashboard/bis-new-applications");
   revalidatePath("/dashboard/expired-licenses");
   revalidatePath("/dashboard/bis-license-renewals");
+  return { ok: true, id: created.id as string };
+}
+
+/**
+ * Start a BIS Inclusion case from an existing operative license.
+ * Keeps CM/L on the new row; does not archive the source license.
+ */
+export async function createInclusionFromLicense(
+  licenseId: string,
+): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = licenseId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid license" };
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("bis_projects")
+    .select(
+      "id, title, project_kind, status, client_id, is_code_id, portal_user_id, portal_password, case_handled_by, case_referred_by, billing_amount, billing_frequency, target_date, cm_l_digits, license_number, notes, is_qe_managed",
+    )
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!existing) return { ok: false, error: "License not found." };
+  if (isApplicationProjectKind(existing.project_kind)) {
+    return { ok: false, error: "Select an existing license, not an application." };
+  }
+  if (isInclusionProjectKind(existing.project_kind)) {
+    return { ok: false, error: "This record is already an inclusion case." };
+  }
+
+  const clientId = (existing.client_id as string | null)?.trim() ?? "";
+  const isCodeId = (existing.is_code_id as string | null)?.trim() ?? "";
+  if (!clientId) return { ok: false, error: "Client is missing on this license." };
+  if (!isCodeId) return { ok: false, error: "IS code is missing on this license." };
+
+  const inclusionKind = await inclusionProjectKindDbValue(supabase);
+  const title = await buildTitle(supabase, clientId, isCodeId, "BIS inclusion");
+  const today = new Date().toISOString().split("T")[0]!;
+  const now = new Date().toISOString();
+  const cmDigits = String(existing.cm_l_digits ?? "").replace(/\D/g, "");
+  const licenseNo = String(existing.license_number ?? "").trim();
+
+  const { data: created, error: insertError } = await supabase
+    .from("bis_projects")
+    .insert({
+      title,
+      project_kind: inclusionKind,
+      status: "in_progress",
+      client_id: clientId,
+      is_code_id: isCodeId,
+      cm_l_digits: cmDigits || null,
+      license_validity_date: null,
+      license_number: licenseNo || null,
+      start_date: today,
+      target_date: null,
+      case_handled_by:
+        String(existing.case_handled_by ?? "").trim() || "Amit Kumar",
+      case_referred_by: String(existing.case_referred_by ?? "").trim() || "QE",
+      billing_amount: existing.billing_amount ?? 0,
+      billing_frequency:
+        String(existing.billing_frequency ?? "").trim() || "Yearly",
+      portal_user_id: (existing.portal_user_id as string | null)?.trim() || null,
+      portal_password:
+        (existing.portal_password as string | null)?.trim() || null,
+      application_stage: DEFAULT_BIS_APPLICATION_STAGE,
+      notes: [
+        String(existing.notes ?? "").trim(),
+        `Inclusion started from license${cmDigits ? ` CM/L-${cmDigits}` : ""}.`,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+      is_qe_managed: existing.is_qe_managed !== false,
+      created_by: user.id,
+      updated_at: now,
+    })
+    .select("id")
+    .single();
+
+  if (insertError) return { ok: false, error: insertError.message };
+  if (!created?.id) return { ok: false, error: "Failed to create inclusion case." };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-new-inclusion");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/our-bis-licenses");
   return { ok: true, id: created.id as string };
 }

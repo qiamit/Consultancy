@@ -1,7 +1,19 @@
 import type { TopManagementStored } from "@backend/modules/bis/top-management";
 import { resolvePrimaryTopManagementPerson } from "@backend/modules/bis/top-management";
 
-export const LONG_DURATION_TEST_ROW_COUNT = 4;
+/** @deprecated Prefer variable-length rows; kept for older print pad helpers. */
+export const LONG_DURATION_TEST_ROW_COUNT = 1;
+
+export const LONG_DURATION_TEST_TYPE_OPTIONS = [
+  "Salt Spray Test",
+  "Humidity Resistance Test",
+  "Accelerated Weathering Test",
+  "UV Exposure Test",
+  "Thermal Cycling Test",
+  "Endurance / Life Test",
+  "Ageing Test",
+  "Other Long Duration Test",
+] as const;
 
 export type LongDurationTestRow = {
   type_of_test: string;
@@ -19,12 +31,16 @@ export type UndertakingLongDurationTestStored = {
   test_rows: LongDurationTestRow[];
 };
 
-export function defaultLongDurationTestRows(): LongDurationTestRow[] {
-  return Array.from({ length: LONG_DURATION_TEST_ROW_COUNT }, () => ({
+export function emptyLongDurationTestRow(): LongDurationTestRow {
+  return {
     type_of_test: "",
     duration_of_test: "",
     date_of_completion: "",
-  }));
+  };
+}
+
+export function defaultLongDurationTestRows(): LongDurationTestRow[] {
+  return [emptyLongDurationTestRow()];
 }
 
 export function defaultUndertakingLongDurationTestDocument(): UndertakingLongDurationTestStored {
@@ -60,8 +76,7 @@ export function documentHasContent(doc: UndertakingLongDurationTestStored): bool
 }
 
 function parseLongDurationTestRows(raw: unknown): LongDurationTestRow[] {
-  const defaults = defaultLongDurationTestRows();
-  if (!Array.isArray(raw)) return defaults;
+  if (!Array.isArray(raw)) return defaultLongDurationTestRows();
 
   const parsed = raw
     .map((item) => {
@@ -75,7 +90,7 @@ function parseLongDurationTestRows(raw: unknown): LongDurationTestRow[] {
     })
     .filter((row): row is LongDurationTestRow => row !== null);
 
-  return defaults.map((defaultRow, index) => parsed[index] ?? defaultRow);
+  return parsed.length > 0 ? parsed : defaultLongDurationTestRows();
 }
 
 export function parseUndertakingLongDurationTest(
@@ -150,6 +165,8 @@ export function mergeUndertakingLongDurationTestWithDefaults(
   stored: UndertakingLongDurationTestStored,
   defaults: Partial<UndertakingLongDurationTestStored>,
 ): UndertakingLongDurationTestStored {
+  const storedRows = stored.test_rows ?? [];
+  const hasAnyFilled = storedRows.some(longDurationTestRowHasContent);
   return {
     declarant_name: stored.declarant_name || defaults.declarant_name || "",
     product_for_mark: stored.product_for_mark || defaults.product_for_mark || "",
@@ -158,9 +175,6 @@ export function mergeUndertakingLongDurationTestWithDefaults(
     signatory_name: stored.signatory_name || defaults.signatory_name || "",
     signatory_designation:
       stored.signatory_designation || defaults.signatory_designation || "",
-    test_rows:
-      stored.test_rows.length === LONG_DURATION_TEST_ROW_COUNT
-        ? stored.test_rows
-        : parseLongDurationTestRows(stored.test_rows),
+    test_rows: hasAnyFilled ? storedRows : defaultLongDurationTestRows(),
   };
 }

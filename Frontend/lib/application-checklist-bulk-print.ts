@@ -223,7 +223,7 @@ import {
   type LegalDocumentStored,
 } from "@backend/modules/bis/legal-documents";
 import { fileNameFromStoredDocumentRef } from "@backend/modules/storage/cmpf-306-documents";
-import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
+import { PDFArray, PDFDocument, PDFName, PDFRawStream, PDFRef, rgb, StandardFonts } from "pdf-lib";
 
 /** Order matches Application Form document shortcuts (print / binding sequence). */
 export const APPLICATION_CHECKLIST_PRINT_DOCS = [
@@ -537,16 +537,17 @@ export function buildChecklistBulkListRows(
       });
       return;
     }
+    const counters = { osl: 0, pi: 0 };
     reports.forEach((report, index) => {
-      const sample = report.sample_label.trim();
       const sourceTag = report.source === "pi" ? "PI" : "OSL";
+      const counterKey = report.source === "pi" ? "pi" : "osl";
+      counters[counterKey] += 1;
+      const serial = String(counters[counterKey]).padStart(2, "0");
       rows.push({
         kind: "ftr_sample",
         id: `factory_test_report:${index}`,
         rowKey: `factory_test_report:${index}`,
-        label: sample
-          ? `Factory Test Report — ${sample}`
-          : `Factory Test Report ${index + 1} (${sourceTag})`,
+        label: `Factory Test Report ${sourceTag} - ${serial}`,
         hasContent: true,
         editKey: CHECKLIST_PRINT_DOC_EDIT_KEYS.factory_test_reports,
         reportIndex: index,
@@ -1390,10 +1391,15 @@ function buildSingleChecklistDocHtml(
     }
     case "updated_scheme_of_inspection": {
       const settings = withBulkLetterhead(defaultUpdatedSchemeOfInspectionPrintSettings());
-      const data = {
-        ...letter,
-        document: ctx.updatedSchemeOfInspection,
-      };
+      const data = withDocumentSignatureImage(
+        {
+          ...letter,
+          applicationNumber,
+          dateOfApplication: ctx.dateOfApplication,
+          document: ctx.updatedSchemeOfInspection,
+        },
+        topManagement,
+      );
       return buildUpdatedSchemeOfInspectionHtml(data, settings, printAssets);
     }
     case "undertaking_long_duration_test": {
@@ -1494,7 +1500,8 @@ export function openChecklistDocumentView(html: string): void {
 async function mergePdfBlobs(blobs: Blob[]): Promise<Blob> {
   const merged = await PDFDocument.create();
   for (const blob of blobs) {
-    const bytes = new Uint8Array(await blob.arrayBuffer());
+    const cleaned = await stripBlankPdfPages(blob);
+    const bytes = new Uint8Array(await cleaned.arrayBuffer());
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
     const pages = await merged.copyPages(doc, doc.getPageIndices());
     for (const page of pages) merged.addPage(page);
@@ -1503,6 +1510,62 @@ async function mergePdfBlobs(blobs: Blob[]): Promise<Blob> {
   // Copy into a fresh ArrayBuffer-backed Uint8Array for Blob Part typing.
   const copy = new Uint8Array(out.byteLength);
   copy.set(out);
+  return new Blob([copy], { type: "application/pdf" });
+}
+
+/** Content-stream byte length for a PDF page (approx. ink density). */
+function pdfPageContentByteLength(page: ReturnType<PDFDocument["getPage"]>): number {
+  const contents = page.node.get(PDFName.of("Contents"));
+  if (!contents) return 0;
+
+  const streamSize = (node: unknown): number => {
+    if (node instanceof PDFRef) {
+      return streamSize(page.doc.context.lookup(node));
+    }
+    if (node instanceof PDFRawStream) {
+      return node.contents.byteLength;
+    }
+    if (node instanceof PDFArray) {
+      let total = 0;
+      for (let i = 0; i < node.size(); i++) {
+        total += streamSize(node.get(i));
+      }
+      return total;
+    }
+    return 0;
+  };
+
+  return streamSize(contents);
+}
+
+/**
+ * Drop trailing / interstitial near-empty pages that Chromium sometimes emits
+ * when print CSS uses full-page min-height.
+ */
+async function stripBlankPdfPages(blob: Blob): Promise<Blob> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const src = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const count = src.getPageCount();
+  if (count <= 1) return blob;
+
+  // Chromium blank pages still carry a tiny content stream (~50–400 bytes).
+  const BLANK_MAX_BYTES = 480;
+  const keep: number[] = [];
+  for (let i = 0; i < count; i++) {
+    const page = src.getPage(i);
+    const size = pdfPageContentByteLength(page);
+    if (size > BLANK_MAX_BYTES) keep.push(i);
+  }
+
+  // Never delete everything — keep original if heuristic fails.
+  if (keep.length === 0 || keep.length === count) return blob;
+
+  const out = await PDFDocument.create();
+  const copied = await out.copyPages(src, keep);
+  for (const page of copied) out.addPage(page);
+  const saved = await out.save();
+  const copy = new Uint8Array(saved.byteLength);
+  copy.set(saved);
   return new Blob([copy], { type: "application/pdf" });
 }
 
@@ -1553,9 +1616,9 @@ function pdfSettingsFromHtml(html: string): Pick<PrintSettings, "paper_size" | "
   };
 }
 
-/** Hide per-document page footers — pack-level continuous numbers are stamped after merge. */
-function htmlWithoutLocalPageIndicators(html: string): string {
-  const hideCss = `<style id="bulk-hide-local-page-nums">
+/** Prepare document HTML for bulk PDF — match on-screen preview, no forced blank pages. */
+function prepareHtmlForBulkPdf(html: string): string {
+  const hideCss = `<style id="bulk-pdf-prepare">
 .pd-page-indicator,
 .cmpf-page-indicator,
 .print-sheet-page-indicator,
@@ -1567,10 +1630,44 @@ function htmlWithoutLocalPageIndicators(html: string): string {
 .ldt-page-indicator,
 .mmf-page-indicator,
 .ftr-page-indicator,
-.print-page-number { display: none !important; visibility: hidden !important; }
+.print-page-number,
+.print-sheet-page-gap { display: none !important; visibility: hidden !important; }
+
+html, body {
+  margin: 0 !important;
+  padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  background: #fff !important;
+}
+
+.print-sheet,
+.print-sheet-natural,
+.doc-page,
+.f1-sheet {
+  min-height: 0 !important;
+  height: auto !important;
+  max-height: none !important;
+  page-break-after: auto !important;
+  break-after: auto !important;
+}
+
+.print-sheet:last-child,
+.print-sheet-natural:last-child,
+.f1-sheet:last-child {
+  page-break-after: avoid !important;
+  break-after: avoid !important;
+}
 </style>`;
   if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${hideCss}</head>`);
   return `${hideCss}${html}`;
+}
+
+/** @deprecated use prepareHtmlForBulkPdf */
+function htmlWithoutLocalPageIndicators(html: string): string {
+  return prepareHtmlForBulkPdf(html);
 }
 
 async function blobToDataUrl(blob: Blob): Promise<string> {
@@ -1590,17 +1687,17 @@ function attachmentPathName(url: string, fallbackRef: string): string {
   }
 }
 
-async function renderAttachmentAsPdfBlob(opts: {
+async function buildAttachmentHtmlPage(opts: {
   blob: Blob;
   url: string;
   label: string;
   documentRef: string;
-}): Promise<Blob> {
+}): Promise<string> {
   const pathName = attachmentPathName(opts.url, opts.documentRef);
   const isPdf =
-    opts.blob.type.includes("pdf") || /\.pdf(?:\?|$)/i.test(pathName) || /\.pdf$/i.test(opts.documentRef);
-  if (isPdf) return opts.blob;
-
+    opts.blob.type.includes("pdf") ||
+    /\.pdf(?:\?|$)/i.test(pathName) ||
+    /\.pdf$/i.test(opts.documentRef);
   const isImage =
     opts.blob.type.startsWith("image/") ||
     /\.(png|jpe?g|gif|webp|bmp|svg)(?:\?|$)/i.test(pathName) ||
@@ -1610,36 +1707,99 @@ async function renderAttachmentAsPdfBlob(opts: {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+  const fileName = fileNameFromStoredDocumentRef(opts.documentRef) || opts.label || "Attachment";
+  const safeFile = String(fileName)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 
   let bodyHtml: string;
   if (isImage) {
     const dataUrl = await blobToDataUrl(opts.blob);
-    bodyHtml = `<img src="${dataUrl}" alt="${safeLabel}" style="max-width:100%;max-height:277mm;object-fit:contain;display:block;margin:0 auto;"/>`;
+    bodyHtml = `
+      <div style="font-family:Arial,Helvetica,sans-serif;padding:8mm;color:#111;">
+        <p style="font-size:12px;font-weight:700;margin:0 0 8px;">${safeLabel}</p>
+        <img src="${dataUrl}" alt="${safeLabel}" style="max-width:100%;max-height:260mm;object-fit:contain;display:block;margin:0 auto;"/>
+      </div>`;
+  } else if (isPdf) {
+    bodyHtml = `
+      <div style="font-family:Arial,Helvetica,sans-serif;padding:24mm 18mm;color:#111;">
+        <h1 style="font-size:16px;margin:0 0 12px;">Attachment (PDF)</h1>
+        <p style="font-size:12px;margin:0 0 8px;"><strong>${safeLabel}</strong></p>
+        <p style="font-size:11px;margin:0;color:#444;">File: ${safeFile}</p>
+        <p style="font-size:11px;margin:16px 0 0;color:#666;">
+          This PDF attachment is included in full in Selected Print / Selected PDF (Single).
+        </p>
+      </div>`;
   } else {
-    const fileName = fileNameFromStoredDocumentRef(opts.documentRef) || opts.label || "Attachment";
     bodyHtml = `
       <div style="font-family:Arial,Helvetica,sans-serif;padding:24mm 18mm;color:#111;">
         <h1 style="font-size:16px;margin:0 0 12px;">Attachment</h1>
         <p style="font-size:12px;margin:0 0 8px;"><strong>${safeLabel}</strong></p>
-        <p style="font-size:11px;margin:0;color:#444;">File: ${String(fileName)
-          .replace(/&/g, "&amp;")
-          .replace(/</g, "&lt;")
-          .replace(/>/g, "&gt;")}</p>
-        <p style="font-size:11px;margin:16px 0 0;color:#666;">
-          This file type cannot be embedded in the combined PDF preview. Download the original from the checklist if needed.
-        </p>
+        <p style="font-size:11px;margin:0;color:#444;">File: ${safeFile}</p>
       </div>`;
   }
 
-  const html = `<!DOCTYPE html>
+  return `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"/>
 <style>
 @page { size: A4 portrait; margin: 0; }
-html, body { margin: 0; padding: 10mm; background: #fff; }
+html, body { margin: 0; padding: 0; background: #fff; height: auto; }
 </style></head><body>${bodyHtml}</body></html>`;
+}
 
+/**
+ * Build one combined HTML pack for Word / print preview — checklist docs +
+ * attachment pages (images embedded; PDF attachments as labeled sheets).
+ */
+export async function buildCombinedHtmlFromAllPackItems(
+  items: ChecklistBulkPackItem[],
+): Promise<string> {
+  const htmlDocs: { id: string; html: string }[] = [];
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]!;
+    if (item.kind === "html") {
+      htmlDocs.push({ id: item.id, html: item.html });
+      continue;
+    }
+    try {
+      const url = await resolveChecklistAttachmentUrl(item.documentRef);
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const blob = await res.blob();
+      const html = await buildAttachmentHtmlPage({
+        blob,
+        url,
+        label: item.label,
+        documentRef: item.documentRef,
+      });
+      htmlDocs.push({ id: `attachment-${i}`, html });
+    } catch {
+      // Skip missing attachments.
+    }
+  }
+
+  if (!htmlDocs.length) throw new Error("Nothing to combine.");
+  return combineChecklistPrintHtml(htmlDocs);
+}
+
+async function renderAttachmentAsPdfBlob(opts: {
+  blob: Blob;
+  url: string;
+  label: string;
+  documentRef: string;
+}): Promise<Blob> {
+  const pathName = attachmentPathName(opts.url, opts.documentRef);
+  const isPdf =
+    opts.blob.type.includes("pdf") ||
+    /\.pdf(?:\?|$)/i.test(pathName) ||
+    /\.pdf$/i.test(opts.documentRef);
+  if (isPdf) return opts.blob;
+
+  const html = await buildAttachmentHtmlPage(opts);
   return await renderPdfViaPlaywright({
-    html,
+    html: prepareHtmlForBulkPdf(html),
     filename: "attachment.pdf",
     format: "a4",
     landscape: false,
@@ -1717,7 +1877,7 @@ async function buildChecklistCombinedPdfBlob(opts: {
       if (item.kind === "html") {
         const settings = pdfSettingsFromHtml(item.html);
         const blob = await renderPdfViaPlaywright({
-          html: htmlWithoutLocalPageIndicators(item.html),
+          html: prepareHtmlForBulkPdf(item.html),
           filename: `${item.id}.pdf`,
           format: mapPageSizeToPlaywrightFormat(settings.paper_size),
           landscape: settings.orientation === "landscape",
@@ -1748,7 +1908,7 @@ async function buildChecklistCombinedPdfBlob(opts: {
       for (const doc of opts.docs) {
         const settings = pdfSettingsFromHtml(doc.html);
         const blob = await renderPdfViaPlaywright({
-          html: htmlWithoutLocalPageIndicators(doc.html),
+          html: prepareHtmlForBulkPdf(doc.html),
           filename: `${doc.id}.pdf`,
           format: mapPageSizeToPlaywrightFormat(settings.paper_size),
           landscape: settings.orientation === "landscape",
@@ -1760,7 +1920,7 @@ async function buildChecklistCombinedPdfBlob(opts: {
       const html = (opts.html ?? "").trim();
       if (html) {
         const blob = await renderPdfViaPlaywright({
-          html: htmlWithoutLocalPageIndicators(html),
+          html: prepareHtmlForBulkPdf(html),
           filename: "checklist.pdf",
           format: "a4",
           landscape: false,
@@ -1793,8 +1953,9 @@ async function buildChecklistCombinedPdfBlob(opts: {
   }
 
   if (blobs.length === 0) throw new Error("Nothing to export as PDF.");
-  const merged = blobs.length === 1 ? blobs[0]! : await mergePdfBlobs(blobs);
-  return await stampContinuousPageNumbers(merged);
+  const merged =
+    blobs.length === 1 ? await stripBlankPdfPages(blobs[0]!) : await mergePdfBlobs(blobs);
+  return await stampContinuousPageNumbers(await stripBlankPdfPages(merged));
 }
 
 export async function downloadChecklistCombinedPdf(opts: {

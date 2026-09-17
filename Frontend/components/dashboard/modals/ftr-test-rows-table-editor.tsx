@@ -265,6 +265,7 @@ export function FtrTestRowsTableEditor({
         row.test_name,
         row.clause_no,
         row.test_method ?? "",
+        row.unit,
         row.specified_requirements,
         row.observed_value,
         normalizeFtrRemark(row.remark),
@@ -347,6 +348,9 @@ export function FtrTestRowsTableEditor({
             <th className="border-b border-zinc-700 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
               Specified Requirements
             </th>
+            <th className="w-24 border-b border-zinc-700 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
+              Unit
+            </th>
             <th className="border-b border-zinc-700 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
               Observed Value
             </th>
@@ -386,6 +390,9 @@ export function FtrTestRowsTableEditor({
                   row={row}
                   onSave={(value) => updateRow(row, { specified_requirements: value })}
                 />
+              </td>
+              <td className="px-3 py-2 align-top text-center text-zinc-300">
+                {(row.unit ?? "").trim() || "—"}
               </td>
               <td className="px-3 py-2 align-top">
                 <ObservedValueInput

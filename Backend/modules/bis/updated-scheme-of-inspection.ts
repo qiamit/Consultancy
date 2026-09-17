@@ -11,6 +11,12 @@ export type SitTestRow = {
   remarks: string;
 };
 
+/** Extra Annex C rows beyond the standard 7 sections. */
+export type SitAnnexExtraRow = {
+  header: string;
+  text: string;
+};
+
 export type UpdatedSchemeOfInspectionStored = {
   pm_reference: string;
   laboratory_text: string;
@@ -24,7 +30,49 @@ export type UpdatedSchemeOfInspectionStored = {
   note_2: string;
   note_3: string;
   test_rows: SitTestRow[];
+  annex_extra_rows: SitAnnexExtraRow[];
+  note_extra_rows: SitAnnexExtraRow[];
 };
+
+export type UsitAnnexFieldKey = keyof Pick<
+  UpdatedSchemeOfInspectionStored,
+  | "laboratory_text"
+  | "test_records_text"
+  | "labelling_marking_text"
+  | "control_unit_text"
+  | "levels_of_control_text"
+  | "standard_mark_text"
+  | "rejections_text"
+>;
+
+/** Standard Annex C section headers (print + editor). */
+export const USIT_ANNEX_SECTIONS: ReadonlyArray<{
+  key: UsitAnnexFieldKey;
+  header: string;
+}> = [
+  { key: "laboratory_text", header: "Laboratory" },
+  { key: "test_records_text", header: "Test Records" },
+  { key: "labelling_marking_text", header: "Labelling & Marking" },
+  { key: "control_unit_text", header: "Control Unit" },
+  { key: "levels_of_control_text", header: "Levels of Control" },
+  { key: "standard_mark_text", header: "Standard Mark" },
+  { key: "rejections_text", header: "Rejections" },
+];
+
+export type UsitNoteFieldKey = keyof Pick<
+  UpdatedSchemeOfInspectionStored,
+  "note_1" | "note_2" | "note_3"
+>;
+
+/** Standard Table 1 note headers (print + editor). */
+export const USIT_NOTE_SECTIONS: ReadonlyArray<{
+  key: UsitNoteFieldKey;
+  header: string;
+}> = [
+  { key: "note_1", header: "Note 1" },
+  { key: "note_2", header: "Note 2" },
+  { key: "note_3", header: "Note 3" },
+];
 
 function sitDataRow(
   partial: Omit<SitTestRow, "row_kind"> & { row_kind?: SitTestRowKind },
@@ -54,6 +102,10 @@ export function defaultSitTestRowsIs17631(): SitTestRow[] {
   return defaultSitTestRows();
 }
 
+export function emptySitAnnexExtraRow(): SitAnnexExtraRow {
+  return { header: "", text: "" };
+}
+
 export function defaultUpdatedSchemeOfInspectionDocument(): UpdatedSchemeOfInspectionStored {
   return {
     pm_reference: "",
@@ -68,6 +120,8 @@ export function defaultUpdatedSchemeOfInspectionDocument(): UpdatedSchemeOfInspe
     note_2: "",
     note_3: "",
     test_rows: defaultSitTestRows(),
+    annex_extra_rows: [],
+    note_extra_rows: [],
   };
 }
 
@@ -96,7 +150,13 @@ export function documentHasContent(doc: UpdatedSchemeOfInspectionStored): boolea
     doc.note_1.trim().length > 0 ||
     doc.note_2.trim().length > 0 ||
     doc.note_3.trim().length > 0 ||
-    doc.test_rows.some(sitRowHasContent)
+    doc.test_rows.some(sitRowHasContent) ||
+    (doc.annex_extra_rows ?? []).some(
+      (r) => r.header.trim().length > 0 || r.text.trim().length > 0,
+    ) ||
+    (doc.note_extra_rows ?? []).some(
+      (r) => r.header.trim().length > 0 || r.text.trim().length > 0,
+    )
   );
 }
 
@@ -122,6 +182,20 @@ function parseSitTestRows(raw: unknown): SitTestRow[] {
     .filter((row): row is SitTestRow => row !== null);
 }
 
+function parseAnnexExtraRows(raw: unknown): SitAnnexExtraRow[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as Record<string, unknown>;
+      return {
+        header: String(row.header ?? "").trim(),
+        text: String(row.text ?? "").trim(),
+      } satisfies SitAnnexExtraRow;
+    })
+    .filter((row): row is SitAnnexExtraRow => row !== null);
+}
+
 export function parseUpdatedSchemeOfInspection(
   raw: unknown,
 ): UpdatedSchemeOfInspectionStored {
@@ -140,6 +214,8 @@ export function parseUpdatedSchemeOfInspection(
     note_2: String(r.note_2 ?? "").trim(),
     note_3: String(r.note_3 ?? "").trim(),
     test_rows: parseSitTestRows(r.test_rows),
+    annex_extra_rows: parseAnnexExtraRows(r.annex_extra_rows),
+    note_extra_rows: parseAnnexExtraRows(r.note_extra_rows),
   };
 }
 
@@ -193,6 +269,8 @@ export function resolveUpdatedSchemeOfInspectionDefaults(input: {
     note_3:
       "Note-3: Levels of control given in column 3 are only recommendatory in nature. The manufacturer may define the control unit/batch/lot and submit his own levels of control in column 3 with proper justification for approval by BO Head.",
     test_rows: defaultSitTestRows(),
+    annex_extra_rows: [],
+    note_extra_rows: [],
   };
 }
 
@@ -216,6 +294,8 @@ export function mergeUpdatedSchemeOfInspectionWithDefaults(
       stored.test_rows.length > 0 && stored.test_rows.some(sitRowHasContent)
         ? stored.test_rows
         : defaultSitTestRows(),
+    annex_extra_rows: stored.annex_extra_rows ?? [],
+    note_extra_rows: stored.note_extra_rows ?? [],
   };
 }
 

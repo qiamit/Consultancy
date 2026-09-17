@@ -12,6 +12,12 @@ export const DASHBOARD_MODULES = [
     inMainNav: true,
   },
   {
+    key: "bis_new_inclusion",
+    label: "BIS New Inclusion",
+    href: "/dashboard/bis-new-inclusion",
+    inMainNav: true,
+  },
+  {
     key: "bis_license_renewals",
     label: "BIS Licenses Renewals",
     href: "/dashboard/bis-license-renewals",
@@ -183,6 +189,15 @@ export function normalizeModuleAccessMap(raw: unknown): ModuleAccessMap {
     !result.our_bis_licenses
   ) {
     result.our_bis_licenses = result.bis_projects;
+  }
+
+  // Inclusion — inherit from New Application when missing.
+  if (
+    result.bis_applications &&
+    result.bis_applications !== "none" &&
+    !result.bis_new_inclusion
+  ) {
+    result.bis_new_inclusion = result.bis_applications;
   }
 
   return result;

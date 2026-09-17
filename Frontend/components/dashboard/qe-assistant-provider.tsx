@@ -68,6 +68,24 @@ Be concise, practical, and use Indian BIS/ISI certification context.`,
       "What is product inclusion in BIS?",
     ],
   },
+  "bis-new-inclusion": {
+    title: "QE Assistant",
+    subtitle: "BIS New Inclusion · AI Powered",
+    systemPrompt: `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Inclusion Management.
+You help with:
+- Product / variety / grade inclusion under an already granted CM/L license
+- Documents and undertakings typically needed for inclusion
+- Difference between fresh application and inclusion
+- MANAK Online filing steps for inclusion
+- Linking inclusion work to the existing license number (CM/L)
+Be concise, practical, and use Indian BIS/ISI certification context.`,
+    starters: [
+      "What is BIS product inclusion?",
+      "Which documents are needed for inclusion on an existing license?",
+      "How is inclusion different from a fresh application?",
+      "How do I file inclusion on MANAK Online?",
+    ],
+  },
   "is-codes": {
     title: "QE Assistant",
     subtitle: "IS Code Master · AI Powered",

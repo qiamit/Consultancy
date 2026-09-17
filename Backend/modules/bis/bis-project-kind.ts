@@ -15,6 +15,13 @@ export function isApplicationProjectKind(value: string | null | undefined): bool
   return normalizeProjectKindKey(raw) === "application";
 }
 
+export function isInclusionProjectKind(value: string | null | undefined): boolean {
+  const raw = (value ?? "").trim();
+  if (!raw) return false;
+  const key = normalizeProjectKindKey(raw);
+  return key === "inclusion" || key === "new_inclusion" || key === "bis_inclusion";
+}
+
 export function isLicenseProjectKind(value: string | null | undefined): boolean {
   const raw = (value ?? "").trim();
   if (!raw) return false;
@@ -59,7 +66,51 @@ export function isPendingApplicationRow(row: {
 }
 
 export function cmPrefixForProjectKind(projectKind: string): "CM/L" | "CM/A" {
-  return isApplicationProjectKind(projectKind) ? "CM/A" : "CM/L";
+  if (isApplicationProjectKind(projectKind)) return "CM/A";
+  return "CM/L";
+}
+
+/** Distinct `project_kind` values that mean “inclusion” (for query filters). */
+export async function inclusionProjectKindDbValues(
+  supabase: AppDbClient,
+  optionKey: string = DROPDOWN_KEY_BIS_PROJECT_KIND,
+): Promise<string[]> {
+  const values = new Set<string>(["Inclusion", "inclusion", "New Inclusion"]);
+  const { data } = await supabase
+    .from("app_dropdown_options")
+    .select("value, label")
+    .eq("option_key", optionKey);
+
+  for (const row of data ?? []) {
+    const v = String(row.value ?? "").trim();
+    const label = String(row.label ?? "").trim();
+    if (v && isInclusionProjectKind(v)) values.add(v);
+    if (v && label && isInclusionProjectKind(label)) values.add(v);
+  }
+
+  return Array.from(values);
+}
+
+/** Preferred `project_kind` value for an inclusion case on an existing license. */
+export async function inclusionProjectKindDbValue(
+  supabase: AppDbClient,
+  optionKey: string = DROPDOWN_KEY_BIS_PROJECT_KIND,
+): Promise<string> {
+  const values = await inclusionProjectKindDbValues(supabase, optionKey);
+  for (const v of values) {
+    if (normalizeProjectKindKey(v) === "inclusion") return v;
+  }
+  return "Inclusion";
+}
+
+export function isPendingInclusionRow(row: {
+  project_kind: string;
+  license_validity_date?: string | null;
+}): boolean {
+  return (
+    isInclusionProjectKind(row.project_kind) &&
+    !(row.license_validity_date ?? "").trim()
+  );
 }
 
 /** Preferred `project_kind` value for a converted / renewed license row. */

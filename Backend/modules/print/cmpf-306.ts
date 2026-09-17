@@ -238,6 +238,7 @@ function buildFooterHtml(data: Cmpf306LetterData): string {
 
   return `
 <p class="cmpf-extra-note"><em>Note: Attach Extra Sheet, If Required</em></p>
+<div class="cmpf-footer-gap" aria-hidden="true"></div>
 <table class="cmpf-decl-table">
   <tr>
     <td class="cmpf-decl-box">
@@ -258,9 +259,9 @@ function buildFooterHtml(data: Cmpf306LetterData): string {
               ${signatorySignatureOverlayHtml(data.signatureImageUrl, {
                 left: "auto",
                 right: "0",
-                top: "calc(-40px + 1mm)",
-                maxHeight: "46px",
-                maxWidth: "110px",
+                top: "calc(-36px + 1mm)",
+                maxHeight: "42px",
+                maxWidth: "105px",
               })}
               <div style="position:relative;z-index:1;">Name :- ${firmName}</div>
             </div>
@@ -580,8 +581,10 @@ export function buildCmpf306Html(
     .cmpf-sheet-body {
       flex: 1 1 auto;
       min-height: 0;
+      width: 100%;
       display: flex;
       flex-direction: column;
+      align-items: stretch;
     }
     .cmpf-page-gap {
       display: none;
@@ -638,17 +641,21 @@ export function buildCmpf306Html(
     }
     .cmpf-extra-note {
       margin: 4px 0 2px;
-      font-size: 10px;
+      font-size: 11px;
       text-align: left;
       flex-shrink: 0;
+      width: 100%;
+      align-self: stretch;
     }
     .cmpf-footnote {
       margin: 4px 0 0;
-      font-size: 8.5px;
+      font-size: 10px;
       font-weight: 700;
-      line-height: 1.35;
+      line-height: 1.4;
       text-align: justify;
       flex-shrink: 0;
+      width: 100%;
+      align-self: stretch;
     }
     .cmpf-equipment-table {
       width: 100%;
@@ -709,53 +716,67 @@ export function buildCmpf306Html(
     .cmpf-footer-wrap {
       flex: 1 1 auto;
       min-height: 0;
+      width: 100%;
+      align-self: stretch;
       margin-top: 4px;
       padding-top: 2px;
       display: flex;
       flex-direction: column;
+      align-items: stretch;
+    }
+    .cmpf-footer-gap {
+      flex: 1 1 auto;
+      min-height: 6mm;
+      width: 100%;
     }
     .cmpf-decl-table {
-      width: 100%;
+      width: 100% !important;
+      min-width: 100%;
+      max-width: 100%;
       border-collapse: collapse;
       margin-top: 2px;
       table-layout: fixed;
-      flex: 1 1 auto;
-      min-height: 0;
-      height: 100%;
+      flex: 0 0 auto;
+      align-self: stretch;
+      height: auto;
+      min-height: 73mm;
     }
     .cmpf-decl-box {
       border: 1px solid #111;
       padding: 0;
       vertical-align: top;
       width: 50%;
-      height: 100%;
+      height: auto;
     }
     .cmpf-decl-cell-inner {
       display: flex;
       flex-direction: column;
       height: 100%;
-      min-height: 0;
+      min-height: 73mm;
+      width: 100%;
     }
     .cmpf-decl-text {
       padding: 5px 7px 3px;
-      font-size: 9px;
-      line-height: 1.35;
+      font-size: 11px;
+      line-height: 1.4;
       flex-shrink: 0;
     }
     .cmpf-decl-sig-area {
       flex: 1 1 auto;
-      min-height: 42px;
+      min-height: 40mm;
       background: #eef2f7;
       padding: 5px 7px;
       display: flex;
       flex-direction: column;
+      width: 100%;
+      box-sizing: border-box;
     }
     .cmpf-decl-sig-spacer {
       flex: 1 1 auto;
-      min-height: 18px;
+      min-height: 22mm;
     }
     .cmpf-decl-sig-line {
-      font-size: 9px;
+      font-size: 11px;
       line-height: 1.4;
       flex-shrink: 0;
     }

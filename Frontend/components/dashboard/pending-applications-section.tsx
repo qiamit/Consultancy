@@ -58,6 +58,13 @@ const AddNewApplicationModal = dynamic(
     })),
   { ssr: false },
 );
+const StartInclusionFromLicenseModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/start-inclusion-from-license-modal").then((m) => ({
+      default: m.StartInclusionFromLicenseModal,
+    })),
+  { ssr: false },
+);
 const LicenseScopeEditorModal = dynamic(
   () =>
     import("@/components/dashboard/modals/license-scope-editor-modal").then((m) => ({
@@ -275,7 +282,12 @@ import {
   type TopManagementStored,
 } from "@backend/modules/bis/top-management";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
-import { isApplicationProjectKind, isPendingApplicationRow, type BisApplicationSource } from "@backend/modules/bis/bis-project-kind";
+import {
+  isApplicationProjectKind,
+  isPendingApplicationRow,
+  isPendingInclusionRow,
+  type BisApplicationSource,
+} from "@backend/modules/bis/bis-project-kind";
 import {
   BIS_APPLICATION_STAGES,
   isBisApplicationStage,
@@ -2210,7 +2222,7 @@ function ApplicationFormModal({
     const street = (client?.address ?? "").trim();
     const city = (client?.city ?? "").trim();
     const state = (client?.state ?? "").trim();
-    const country = (client?.country ?? "").trim() || "INDIA";
+    const country = (client?.country ?? "").trim() || "India";
     const pin = (client?.pin_code ?? "").trim();
     const phoneDigits = (client?.phone ?? "").trim();
     const phoneCode = (client?.phone_country_code ?? "").trim();
@@ -3256,6 +3268,13 @@ function ApplicationFormModal({
           licenseScopeRows={licenseScopeRows}
           topManagement={topManagement}
           storedDocument={undertakingMinimumMarkingFee}
+          firmScale={
+            applicationMeta.firm_scale.trim() ||
+            client?.company_scale?.trim() ||
+            cmpf310.firm_scale.trim() ||
+            ""
+          }
+          bisBranchName={applicationMeta.bis_branch_name.trim()}
           onSave={saveUndertakingMinimumMarkingFee}
           onClose={clearDoc}
         />
@@ -3285,6 +3304,10 @@ function ApplicationFormModal({
         <UpdatedSchemeOfInspectionModal
           letterData={buildDeclarationData()}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
+          isCodeId={row.is_code_id}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          topManagement={topManagement}
           storedDocument={updatedSchemeOfInspection}
           onSave={saveUpdatedSchemeOfInspection}
           onClose={clearDoc}
@@ -3579,11 +3602,14 @@ export function PendingApplicationsSection({
   rows,
   variant = "pending_applications",
   isAdmin = false,
+  inclusionLicenses = [],
 }: {
   rows: ApplicationRow[];
-  variant?: "pending_applications" | "expired_licenses";
+  variant?: "pending_applications" | "expired_licenses" | "inclusion";
   /** Super Admin (`profiles.role = admin`) — enables footer Delete. */
   isAdmin?: boolean;
+  /** Existing licenses available when starting a new Inclusion case. */
+  inclusionLicenses?: import("@/components/dashboard/modals/start-inclusion-from-license-modal").InclusionLicensePickRow[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -3664,7 +3690,9 @@ export function PendingApplicationsSection({
     const base =
       variant === "pending_applications"
         ? rows.filter(isPendingApplicationRow)
-        : rows.filter((r) => !isApplicationProjectKind(r.project_kind));
+        : variant === "inclusion"
+          ? rows.filter(isPendingInclusionRow)
+          : rows.filter((r) => !isApplicationProjectKind(r.project_kind));
     return base.filter((r) => !convertedIds.has(r.id));
   }, [rows, convertedIds, variant]);
 
@@ -3695,8 +3723,9 @@ export function PendingApplicationsSection({
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
   const isExpired = variant === "expired_licenses";
+  const isInclusion = variant === "inclusion";
   const grandTotal = visibleRows.length;
-  const tableColCount = isExpired ? 7 : 8;
+  const tableColCount = isExpired ? 7 : isInclusion ? 9 : 8;
   const pageRowIds = paginated.map((r) => r.id);
   const allPageSelected =
     pageRowIds.length > 0 && pageRowIds.every((id) => selectedIds.has(id));
@@ -3707,7 +3736,11 @@ export function PendingApplicationsSection({
   const navDisabled = grandTotal === 0;
   const showPagination = filtered.length > 0;
   const sectionTitle =
-    variant === "expired_licenses" ? "Expired Licenses" : "Pending Applications";
+    variant === "expired_licenses"
+      ? "Expired Licenses"
+      : variant === "inclusion"
+        ? "BIS New Inclusion"
+        : "Pending Applications";
   const chk =
     "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500";
 
@@ -3897,7 +3930,11 @@ export function PendingApplicationsSection({
               onClick={() =>
                 window.dispatchEvent(
                   new CustomEvent("qe-assistant:open", {
-                    detail: { module: "bis-new-applications" },
+                    detail: {
+                      module: isInclusion
+                        ? "bis-new-inclusion"
+                        : "bis-new-applications",
+                    },
                   }),
                 )
               }
@@ -3908,9 +3945,13 @@ export function PendingApplicationsSection({
               <button
                 type="button"
                 onClick={() => setAddApplicationOpen(true)}
-                className="inline-flex items-center justify-center rounded-lg bg-sky-600 px-4 py-1.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500"
+                className={`inline-flex items-center justify-center rounded-lg px-4 py-1.5 text-sm font-semibold text-white shadow-sm ${
+                  isInclusion
+                    ? "bg-teal-600 hover:bg-teal-500"
+                    : "bg-sky-600 hover:bg-sky-500"
+                }`}
               >
-                Add New Application
+                {isInclusion ? "Start Inclusion" : "Add New Application"}
               </button>
             ) : null}
           </div>
@@ -3923,7 +3964,9 @@ export function PendingApplicationsSection({
           <p className="px-6 py-8 text-center text-sm text-zinc-500">
             {variant === "expired_licenses"
               ? "No expired licenses found."
-              : "No pending applications or projects."}
+              : variant === "inclusion"
+                ? "No inclusion cases yet. Click Start Inclusion to begin from an existing license."
+                : "No pending applications or projects."}
           </p>
         ) : filtered.length === 0 ? (
           <p className="px-6 py-8 text-center text-sm text-zinc-500">
@@ -3953,7 +3996,7 @@ export function PendingApplicationsSection({
                 </th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Client Name</th>
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">IS Number</th>
-                {isExpired && (
+                {(isExpired || isInclusion) && (
                   <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">CM/L Number</th>
                 )}
                 <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">Start Date</th>
@@ -3966,7 +4009,7 @@ export function PendingApplicationsSection({
                 {isExpired && (
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">License Validity</th>
                 )}
-                {!isExpired && (
+                {!isExpired && !isInclusion && (
                   <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Convert to License</th>
                 )}
                 <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Action</th>
@@ -4008,7 +4051,7 @@ export function PendingApplicationsSection({
                       <span className="text-zinc-400">—</span>
                     )}
                   </td>
-                  {isExpired && (
+                  {(isExpired || isInclusion) && (
                     <td className="px-4 py-3 text-center font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-200">
                       {r.cm_l_digits
                         ? formatCmDisplay(r.project_kind, r.cm_l_digits)
@@ -4044,7 +4087,7 @@ export function PendingApplicationsSection({
                       {formatDate(r.license_validity_date)}
                     </td>
                   )}
-                  {!isExpired && (
+                  {!isExpired && !isInclusion && (
                     <td className="px-4 py-3 text-center">
                       <button
                         type="button"
@@ -4241,13 +4284,28 @@ export function PendingApplicationsSection({
         onClose={closePreparation}
       />
     )}
-    {addApplicationOpen && !isExpired && (
+    {addApplicationOpen && !isExpired && !isInclusion && (
       <AddNewApplicationModal
         onClose={() => setAddApplicationOpen(false)}
         onCreated={() => router.refresh()}
       />
     )}
-    {convertRow && !isExpired && (
+    {addApplicationOpen && isInclusion && (
+      <StartInclusionFromLicenseModal
+        licenses={inclusionLicenses}
+        onClose={() => setAddApplicationOpen(false)}
+        onCreated={(id) => {
+          setAddApplicationOpen(false);
+          const params = new URLSearchParams(searchParams.toString());
+          params.set(PREPARATION_QUERY, id);
+          params.delete(PREPARATION_DOC_QUERY);
+          const q = params.toString();
+          router.replace(q ? `${pathname}?${q}` : pathname, { scroll: false });
+          router.refresh();
+        }}
+      />
+    )}
+    {convertRow && !isExpired && !isInclusion && (
       <ConvertToLicenseModal
         projectId={convertRow.id}
         clientName={convertRow.client_name}
