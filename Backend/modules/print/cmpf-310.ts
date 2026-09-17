@@ -201,7 +201,7 @@ function buildFormBody(data: Cmpf310LetterData, settings: PrintSettings): string
 
   if (!twoPages) {
     return `
-<div class="print-sheet cmpf-sheet">
+<div class="print-sheet print-sheet-natural cmpf-sheet">
   <div class="print-sheet-body">
     ${buildFormHeaderHtml()}
     ${buildLetterIntroHtml(data)}
@@ -215,7 +215,7 @@ function buildFormBody(data: Cmpf310LetterData, settings: PrintSettings): string
   }
 
   return `
-<div class="print-sheet cmpf-sheet">
+<div class="print-sheet print-sheet-natural cmpf-sheet">
   <div class="print-sheet-body">
     ${buildFormHeaderHtml()}
     ${buildLetterIntroHtml(data)}
@@ -226,7 +226,7 @@ function buildFormBody(data: Cmpf310LetterData, settings: PrintSettings): string
   ${printPageIndicatorHtml(1, 2)}
 </div>
 ${printPageGapHtml(2, 2)}
-<div class="print-sheet cmpf-sheet print-sheet-page-break">
+<div class="print-sheet print-sheet-natural cmpf-sheet print-sheet-page-break">
   <div class="print-sheet-body">
     ${buildFormHeaderHtml(true)}
     ${buildPaymentTermsHtml(markingFeeInline, "rest")}
@@ -353,12 +353,12 @@ export function buildCmpf310Html(
       text-align: justify;
     }
     .cmpf-signatory-block {
-      margin-top: 28px;
+      margin-top: 18px;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
       font-size: 10px;
-      line-height: 1.6;
+      line-height: 1.5;
       text-align: right;
     }
     .cmpf-signatory-for {
@@ -366,7 +366,7 @@ export function buildCmpf310Html(
       text-align: right;
     }
     .cmpf-signatory-sig {
-      margin-top: 32px;
+      margin-top: 20px;
       min-width: 200px;
       text-align: right;
     }

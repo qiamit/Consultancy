@@ -223,7 +223,7 @@ import {
   type LegalDocumentStored,
 } from "@backend/modules/bis/legal-documents";
 import { fileNameFromStoredDocumentRef } from "@backend/modules/storage/cmpf-306-documents";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 
 /** Order matches Application Form document shortcuts (print / binding sequence). */
 export const APPLICATION_CHECKLIST_PRINT_DOCS = [
@@ -361,6 +361,16 @@ export type ChecklistBulkListRow =
         | "qci_appointment_letter"
         | "qci_education_certificate"
         | "qci_photo";
+    }
+  | {
+      kind: "ftr_sample";
+      id: string;
+      rowKey: string;
+      label: string;
+      hasContent: boolean;
+      editKey: string;
+      /** Index into resolveFactoryTestReports(ctx) list. */
+      reportIndex: number;
     };
 
 function attachmentFileLabel(ref: string, fallback: string): string {
@@ -514,7 +524,42 @@ export function buildChecklistBulkListRows(
     }
   }
 
+  function pushFactoryTestReportRows() {
+    const reports = resolveFactoryTestReports(ctx).filter(ftrReportHasContent);
+    if (reports.length === 0) {
+      rows.push({
+        kind: "print",
+        id: "factory_test_reports",
+        rowKey: "factory_test_reports",
+        label: "Factory Test Reports",
+        hasContent: false,
+        editKey: CHECKLIST_PRINT_DOC_EDIT_KEYS.factory_test_reports,
+      });
+      return;
+    }
+    reports.forEach((report, index) => {
+      const sample = report.sample_label.trim();
+      const sourceTag = report.source === "pi" ? "PI" : "OSL";
+      rows.push({
+        kind: "ftr_sample",
+        id: `factory_test_report:${index}`,
+        rowKey: `factory_test_report:${index}`,
+        label: sample
+          ? `Factory Test Report — ${sample}`
+          : `Factory Test Report ${index + 1} (${sourceTag})`,
+        hasContent: true,
+        editKey: CHECKLIST_PRINT_DOC_EDIT_KEYS.factory_test_reports,
+        reportIndex: index,
+      });
+    });
+  }
+
   for (const doc of APPLICATION_CHECKLIST_PRINT_DOCS) {
+    if (doc.id === "factory_test_reports") {
+      pushFactoryTestReportRows();
+      continue;
+    }
+
     rows.push({
       kind: "print",
       id: doc.id,
@@ -745,7 +790,7 @@ function scopeDocumentCss(css: string, scopeSelector: string): string {
   return cleaned;
 }
 
-function combineChecklistPrintHtml(docs: { id: ChecklistPrintDocId; html: string }[]): string {
+function combineChecklistPrintHtml(docs: { id: string; html: string }[]): string {
   const styleChunks: string[] = [];
   const bodyChunks: string[] = [];
 
@@ -806,6 +851,14 @@ ${bodyChunks.join("\n")}
 </html>`;
 }
 
+/** Combine already-built HTML docs (including per-sample FTR) for Word / print pack. */
+export function buildCombinedHtmlFromPackItems(
+  docs: { id: string; html: string }[],
+): string {
+  if (!docs.length) throw new Error("Nothing to combine.");
+  return combineChecklistPrintHtml(docs);
+}
+
 function buildFtrContext(ctx: ChecklistBulkPrintContext): FtrContext {
   const qc = resolveQualityControlIncharge(ctx.technicalStaff);
   const isReference = ctx.letterData.isNumber?.trim() || "—";
@@ -842,6 +895,54 @@ function resolveFactoryTestReports(ctx: ChecklistBulkPrintContext): FactoryTestR
     existing: ctx.factoryTestReports,
     ctx: buildFtrContext(ctx),
   });
+}
+
+function buildFactoryTestReportHtmlFromCtx(
+  ctx: ChecklistBulkPrintContext,
+  printAssets: ManufacturingScopePrintAssets,
+  onlyReportIndex?: number,
+): string {
+  const settings = {
+    ...defaultFactoryTestReportPrintSettings(),
+    show_letterhead: true as const,
+    letterhead_layout: "logo-na" as const,
+  };
+  const letter = ctx.letterData;
+  const qc = resolveQualityControlIncharge(ctx.technicalStaff);
+  let reports = resolveFactoryTestReports(ctx).filter(ftrReportHasContent);
+  if (onlyReportIndex != null) {
+    const one = reports[onlyReportIndex];
+    reports = one ? [one] : [];
+  }
+  const data = {
+    ...letter,
+    city: letter.city ?? "",
+    reports,
+    inspectionOfficerName: ctx.inspectionOfficerName.trim(),
+    inspectionOfficerDesignation: ctx.inspectionOfficerDesignation.trim(),
+    qualityControlInchargeName: qc.name,
+    qualityControlInchargeDesignation: qc.designation,
+  };
+  return buildFactoryTestReportHtml(data, settings, printAssets);
+}
+
+/** One Factory Test Report HTML for a single sample (bulk / row actions). */
+export async function buildFactoryTestReportSampleHtml(
+  ctx: ChecklistBulkPrintContext,
+  reportIndex: number,
+): Promise<string> {
+  const { assetUrls } = await loadCompanyPrintContext();
+  const printAssets: ManufacturingScopePrintAssets = {
+    letterhead_upper_url:
+      assetUrls.letterhead_upper_url ?? ctx.printAssets?.letterhead_upper_url ?? null,
+    letterhead_lower_url:
+      assetUrls.letterhead_lower_url ?? ctx.printAssets?.letterhead_lower_url ?? null,
+    seal_sign_url: assetUrls.seal_sign_url ?? ctx.printAssets?.seal_sign_url ?? null,
+    logo_url: null,
+  };
+  const html = buildFactoryTestReportHtmlFromCtx(ctx, printAssets, reportIndex).trim();
+  if (!html) throw new Error("Factory Test Report preview HTML is empty.");
+  return html;
 }
 
 function resolveFactoryAddressLine(ctx: ChecklistBulkPrintContext): string {
@@ -1285,23 +1386,7 @@ function buildSingleChecklistDocHtml(
       return buildAuthorizationLetterHtml(data, settings, printAssets);
     }
     case "factory_test_reports": {
-      const settings = {
-        ...defaultFactoryTestReportPrintSettings(),
-        show_letterhead: true as const,
-        letterhead_layout: "logo-na" as const,
-      };
-      const qc = resolveQualityControlIncharge(ctx.technicalStaff);
-      const reports = resolveFactoryTestReports(ctx);
-      const data = {
-        ...letter,
-        city: letter.city ?? "",
-        reports,
-        inspectionOfficerName: ctx.inspectionOfficerName.trim(),
-        inspectionOfficerDesignation: ctx.inspectionOfficerDesignation.trim(),
-        qualityControlInchargeName: qc.name,
-        qualityControlInchargeDesignation: qc.designation,
-      };
-      return buildFactoryTestReportHtml(data, settings, printAssets);
+      return buildFactoryTestReportHtmlFromCtx(ctx, printAssets);
     }
     case "updated_scheme_of_inspection": {
       const settings = withBulkLetterhead(defaultUpdatedSchemeOfInspectionPrintSettings());
@@ -1353,6 +1438,9 @@ export async function buildSelectedChecklistPrintHtml(
   ctx: ChecklistBulkPrintContext,
 ): Promise<string> {
   const docs = await buildSelectedChecklistPrintDocs(ids, ctx);
+  if (!docs.length) {
+    throw new Error("None of the selected checklist documents have content to print.");
+  }
   return combineChecklistPrintHtml(docs);
 }
 
@@ -1360,14 +1448,10 @@ export async function buildSelectedChecklistPrintDocs(
   ids: ChecklistPrintDocId[],
   ctx: ChecklistBulkPrintContext,
 ): Promise<{ id: ChecklistPrintDocId; html: string }[]> {
-  if (!ids.length) {
-    throw new Error("No checklist documents selected for print.");
-  }
+  if (!ids.length) return [];
 
   const selectedWithContent = ids.filter((id) => checklistPrintDocHasContent(id, ctx));
-  if (!selectedWithContent.length) {
-    throw new Error("None of the selected checklist documents have content to print.");
-  }
+  if (!selectedWithContent.length) return [];
 
   const { assetUrls } = await loadCompanyPrintContext();
   const printAssets: ManufacturingScopePrintAssets = {
@@ -1422,6 +1506,45 @@ async function mergePdfBlobs(blobs: Blob[]): Promise<Blob> {
   return new Blob([copy], { type: "application/pdf" });
 }
 
+/** Stamp continuous pack page numbers (covers per-doc "01 of 01" footers). */
+async function stampContinuousPageNumbers(blob: Blob): Promise<Blob> {
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
+  const font = await doc.embedFont(StandardFonts.Helvetica);
+  const pages = doc.getPages();
+  const total = pages.length;
+  const totalLabel = String(total).padStart(2, "0");
+
+  for (let i = 0; i < pages.length; i++) {
+    const page = pages[i]!;
+    const { width } = page.getSize();
+    const label = `Page ${String(i + 1).padStart(2, "0")} of ${totalLabel}`;
+    const textWidth = font.widthOfTextAtSize(label, 9);
+    const x = Math.max(12, width - textWidth - 14);
+    const y = 12;
+    page.drawRectangle({
+      x: x - 4,
+      y: y - 3,
+      width: textWidth + 8,
+      height: 14,
+      color: rgb(1, 1, 1),
+      opacity: 0.92,
+    });
+    page.drawText(label, {
+      x,
+      y,
+      size: 9,
+      font,
+      color: rgb(0.15, 0.15, 0.15),
+    });
+  }
+
+  const out = await doc.save();
+  const copy = new Uint8Array(out.byteLength);
+  copy.set(out);
+  return new Blob([copy], { type: "application/pdf" });
+}
+
 function pdfSettingsFromHtml(html: string): Pick<PrintSettings, "paper_size" | "orientation"> {
   const landscape = /@page\s*\{[^}]*landscape/i.test(html) || /orientation:\s*landscape/i.test(html);
   return {
@@ -1430,67 +1553,292 @@ function pdfSettingsFromHtml(html: string): Pick<PrintSettings, "paper_size" | "
   };
 }
 
-export async function downloadChecklistCombinedPdf(opts: {
-  html?: string;
-  docs?: { id: ChecklistPrintDocId; html: string }[];
-  /** Optional attachment storage refs to merge into the same PDF (PDF files only). */
-  attachmentRefs?: string[];
-  companyName: string;
-}): Promise<void> {
-  const filename = `Application_Checklist_${safePdfFilenamePart(opts.companyName)}.pdf`;
-  const blobs: Blob[] = [];
+/** Hide per-document page footers — pack-level continuous numbers are stamped after merge. */
+function htmlWithoutLocalPageIndicators(html: string): string {
+  const hideCss = `<style id="bulk-hide-local-page-nums">
+.pd-page-indicator,
+.cmpf-page-indicator,
+.print-sheet-page-indicator,
+.rmd-page-indicator,
+.auth-page-indicator,
+.u2-page-indicator,
+.ugi-page-indicator,
+.crm-page-indicator,
+.ldt-page-indicator,
+.mmf-page-indicator,
+.ftr-page-indicator,
+.print-page-number { display: none !important; visibility: hidden !important; }
+</style>`;
+  if (/<\/head>/i.test(html)) return html.replace(/<\/head>/i, `${hideCss}</head>`);
+  return `${hideCss}${html}`;
+}
 
-  // Preferred path: render each document alone (keeps fit-page CSS intact), then merge.
-  if (opts.docs && opts.docs.length > 0) {
-    for (const doc of opts.docs) {
-      const settings = pdfSettingsFromHtml(doc.html);
-      const blob = await renderPdfViaPlaywright({
-        html: doc.html,
-        filename: `${doc.id}.pdf`,
-        format: mapPageSizeToPlaywrightFormat(settings.paper_size),
-        landscape: settings.orientation === "landscape",
-        margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
-      });
-      blobs.push(blob);
-    }
+async function blobToDataUrl(blob: Blob): Promise<string> {
+  return await new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    reader.onerror = () => reject(new Error("Unable to read attachment file."));
+    reader.readAsDataURL(blob);
+  });
+}
+
+function attachmentPathName(url: string, fallbackRef: string): string {
+  try {
+    return new URL(url).pathname;
+  } catch {
+    return fallbackRef;
+  }
+}
+
+async function renderAttachmentAsPdfBlob(opts: {
+  blob: Blob;
+  url: string;
+  label: string;
+  documentRef: string;
+}): Promise<Blob> {
+  const pathName = attachmentPathName(opts.url, opts.documentRef);
+  const isPdf =
+    opts.blob.type.includes("pdf") || /\.pdf(?:\?|$)/i.test(pathName) || /\.pdf$/i.test(opts.documentRef);
+  if (isPdf) return opts.blob;
+
+  const isImage =
+    opts.blob.type.startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|bmp|svg)(?:\?|$)/i.test(pathName) ||
+    /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(opts.documentRef);
+
+  const safeLabel = String(opts.label ?? "Attachment")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+
+  let bodyHtml: string;
+  if (isImage) {
+    const dataUrl = await blobToDataUrl(opts.blob);
+    bodyHtml = `<img src="${dataUrl}" alt="${safeLabel}" style="max-width:100%;max-height:277mm;object-fit:contain;display:block;margin:0 auto;"/>`;
   } else {
-    const html = (opts.html ?? "").trim();
-    if (html) {
-      const blob = await renderPdfViaPlaywright({
-        html,
-        filename: "checklist.pdf",
-        format: "a4",
-        landscape: false,
-        margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
-      });
-      blobs.push(blob);
-    }
+    const fileName = fileNameFromStoredDocumentRef(opts.documentRef) || opts.label || "Attachment";
+    bodyHtml = `
+      <div style="font-family:Arial,Helvetica,sans-serif;padding:24mm 18mm;color:#111;">
+        <h1 style="font-size:16px;margin:0 0 12px;">Attachment</h1>
+        <p style="font-size:12px;margin:0 0 8px;"><strong>${safeLabel}</strong></p>
+        <p style="font-size:11px;margin:0;color:#444;">File: ${String(fileName)
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")}</p>
+        <p style="font-size:11px;margin:16px 0 0;color:#666;">
+          This file type cannot be embedded in the combined PDF preview. Download the original from the checklist if needed.
+        </p>
+      </div>`;
   }
 
-  for (const ref of opts.attachmentRefs ?? []) {
-    const trimmed = ref.trim();
-    if (!trimmed) continue;
-    try {
-      const url = await resolveChecklistAttachmentUrl(trimmed);
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const blob = await res.blob();
-      let pathName = trimmed;
-      try {
-        pathName = new URL(url).pathname;
-      } catch {
-        // keep trimmed
+  const html = `<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"/>
+<style>
+@page { size: A4 portrait; margin: 0; }
+html, body { margin: 0; padding: 10mm; background: #fff; }
+</style></head><body>${bodyHtml}</body></html>`;
+
+  return await renderPdfViaPlaywright({
+    html,
+    filename: "attachment.pdf",
+    format: "a4",
+    landscape: false,
+    margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+  });
+}
+
+export type ChecklistBulkPackItem =
+  | { kind: "html"; id: string; html: string }
+  | { kind: "attachment"; documentRef: string; label: string };
+
+/** Build ordered pack items from selected checklist grid rows (print docs + attachments + FTR samples). */
+export async function buildChecklistBulkPackItems(
+  selectedRows: ChecklistBulkListRow[],
+  ctx: ChecklistBulkPrintContext,
+): Promise<ChecklistBulkPackItem[]> {
+  const withContent = selectedRows.filter((r) => r.hasContent);
+  if (!withContent.length) {
+    throw new Error("None of the selected items have content to export.");
+  }
+
+  const printIds = withContent
+    .filter((r): r is Extract<ChecklistBulkListRow, { kind: "print" }> => r.kind === "print")
+    .map((r) => r.id);
+  const docs = await buildSelectedChecklistPrintDocs(printIds, ctx);
+  const htmlById = new Map(docs.map((d) => [d.id, d.html] as const));
+
+  const needsFtrAssets = withContent.some((r) => r.kind === "ftr_sample");
+  let ftrAssets: ManufacturingScopePrintAssets | null = null;
+  if (needsFtrAssets) {
+    const { assetUrls } = await loadCompanyPrintContext();
+    ftrAssets = {
+      letterhead_upper_url:
+        assetUrls.letterhead_upper_url ?? ctx.printAssets?.letterhead_upper_url ?? null,
+      letterhead_lower_url:
+        assetUrls.letterhead_lower_url ?? ctx.printAssets?.letterhead_lower_url ?? null,
+      seal_sign_url: assetUrls.seal_sign_url ?? ctx.printAssets?.seal_sign_url ?? null,
+      logo_url: null,
+    };
+  }
+
+  const items: ChecklistBulkPackItem[] = [];
+  for (const row of withContent) {
+    if (row.kind === "print") {
+      const html = htmlById.get(row.id);
+      if (html) items.push({ kind: "html", id: row.id, html });
+      continue;
+    }
+    if (row.kind === "ftr_sample") {
+      const html = buildFactoryTestReportHtmlFromCtx(ctx, ftrAssets!, row.reportIndex);
+      items.push({ kind: "html", id: row.id, html });
+      continue;
+    }
+    const ref = row.documentRef.trim();
+    if (!ref) continue;
+    items.push({ kind: "attachment", documentRef: ref, label: row.label });
+  }
+
+  if (!items.length) {
+    throw new Error("None of the selected items have content to export.");
+  }
+  return items;
+}
+
+async function buildChecklistCombinedPdfBlob(opts: {
+  items?: ChecklistBulkPackItem[];
+  html?: string;
+  docs?: { id: ChecklistPrintDocId; html: string }[];
+  attachmentRefs?: string[];
+}): Promise<Blob> {
+  const blobs: Blob[] = [];
+
+  if (opts.items && opts.items.length > 0) {
+    for (const item of opts.items) {
+      if (item.kind === "html") {
+        const settings = pdfSettingsFromHtml(item.html);
+        const blob = await renderPdfViaPlaywright({
+          html: htmlWithoutLocalPageIndicators(item.html),
+          filename: `${item.id}.pdf`,
+          format: mapPageSizeToPlaywrightFormat(settings.paper_size),
+          landscape: settings.orientation === "landscape",
+          margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+        });
+        blobs.push(blob);
+        continue;
       }
-      const isPdf = blob.type.includes("pdf") || /\.pdf(?:\?|$)/i.test(pathName);
-      if (isPdf) blobs.push(blob);
-    } catch {
-      // Skip non-mergeable / missing attachments.
+      try {
+        const url = await resolveChecklistAttachmentUrl(item.documentRef);
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        blobs.push(
+          await renderAttachmentAsPdfBlob({
+            blob,
+            url,
+            label: item.label,
+            documentRef: item.documentRef,
+          }),
+        );
+      } catch {
+        // Skip missing / unreadable attachments; continue with remaining items.
+      }
+    }
+  } else {
+    if (opts.docs && opts.docs.length > 0) {
+      for (const doc of opts.docs) {
+        const settings = pdfSettingsFromHtml(doc.html);
+        const blob = await renderPdfViaPlaywright({
+          html: htmlWithoutLocalPageIndicators(doc.html),
+          filename: `${doc.id}.pdf`,
+          format: mapPageSizeToPlaywrightFormat(settings.paper_size),
+          landscape: settings.orientation === "landscape",
+          margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+        });
+        blobs.push(blob);
+      }
+    } else {
+      const html = (opts.html ?? "").trim();
+      if (html) {
+        const blob = await renderPdfViaPlaywright({
+          html: htmlWithoutLocalPageIndicators(html),
+          filename: "checklist.pdf",
+          format: "a4",
+          landscape: false,
+          margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+        });
+        blobs.push(blob);
+      }
+    }
+
+    for (const ref of opts.attachmentRefs ?? []) {
+      const trimmed = ref.trim();
+      if (!trimmed) continue;
+      try {
+        const url = await resolveChecklistAttachmentUrl(trimmed);
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        blobs.push(
+          await renderAttachmentAsPdfBlob({
+            blob,
+            url,
+            label: fileNameFromStoredDocumentRef(trimmed) || "Attachment",
+            documentRef: trimmed,
+          }),
+        );
+      } catch {
+        // Skip non-mergeable / missing attachments.
+      }
     }
   }
 
   if (blobs.length === 0) throw new Error("Nothing to export as PDF.");
   const merged = blobs.length === 1 ? blobs[0]! : await mergePdfBlobs(blobs);
+  return await stampContinuousPageNumbers(merged);
+}
+
+export async function downloadChecklistCombinedPdf(opts: {
+  html?: string;
+  docs?: { id: ChecklistPrintDocId; html: string }[];
+  /** Optional attachment storage refs to merge into the same PDF. */
+  attachmentRefs?: string[];
+  /** Preferred: ordered print docs + attachments (grid order). */
+  items?: ChecklistBulkPackItem[];
+  companyName: string;
+}): Promise<void> {
+  const filename = `Application_Checklist_${safePdfFilenamePart(opts.companyName)}.pdf`;
+  const merged = await buildChecklistCombinedPdfBlob(opts);
   triggerPdfDownload(merged, filename);
+}
+
+/** Build one combined PDF (docs + attachments + page numbers) and open the browser print dialog. */
+export async function printChecklistCombinedPdf(opts: {
+  items: ChecklistBulkPackItem[];
+  companyName: string;
+}): Promise<void> {
+  const blob = await buildChecklistCombinedPdfBlob({ items: opts.items });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank", "noopener,noreferrer");
+  if (!win) {
+    URL.revokeObjectURL(url);
+    throw new Error("Unable to open print window. Please allow pop-ups and try again.");
+  }
+  const revoke = () => {
+    try {
+      URL.revokeObjectURL(url);
+    } catch {
+      // ignore
+    }
+  };
+  window.setTimeout(() => {
+    try {
+      win.focus();
+      win.print();
+    } catch {
+      // User can print manually from the opened PDF tab.
+    }
+    window.setTimeout(revoke, 60_000);
+  }, 700);
 }
 
 /** Download selected checklist HTML as a Word-openable .doc file. */

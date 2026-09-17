@@ -343,14 +343,19 @@ export function buildFactoryTestReportHtml(
   data: FactoryTestReportLetterData,
   settings: FactoryTestReportPrintSettings,
   assets?: FactoryTestReportPrintAssets,
+  opts?: { onlyReportIndex?: number },
 ): string {
   const letterheadSettings = factoryTestReportLetterheadSettings(settings);
-  const reports = data.reports.filter(
+  let reports = data.reports.filter(
     (r) =>
       r.sample_label.trim() ||
       r.product_title.trim() ||
       r.test_rows.length > 0,
   );
+  if (opts?.onlyReportIndex != null) {
+    const one = reports[opts.onlyReportIndex];
+    reports = one ? [one] : [];
+  }
 
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
   // Letterhead is embedded per sheet; outer letterhead is suppressed below.
@@ -366,6 +371,7 @@ export function buildFactoryTestReportHtml(
   const body =
     reports.length > 0
       ? reports
+          // Each call is one sample — always start page-break index at 0.
           .map((r, i) => buildSingleReportHtml(r, i, data, letterheadSettings, letterheadHtml))
           .join("")
       : `<p style="text-align:center;color:#64748b;padding:40px;">No factory test reports. Add samples in Sample for OSL / PI first.</p>`;

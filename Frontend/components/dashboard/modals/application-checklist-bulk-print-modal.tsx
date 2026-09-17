@@ -4,14 +4,17 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import {
   APPLICATION_CHECKLIST_PRINT_DOCS,
   buildChecklistBulkListRows,
+  buildChecklistBulkPackItems,
+  buildCombinedHtmlFromPackItems,
+  buildFactoryTestReportSampleHtml,
   buildSelectedChecklistPrintDocs,
-  buildSelectedChecklistPrintHtml,
   downloadChecklistAttachmentPdf,
   downloadChecklistCombinedPdf,
   downloadChecklistCombinedWord,
   openChecklistAttachmentPrint,
   openChecklistAttachmentView,
   openChecklistCombinedPrint,
+  printChecklistCombinedPdf,
   type ChecklistBulkListRow,
   type ChecklistBulkPrintContext,
   type ChecklistPrintDocId,
@@ -126,48 +129,45 @@ export function ApplicationChecklistBulkPrintModal({
     if (anyBusy || selectedCount === 0) return;
     setBusy({ scope: "bulk", kind });
     try {
-      const selectedPrintIds = APPLICATION_CHECKLIST_PRINT_DOCS.map((d) => d.id).filter((id) =>
-        checkedRowKeys.includes(id),
+      const selectedRows = rows.filter(
+        (r) => checkedRowKeys.includes(r.rowKey) && r.hasContent,
       );
-      const selectedAttachments = rows.filter(
-        (r): r is Extract<ChecklistBulkListRow, { kind: "attachment" }> =>
-          r.kind === "attachment" && checkedRowKeys.includes(r.rowKey) && r.hasContent,
-      );
-      const attachmentRefs = selectedAttachments.map((a) => a.documentRef).filter((r) => r.trim());
+      if (selectedRows.length === 0) {
+        throw new Error("None of the selected items have content to export.");
+      }
 
-      if (kind === "print") {
-        if (selectedPrintIds.length > 0) {
-          const html = await buildSelectedChecklistPrintHtml(selectedPrintIds, ctx);
-          openChecklistCombinedPrint(html);
-        }
-        for (const att of selectedAttachments) {
-          await openChecklistAttachmentPrint(att.documentRef);
-        }
-        if (selectedPrintIds.length === 0 && selectedAttachments.length === 0) {
-          throw new Error("None of the selected items have content to print.");
-        }
-      } else if (kind === "word") {
-        if (selectedPrintIds.length === 0) {
+      if (kind === "word") {
+        const wordRows = selectedRows.filter(
+          (r) => r.kind === "print" || r.kind === "ftr_sample",
+        );
+        if (wordRows.length === 0) {
           throw new Error(
             "Select at least one checklist document with data to export as Word. Attachments are not included in the Word file.",
           );
         }
-        const html = await buildSelectedChecklistPrintHtml(selectedPrintIds, ctx);
+        const items = await buildChecklistBulkPackItems(wordRows, ctx);
+        const htmlDocs = items.filter(
+          (item): item is Extract<typeof item, { kind: "html" }> => item.kind === "html",
+        );
+        if (htmlDocs.length === 0) {
+          throw new Error("None of the selected checklist documents have content to export.");
+        }
         downloadChecklistCombinedWord({
-          html,
+          html: buildCombinedHtmlFromPackItems(htmlDocs),
+          companyName: ctx.letterData.companyName,
+        });
+        return;
+      }
+
+      const items = await buildChecklistBulkPackItems(selectedRows, ctx);
+      if (kind === "print") {
+        await printChecklistCombinedPdf({
+          items,
           companyName: ctx.letterData.companyName,
         });
       } else {
-        const built =
-          selectedPrintIds.length > 0
-            ? await buildSelectedChecklistPrintDocs(selectedPrintIds, ctx)
-            : [];
-        if (built.length === 0 && attachmentRefs.length === 0) {
-          throw new Error("None of the selected items have content to download.");
-        }
         await downloadChecklistCombinedPdf({
-          docs: built,
-          attachmentRefs,
+          items,
           companyName: ctx.letterData.companyName,
         });
       }
@@ -189,6 +189,21 @@ export function ApplicationChecklistBulkPrintModal({
         if (kind === "view") await openChecklistAttachmentView(row.documentRef);
         else if (kind === "print") await openChecklistAttachmentPrint(row.documentRef);
         else await downloadChecklistAttachmentPdf(row.documentRef, row.label);
+        return;
+      }
+
+      if (row.kind === "ftr_sample") {
+        const html = await buildFactoryTestReportSampleHtml(ctx, row.reportIndex);
+        if (kind === "view") {
+          setPreview({ id: row.id, label: row.label, html });
+        } else if (kind === "print") {
+          openChecklistCombinedPrint(html);
+        } else {
+          await downloadChecklistCombinedPdf({
+            items: [{ kind: "html", id: row.id, html }],
+            companyName: ctx.letterData.companyName,
+          });
+        }
         return;
       }
 
@@ -220,7 +235,7 @@ export function ApplicationChecklistBulkPrintModal({
     setBusy({ scope: "doc", id: preview.id, kind: "pdf" });
     try {
       await downloadChecklistCombinedPdf({
-        docs: [{ id: preview.id as ChecklistPrintDocId, html: preview.html }],
+        items: [{ kind: "html", id: preview.id, html: preview.html }],
         companyName: ctx.letterData.companyName,
       });
     } catch (err) {

@@ -2,7 +2,6 @@ import { buildPrintDocument } from "@backend/modules/print/engine";
 import { openPrintPreview } from "@backend/modules/print/preview";
 import {
   pagedPrintSheetStyles,
-  printPageGapHtml,
   printPageIndicatorHtml,
 } from "@backend/modules/print/paged-preview";
 import { iframeSizeForPrintSettings } from "@backend/modules/print/manufacturing-scope-declaration";
@@ -160,13 +159,19 @@ function addressBlock(opts: {
 </table>`;
 }
 
-function buildPage1(data: BisForm1Data): string {
+function buildFormBody(data: BisForm1Data): string {
   const appNo = dash(data.applicationNumber, "");
   const firm = dash(data.companyName, "");
+  const product = dash(data.productName, "");
+  const isNo = dash(data.isNumber, "");
+  const grades = dash(data.gradesText, "");
+  const appDate = data.dateOfApplication
+    ? formatDisplayDate(data.dateOfApplication, "")
+    : "";
 
   return `
-<div class="print-sheet f1-sheet">
-  <div class="print-sheet-body">
+<div class="print-sheet print-sheet-natural f1-sheet">
+  <div class="print-sheet-body f1-fit-body">
     <div class="f1-header">
       <div class="f1-form-title">प्रपत्र 1 Form 1</div>
       <div class="f1-sub">[नियम 3 देखें] [See Regulation 3]</div>
@@ -268,22 +273,7 @@ function buildPage1(data: BisForm1Data): string {
       </tr>
     </table>
     <p class="f1-note">*Furnishing of correct and valid email id is a mandatory requirement and absence of this information shall make the application liable for rejection</p>
-  </div>
-  ${printPageIndicatorHtml(1, 2)}
-</div>`;
-}
 
-function buildPage2(data: BisForm1Data): string {
-  const product = dash(data.productName, "");
-  const isNo = dash(data.isNumber, "");
-  const grades = dash(data.gradesText, "");
-  const appDate = data.dateOfApplication
-    ? formatDisplayDate(data.dateOfApplication, "")
-    : "";
-
-  return `
-<div class="print-sheet f1-sheet print-sheet-page-break">
-  <div class="print-sheet-body">
     <div class="f1-mark-line">
       <div>यह आवेदन <span class="f1-fill">${esc(product)}</span> पर भारतीय मानक ब्यूरो की मानक के उपयोग के लिए किया जा रहा है ।</div>
       <div>This application is being made to use the Bureau of Indian Standards (BIS) Standard Mark on <span class="f1-fill">${esc(product)}</span></div>
@@ -379,7 +369,7 @@ function buildPage2(data: BisForm1Data): string {
     <p class="f1-important">महत्वपूर्ण- आवेदन पर फर्म के सीईओ अथवा उनकी अनुपस्थिति में अधिकृत प्रतिनिधि के हस्ताक्षर हों ।</p>
     <p class="f1-important">Important- Application should be signed by CEO of the firm, or in his absence by authorized representative.</p>
   </div>
-  ${printPageIndicatorHtml(2, 2)}
+  ${printPageIndicatorHtml(1, 1)}
 </div>`;
 }
 
@@ -392,7 +382,7 @@ export function defaultBisForm1PrintSettings(): PrintSettings {
     show_page_numbers: false,
     show_footer_line: false,
     font_family: "Arial",
-    font_size: 9,
+    font_size: 10,
     margin_top: 8,
     margin_bottom: 8,
     margin_left: 10,
@@ -427,90 +417,146 @@ function formStyles(settings: PrintSettings): string {
   return `
     ${pagedPrintSheetStyles(settings)}
     html, body { overflow: hidden !important; }
-    .doc-page { overflow: hidden; }
+    .doc-page {
+      overflow: hidden;
+      height: ${pageSize.heightMm}mm;
+      max-height: ${pageSize.heightMm}mm;
+      box-sizing: border-box;
+    }
     .f1-sheet.print-sheet,
     .print-sheet.f1-sheet {
-      height: ${sheetHeight};
-      min-height: ${sheetHeight};
+      height: auto !important;
+      min-height: 0 !important;
       max-height: ${sheetHeight};
       overflow: hidden;
       padding-bottom: 4mm;
+      box-sizing: border-box;
     }
     .f1-sheet {
       font-family: Arial, Helvetica, sans-serif;
       color: #111;
-      font-size: 8.5px;
+      font-size: 9px;
       line-height: 1.3;
     }
-    .f1-header { text-align: center; margin-bottom: 4px; }
-    .f1-form-title { font-size: 12px; font-weight: 700; }
-    .f1-sub { font-size: 8px; margin-top: 1px; }
-    .f1-org { font-size: 11px; font-weight: 700; margin-top: 1px; }
-    .f1-scheme { font-size: 9px; margin-top: 1px; }
-    .f1-app-title { font-size: 10px; font-weight: 700; margin-top: 3px; }
-    .f1-app-title-en { font-size: 10px; font-weight: 800; text-transform: uppercase; }
+    .f1-fit-body {
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .f1-header { text-align: center; margin-bottom: 3px; }
+    .f1-form-title { font-size: 12.5px; font-weight: 700; }
+    .f1-sub { font-size: 8.5px; margin-top: 0; }
+    .f1-org { font-size: 11.5px; font-weight: 700; margin-top: 1px; }
+    .f1-scheme { font-size: 9.5px; margin-top: 1px; }
+    .f1-app-title { font-size: 10.5px; font-weight: 700; margin-top: 3px; }
+    .f1-app-title-en { font-size: 10.5px; font-weight: 800; text-transform: uppercase; }
     .f1-box { width: 100%; border-collapse: collapse; margin-top: 3px; table-layout: fixed; }
     .f1-box td, .f1-box th { border: 1px solid #111; vertical-align: top; padding: 2px 4px; }
-    .f1-label-cell { width: 32%; font-size: 8px; font-weight: 600; }
-    .f1-value-cell { font-size: 10px; font-weight: 700; }
-    .f1-mini { font-size: 7px; font-weight: 600; line-height: 1.15; color: #222; }
-    .f1-val { font-size: 9px; margin-top: 1px; word-break: break-word; }
+    .f1-label-cell { width: 32%; font-size: 8.5px; font-weight: 600; }
+    .f1-value-cell { font-size: 10.5px; font-weight: 700; }
+    .f1-mini { font-size: 7.5px; font-weight: 600; line-height: 1.15; color: #222; }
+    .f1-val { font-size: 9.5px; margin-top: 1px; word-break: break-word; }
     .f1-center { text-align: center; }
-    .f1-vlabel { font-weight: 700; font-size: 8.5px; writing-mode: horizontal-tb; }
-    .f1-vlabel-sm { font-weight: 700; font-size: 7px; line-height: 1.15; }
-    .f1-kind { font-weight: 700; font-size: 9px; margin-top: 2px; }
+    .f1-vlabel { font-weight: 700; font-size: 9px; writing-mode: horizontal-tb; }
+    .f1-vlabel-sm { font-weight: 700; font-size: 7.5px; line-height: 1.15; }
+    .f1-kind { font-weight: 700; font-size: 9px; margin-top: 1px; }
     .f1-addr-kind { width: 9%; text-align: center; background: #fafafa; }
-    .f1-addr-main { width: 52%; min-height: 18px; }
+    .f1-addr-main { width: 52%; }
     .f1-contact-col { width: 22%; padding: 0 !important; }
-    .f1-contact-row { border-bottom: 1px solid #111; padding: 2px 4px; min-height: 16px; }
+    .f1-contact-row { border-bottom: 1px solid #111; padding: 2px 4px; }
     .f1-contact-row:last-child { border-bottom: none; }
     .f1-geo { width: 11%; }
     .f1-pin { width: 10%; }
     .f1-meta-row td { vertical-align: middle; }
-    .f1-meta-label { width: 14%; font-size: 7px; font-weight: 700; text-align: center; line-height: 1.15; }
+    .f1-meta-label { width: 14%; font-size: 7.5px; font-weight: 700; text-align: center; line-height: 1.15; }
     .f1-meta-box { width: 12%; text-align: center; font-weight: 700; font-size: 10px; }
     .f1-mgmt-side { width: 8%; text-align: center; background: #fafafa; }
-    .f1-mgmt-head { text-align: center; font-weight: 700; font-size: 8.5px; background: #f3f3f3; }
-    .f1-mgmt-sub { text-align: center; font-size: 7.5px; font-weight: 600; width: 23%; }
-    .f1-mgmt-body { padding: 0 !important; }
+    .f1-mgmt-head { text-align: center; font-weight: 700; font-size: 9px; background: #f3f3f3; }
+    .f1-mgmt-sub { text-align: center; font-size: 8px; font-weight: 600; width: 23%; }
+    .f1-mgmt-body { padding: 0 !important; vertical-align: top; }
     .f1-inner { width: 100%; border-collapse: collapse; }
-    .f1-inner td { border: none; border-bottom: 1px solid #ccc; padding: 2px 4px; font-size: 9px; width: 50%; }
+    .f1-inner td { border: none; border-bottom: 1px solid #ccc; padding: 2px 4px; font-size: 9.5px; width: 50%; }
     .f1-inner tr:last-child td { border-bottom: none; }
-    .f1-contact-label { font-size: 7.5px; font-weight: 600; background: #fafafa; }
+    .f1-contact-label { font-size: 8px; font-weight: 600; background: #fafafa; }
     .f1-contact-value { font-size: 10px; font-weight: 700; }
-    .f1-note { font-size: 7px; margin: 3px 0 0; font-style: italic; }
-    .f1-mark-line { font-size: 8.5px; margin-bottom: 4px; line-height: 1.35; }
+    .f1-note { font-size: 7.5px; margin: 3px 0 4px; font-style: italic; }
+    .f1-mark-line { font-size: 9px; margin: 4px 0 3px; line-height: 1.3; }
     .f1-fill { font-weight: 700; text-decoration: underline; }
     .f1-side-label { width: 12%; text-align: center; background: #fafafa; }
-    .f1-product-val { font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .f1-product-val { font-size: 10.5px; font-weight: 700; text-transform: uppercase; }
     .f1-std-wrap { padding: 0 !important; }
     .f1-std { width: 100%; border-collapse: collapse; }
     .f1-std td { border: none; border-right: 1px solid #111; vertical-align: top; }
     .f1-std td:last-child { border-right: none; }
-    .f1-is-meta { width: 28%; font-size: 9px; line-height: 1.45; padding: 3px 5px !important; }
+    .f1-is-meta { width: 28%; font-size: 9px; line-height: 1.4; padding: 3px 5px !important; }
     .f1-grades { width: 72%; padding: 0 !important; }
-    .f1-grades-head { text-align: center; font-weight: 700; font-size: 8.5px; border-bottom: 1px solid #111; padding: 2px; background: #f3f3f3; }
-    .f1-grades-body { padding: 3px 5px; font-size: 8px; line-height: 1.3; white-space: pre-wrap; max-height: 88mm; overflow: hidden; }
-    .f1-cap-title { width: 34%; font-size: 7.5px; font-weight: 700; line-height: 1.2; }
+    .f1-grades-head { text-align: center; font-weight: 700; font-size: 9px; border-bottom: 1px solid #111; padding: 2px; background: #f3f3f3; }
+    .f1-grades-body { padding: 3px 5px; font-size: 8.5px; line-height: 1.3; white-space: pre-wrap; }
+    .f1-cap-title { width: 34%; font-size: 8px; font-weight: 700; line-height: 1.2; }
     .f1-cap-cell { width: 22%; }
-    .f1-licenses-body { min-height: 18px; margin-top: 2px; font-size: 9px; }
-    .f1-declaration p { margin: 0 0 4px; font-size: 8px; text-align: justify; line-height: 1.35; }
+    .f1-licenses-body { margin-top: 2px; font-size: 9px; min-height: 12px; }
+    .f1-declaration p { margin: 0 0 4px; font-size: 8px; text-align: justify; line-height: 1.3; }
     .f1-declaration p:last-child { margin-bottom: 0; }
-    .f1-seal { width: 38%; }
-    .f1-seal-box { width: 24mm; height: 24mm; border: 1px solid #111; margin-top: 4px; }
+    .f1-seal { width: 34%; }
+    .f1-seal-box { width: 20mm; height: 20mm; border: 1px solid #111; margin-top: 3px; }
     .f1-sign-fields { font-size: 9px; }
-    .f1-sign-line { margin: 5px 0; }
-    .f1-important { font-size: 7.5px; margin: 3px 0 0; font-weight: 600; }
+    .f1-sign-line { margin: 4px 0; }
+    .f1-important { font-size: 8px; margin: 3px 0 0; font-weight: 600; }
     @media print {
-      html, body { overflow: visible !important; }
+      html, body { overflow: hidden !important; }
+      .doc-page {
+        height: ${pageSize.heightMm}mm;
+        max-height: ${pageSize.heightMm}mm;
+        overflow: hidden;
+      }
       .f1-sheet.print-sheet,
       .print-sheet.f1-sheet {
-        height: auto;
-        max-height: none;
-        overflow: visible;
+        height: auto !important;
+        min-height: 0 !important;
+        max-height: ${sheetHeight};
+        overflow: hidden;
       }
     }
   `;
+}
+
+/** Scale Form-1 body to fit one paper page when content overflows. */
+function fitToPageScript(): string {
+  return `<script>(function(){
+  function fit(){
+    var sheet = document.querySelector(".f1-sheet");
+    var body = sheet && sheet.querySelector(".f1-fit-body");
+    if(!sheet || !body) return;
+    body.style.transform = "";
+    body.style.width = "";
+    var ind = sheet.querySelector(".print-sheet-page-indicator");
+    var reserve = (ind ? ind.offsetHeight : 12) + 6;
+    var page = document.querySelector(".doc-page");
+    if(!page) return;
+    var cs = getComputedStyle(page);
+    var padY = (parseFloat(cs.paddingTop) || 0) + (parseFloat(cs.paddingBottom) || 0);
+    var avail = page.clientHeight - padY - reserve;
+    if(avail < 40) return;
+    var needed = body.scrollHeight;
+    if(needed > avail + 1){
+      var scale = Math.max(0.45, avail / needed);
+      body.style.transformOrigin = "top left";
+      body.style.transform = "scale(" + scale + ")";
+      body.style.width = (100 / scale) + "%";
+    }
+  }
+  function run(){
+    fit();
+    requestAnimationFrame(fit);
+  }
+  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
+  else run();
+  window.addEventListener("load", run);
+  window.addEventListener("resize", run);
+  window.addEventListener("beforeprint", run);
+  if(typeof ResizeObserver !== "undefined" && document.querySelector(".doc-page")){
+    new ResizeObserver(run).observe(document.querySelector(".doc-page"));
+  }
+})();</script>`;
 }
 
 export function buildBisForm1Html(
@@ -518,9 +564,8 @@ export function buildBisForm1Html(
   settings: PrintSettings = defaultBisForm1PrintSettings(),
 ): string {
   const bodyHtml = `
-${buildPage1(data)}
-${printPageGapHtml(2, 2)}
-${buildPage2(data)}
+${buildFormBody(data)}
+${fitToPageScript()}
 `;
 
   return buildPrintDocument({
@@ -545,6 +590,6 @@ export function openBisForm1Preview(data: BisForm1Data): void {
       }),
     initialSettings: settings,
     company,
-    pageCount: 2,
+    pageCount: 1,
   });
 }

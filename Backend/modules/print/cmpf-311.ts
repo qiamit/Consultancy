@@ -179,20 +179,16 @@ export function buildCmpf311Html(
   assets?: Cmpf311PrintAssets,
 ): string {
   const letterheadSettings = cmpf311LetterheadSettings(settings);
-  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-  // Outer letterhead sits above the sheet; reserve it so "Page 01 of 01" stays
-  // on the same page instead of spilling onto a blank second page.
-  const letterheadReserveMm = letterheadSettings.show_letterhead ? 32 : 0;
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm - ${letterheadReserveMm}mm)`;
+  // Do not force a full-page min-height — that overflows past the outer letterhead
+  // onto a blank second page that only shows the absolute "Page 01 of 01" footer.
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
       color: #111;
       font-size: 10px;
       position: relative;
-      min-height: ${sheetMinHeight};
       box-sizing: border-box;
-      padding-bottom: 4mm;
+      padding-bottom: 2mm;
       page-break-after: auto;
       break-after: auto;
     }
@@ -211,9 +207,7 @@ export function buildCmpf311Html(
       line-height: 1.35;
     }
     .cmpf-page-indicator {
-      position: absolute;
-      right: 0;
-      bottom: 0;
+      margin-top: 14px;
       font-size: 10px;
       font-weight: 600;
       text-align: right;
@@ -237,18 +231,18 @@ export function buildCmpf311Html(
       font-size: 10px;
     }
     .cmpf-declaration {
-      margin: 0 0 20px;
+      margin: 0 0 16px;
       font-size: 10px;
       line-height: 1.55;
       text-align: justify;
     }
     .cmpf-signatory-block {
-      margin-top: 20px;
+      margin-top: 18px;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
       font-size: 10px;
-      line-height: 1.6;
+      line-height: 1.5;
       text-align: right;
     }
     .cmpf-signatory-for {
@@ -256,7 +250,7 @@ export function buildCmpf311Html(
       text-align: right;
     }
     .cmpf-signatory-sig {
-      margin-top: 24px;
+      margin-top: 20px;
       min-width: 200px;
       text-align: right;
     }

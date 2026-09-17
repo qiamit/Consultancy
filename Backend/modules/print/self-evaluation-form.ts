@@ -248,7 +248,7 @@ function buildBrandPointsHtml(data: SelfEvaluationFormLetterData): string {
 }
 
 /**
- * Page 1: General / Raw Material / Packaging + Seal & Sign
+ * Page 1: Letterhead + General / Raw Material / Packaging + Seal & Sign
  * Page 2: Letterhead + QC Staff / Brand / Declaration + Seal & Sign
  */
 function buildFormBodyHtml(
@@ -256,12 +256,13 @@ function buildFormBodyHtml(
   settings: PrintSettings,
   company: PrintCompanyInfo,
 ): string {
-  const page2Letterhead = buildLetterheadHtml(company, settings);
+  const pageLetterhead = buildLetterheadHtml(company, { ...settings, show_letterhead: true });
   const signatory = buildSignatoryBlockHtml(data);
 
   return `
-<div class="print-sheet sef-sheet">
+<div class="print-sheet print-sheet-natural sef-sheet">
   <div class="print-sheet-body">
+    ${pageLetterhead}
     <h1 class="sef-title">Self Evaluation cum Verification Form</h1>
     ${buildToBlockHtml(data)}
     <section class="sef-block">
@@ -282,9 +283,9 @@ function buildFormBodyHtml(
   ${printPageIndicatorHtml(1, 2)}
 </div>
 ${printPageGapHtml(2, 2)}
-<div class="print-sheet sef-sheet print-sheet-page-break">
+<div class="print-sheet print-sheet-natural sef-sheet print-sheet-page-break">
   <div class="print-sheet-body">
-    ${page2Letterhead}
+    ${pageLetterhead}
     <section class="sef-block">
       <p class="sef-section sef-section-tight"><strong>4. Details of Quality Control Staff</strong></p>
       ${buildQcStaffTableHtml(data.qcStaffRows)}
@@ -369,18 +370,18 @@ export function buildSelfEvaluationFormHtml(
     }
     .sef-title {
       text-align: center;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       text-decoration: underline;
-      margin: 0 0 6px;
-      line-height: 1.35;
+      margin: 0 0 4px;
+      line-height: 1.3;
     }
     .sef-to-row {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
       gap: 16px;
-      margin: 8px 0;
+      margin: 4px 0;
     }
     .sef-to-block {
       flex: 1;
@@ -398,7 +399,7 @@ export function buildSelfEvaluationFormHtml(
       margin-top: 4px;
     }
     .sef-section {
-      margin: 8px 0 4px;
+      margin: 5px 0 2px;
       font-size: 10px;
       font-weight: 700;
     }
@@ -429,12 +430,12 @@ export function buildSelfEvaluationFormHtml(
       text-align: justify;
     }
     .sef-signatory-block {
-      margin-top: 28px;
+      margin-top: 14px;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
       font-size: 10px;
-      line-height: 1.6;
+      line-height: 1.45;
       text-align: right;
     }
     .sef-signatory-for {
@@ -442,7 +443,7 @@ export function buildSelfEvaluationFormHtml(
       text-align: right;
     }
     .sef-signatory-sig {
-      margin-top: 32px;
+      margin-top: 18px;
       min-width: 200px;
       text-align: right;
     }
@@ -453,18 +454,23 @@ export function buildSelfEvaluationFormHtml(
       line-height: 1.35;
       text-align: right;
     }
+    .sef-sheet .lh-wrap {
+      margin-bottom: 6px !important;
+      padding-top: 4px !important;
+      padding-bottom: 6px !important;
+    }
     @media print {
       .sef-block table {
         break-inside: auto;
         page-break-inside: auto;
       }
       .sef-block tr {
-        break-inside: avoid;
-        page-break-inside: avoid;
+        break-inside: auto;
+        page-break-inside: auto;
       }
       .sef-declaration-block {
-        break-inside: avoid;
-        page-break-inside: avoid;
+        break-inside: auto;
+        page-break-inside: auto;
       }
     }
   `;
@@ -473,7 +479,9 @@ export function buildSelfEvaluationFormHtml(
     title: "Self Evaluation cum Verification Form",
     bodyHtml: buildFormBodyHtml(data, letterheadSettings, company),
     extraStyles: styles,
-    settings: letterheadSettings,
+    // Letterhead is rendered inside each sheet; suppress the document-level one
+    // so page 1 does not overflow onto a blank second physical page.
+    settings: { ...letterheadSettings, show_letterhead: false },
     company,
   });
 }

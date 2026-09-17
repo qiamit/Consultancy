@@ -14,8 +14,9 @@ export function printPageGapHtml(pageNum: number, totalPages: number): string {
   return `<div class="print-sheet-page-gap" aria-hidden="true">Page break · ${padPrintPageNum(pageNum - 1)} → ${padPrintPageNum(pageNum)}</div>`;
 }
 
-/** Approximate outer `.lh-wrap` height when letterhead sits above the first sheet. */
-export const PRINT_OUTER_LETTERHEAD_RESERVE_MM = 32;
+/** Approximate outer `.lh-wrap` height when letterhead sits above the first sheet.
+ *  Keep generous — long company addresses easily exceed 32mm. */
+export const PRINT_OUTER_LETTERHEAD_RESERVE_MM = 48;
 
 /**
  * CSS min-height for a print sheet that fills one paper page inside `.doc-page` padding.
@@ -67,6 +68,18 @@ export function pagedPrintSheetStyles(settings: PrintSettings): string {
     .print-sheet:first-of-type {
       min-height: ${firstSheetMinHeight};
     }
+    /* Short single-page letters: never force a full-page min-height (avoids blank page 2). */
+    .print-sheet.print-sheet-natural,
+    .print-sheet-natural {
+      min-height: 0 !important;
+      height: auto !important;
+      padding-bottom: 2mm;
+    }
+    .print-sheet-natural .print-sheet-page-indicator {
+      position: static;
+      margin-top: 14px;
+      bottom: auto;
+    }
     .print-sheet-body {
       flex: 1 1 auto;
       min-height: 0;
@@ -112,6 +125,10 @@ export function pagedPrintSheetStyles(settings: PrintSettings): string {
         break-after: page;
       }
       .print-sheet:last-of-type {
+        page-break-after: auto;
+        break-after: auto;
+      }
+      .print-sheet-natural {
         page-break-after: auto;
         break-after: auto;
       }
