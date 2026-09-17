@@ -142,3 +142,64 @@ export function buildBisProjectLicenseScopeNotes(
 export function plainTextToScopeRows(plain: string): LicenseScopeTableRow[] {
   return plainTextToValueScopeRows(plain);
 }
+
+/** Read `source_license_id` from inclusion / checklist notes JSON (if present). */
+export function parseSourceLicenseIdFromNotes(
+  notes: string | null | undefined,
+): string | null {
+  const raw = (notes ?? "").trim();
+  if (!raw.startsWith("{")) return null;
+  try {
+    const parsed = JSON.parse(raw) as { source_license_id?: unknown };
+    const id = String(parsed.source_license_id ?? "").trim();
+    return id || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Merge inclusion scope into an existing license scope.
+ * Prefers 2-column table when either side uses table format.
+ */
+export function mergeLicenseScopeStates(
+  base: BisProjectScopeFormState,
+  addition: BisProjectScopeFormState,
+): BisProjectScopeFormState {
+  const additionText = serializeLicenseScopeText(
+    addition.scopeType,
+    addition.plainText,
+    storedRowsToEditorRows(addition.rows),
+  ).trim();
+  if (!additionText) return base;
+
+  const baseText = serializeLicenseScopeText(
+    base.scopeType,
+    base.plainText,
+    storedRowsToEditorRows(base.rows),
+  ).trim();
+  if (!baseText) return addition;
+
+  if (base.scopeType === "table" || addition.scopeType === "table") {
+    const baseRows =
+      base.scopeType === "table"
+        ? filteredRows(base.rows)
+        : plainTextToValueScopeRows(base.plainText);
+    const addRows =
+      addition.scopeType === "table"
+        ? filteredRows(addition.rows)
+        : plainTextToValueScopeRows(addition.plainText);
+    const rows = [...baseRows, ...addRows];
+    return {
+      scopeType: "table",
+      plainText: "",
+      rows,
+    };
+  }
+
+  return {
+    scopeType: "plain",
+    plainText: `${baseText}\n\n${additionText}`,
+    rows: [],
+  };
+}

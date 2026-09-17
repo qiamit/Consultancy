@@ -1,6 +1,15 @@
 "use client";
 
-import { useId, useMemo, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { BIS_FIELD_LABEL_CLASS } from "./constants";
 
 export type IsCodeComboboxOption = {
@@ -32,6 +41,7 @@ export function IsCodeCombobox({
   addButtonAriaLabel = "Add new IS code",
   hideLabel = false,
   inputId: inputIdProp,
+  placeholder = "Type IS Number…",
 }: {
   name: string;
   label: string;
@@ -46,13 +56,26 @@ export function IsCodeCombobox({
   hideLabel?: boolean;
   /** When `hideLabel`, must match the external `<label htmlFor>`. */
   inputId?: string;
+  placeholder?: string;
 }) {
   const generatedInputId = useId();
   const inputId = inputIdProp ?? generatedInputId;
   const listboxId = `${inputId}-listbox`;
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const blurTimer = useRef<number | null>(null);
   const [query, setQuery] = useState("");
   const [listOpen, setListOpen] = useState(false);
   const [highlight, setHighlight] = useState(0);
+  const [listPosition, setListPosition] = useState<{
+    top: number;
+    left: number;
+    width: number;
+  } | null>(null);
+  const [portalReady, setPortalReady] = useState(false);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   const selectedLabel = useMemo(() => {
     if (!value) return "";
@@ -61,27 +84,120 @@ export function IsCodeCombobox({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options.slice(0, 80);
+    if (!q) return options.slice(0, 120);
     return options
       .filter((o) => {
         const hay = `${o.filterText ?? ""} ${o.label}`.toLowerCase();
         return hay.includes(q);
       })
-      .slice(0, 80);
+      .slice(0, 120);
   }, [options, query]);
 
   const inputValue = listOpen ? query : selectedLabel;
   const safeHighlight =
     filtered.length === 0 ? 0 : Math.min(highlight, filtered.length - 1);
 
+  const updateListPosition = useCallback(() => {
+    const anchor = anchorRef.current;
+    if (!anchor) return;
+    const rect = anchor.getBoundingClientRect();
+    setListPosition({
+      top: rect.bottom + 2,
+      left: rect.left,
+      width: rect.width,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!listOpen || disabled) {
+      setListPosition(null);
+      return;
+    }
+    updateListPosition();
+    window.addEventListener("resize", updateListPosition);
+    window.addEventListener("scroll", updateListPosition, true);
+    return () => {
+      window.removeEventListener("resize", updateListPosition);
+      window.removeEventListener("scroll", updateListPosition, true);
+    };
+  }, [listOpen, disabled, updateListPosition, filtered.length, query]);
+
+  useEffect(
+    () => () => {
+      if (blurTimer.current) window.clearTimeout(blurTimer.current);
+    },
+    [],
+  );
+
+  function clearBlurTimer() {
+    if (blurTimer.current) {
+      window.clearTimeout(blurTimer.current);
+      blurTimer.current = null;
+    }
+  }
+
   function pick(o: IsCodeComboboxOption) {
+    clearBlurTimer();
     onChange(o.id);
     setQuery(o.label);
     setListOpen(false);
   }
 
+  function openList(nextQuery?: string) {
+    if (disabled) return;
+    if (nextQuery !== undefined) setQuery(nextQuery);
+    setHighlight(0);
+    setListOpen(true);
+  }
+
+  const listContent =
+    listOpen && !disabled && portalReady && listPosition
+      ? createPortal(
+          <ul
+            id={listboxId}
+            role="listbox"
+            style={{
+              position: "fixed",
+              top: listPosition.top,
+              left: listPosition.left,
+              width: listPosition.width,
+              zIndex: 400,
+            }}
+            className={`max-h-56 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-900 ${listZIndexClass}`}
+            onMouseDown={(ev) => ev.preventDefault()}
+          >
+            {filtered.length === 0 ? (
+              <li className="px-3 py-2 text-sm text-zinc-500 dark:text-zinc-400">
+                {options.length === 0
+                  ? "No options available"
+                  : "No matches — try another search"}
+              </li>
+            ) : (
+              filtered.map((o, i) => (
+                <li
+                  key={o.id}
+                  id={`${listboxId}-opt-${i}`}
+                  role="option"
+                  aria-selected={i === safeHighlight}
+                  className={`cursor-pointer px-3 py-2 text-sm ${
+                    i === safeHighlight
+                      ? "bg-sky-100 text-zinc-900 dark:bg-sky-900/40 dark:text-zinc-100"
+                      : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                  }`}
+                  onMouseEnter={() => setHighlight(i)}
+                  onMouseDown={() => pick(o)}
+                >
+                  {o.label}
+                </li>
+              ))
+            )}
+          </ul>,
+          document.body,
+        )
+      : null;
+
   const comboboxInput = (
-    <div className="relative w-full">
+    <div className="relative w-full" ref={anchorRef}>
       <input type="hidden" name={name} value={value} />
       <div className={inputRowShellClass}>
         <input
@@ -101,26 +217,34 @@ export function IsCodeCombobox({
           }
           value={inputValue}
           onChange={(e) => {
-            setQuery(e.target.value);
+            const next = e.target.value;
+            setQuery(next);
             setHighlight(0);
             setListOpen(true);
+            // Typing away from the selected label clears the selection so filter stays accurate.
+            if (value && next !== selectedLabel) onChange("");
           }}
           onFocus={() => {
-            setQuery(selectedLabel);
-            setHighlight(0);
-            setListOpen(true);
+            openList(selectedLabel);
           }}
           onBlur={() => {
-            window.setTimeout(() => setListOpen(false), 150);
+            clearBlurTimer();
+            blurTimer.current = window.setTimeout(() => {
+              setListOpen(false);
+              // Restore selected label if user didn't pick a new option.
+              setQuery(selectedLabel);
+            }, 150);
           }}
           onKeyDown={(e) => {
             if (!listOpen && (e.key === "ArrowDown" || e.key === "ArrowUp")) {
-              setListOpen(true);
+              openList(query || selectedLabel);
               return;
             }
             if (e.key === "ArrowDown") {
               e.preventDefault();
-              setHighlight((h) => Math.min(filtered.length - 1, h + 1));
+              setHighlight((h) =>
+                filtered.length === 0 ? 0 : Math.min(filtered.length - 1, h + 1),
+              );
             } else if (e.key === "ArrowUp") {
               e.preventDefault();
               setHighlight((h) => Math.max(0, h - 1));
@@ -131,7 +255,7 @@ export function IsCodeCombobox({
               setListOpen(false);
             }
           }}
-          placeholder="Type IS Number…"
+          placeholder={placeholder}
           className={inputInnerClass}
         />
         {onAddClick ? (
@@ -147,32 +271,7 @@ export function IsCodeCombobox({
           </button>
         ) : null}
       </div>
-      {listOpen && !disabled && filtered.length > 0 ? (
-        <ul
-          id={listboxId}
-          role="listbox"
-          className={`absolute left-0 right-0 top-full mt-0.5 max-h-48 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-900 ${listZIndexClass}`}
-          onMouseDown={(ev) => ev.preventDefault()}
-        >
-          {filtered.map((o, i) => (
-            <li
-              key={o.id}
-              id={`${listboxId}-opt-${i}`}
-              role="option"
-              aria-selected={i === safeHighlight}
-              className={`cursor-pointer px-3 py-2 text-sm ${
-                i === safeHighlight
-                  ? "bg-sky-100 text-zinc-900 dark:bg-sky-900/40 dark:text-zinc-100"
-                  : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
-              }`}
-              onMouseEnter={() => setHighlight(i)}
-              onMouseDown={() => pick(o)}
-            >
-              {o.label}
-            </li>
-          ))}
-        </ul>
-      ) : null}
+      {listContent}
     </div>
   );
 

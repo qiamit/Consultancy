@@ -778,12 +778,16 @@ export function buildApplicationChecklistPayload(input: {
   selfEvaluationForm?: SelfEvaluationFormStored;
   legalDocuments?: LegalDocumentStored[];
   meta?: ApplicationMeta;
+  /** Inclusion cases: link back to the operative license being extended. */
+  sourceLicenseId?: string | null;
 }): string {
   const payload: Record<string, unknown> = {
     type: "application_checklist",
     items: input.items,
     meta: input.meta ?? defaultApplicationMeta(),
   };
+  const sourceLicenseId = (input.sourceLicenseId ?? "").trim();
+  if (sourceLicenseId) payload.source_license_id = sourceLicenseId;
   const scope = (input.licenseScope ?? "").trim();
   if (scope) payload.license_scope = scope;
   const format = input.licenseScopeFormat ?? "plain";

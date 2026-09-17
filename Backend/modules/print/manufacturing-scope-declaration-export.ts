@@ -468,7 +468,7 @@ async function buildManufacturingScopeDocx(
                   alignment: AlignmentType.RIGHT,
                   spacing: { after: 40 },
                   children: [
-                    bodyRun("Date: ", true),
+                    bodyRun("Inspection Date: ", true),
                     bodyRun(dateLabel),
                   ],
                 }),

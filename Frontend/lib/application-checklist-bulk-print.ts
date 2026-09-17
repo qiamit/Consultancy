@@ -223,7 +223,16 @@ import {
   type LegalDocumentStored,
 } from "@backend/modules/bis/legal-documents";
 import { fileNameFromStoredDocumentRef } from "@backend/modules/storage/cmpf-306-documents";
-import { PDFArray, PDFDocument, PDFName, PDFRawStream, PDFRef, rgb, StandardFonts } from "pdf-lib";
+import {
+  PDFArray,
+  PDFDict,
+  PDFDocument,
+  PDFName,
+  PDFRawStream,
+  PDFRef,
+  rgb,
+  StandardFonts,
+} from "pdf-lib";
 
 /** Order matches Application Form document shortcuts (print / binding sequence). */
 export const APPLICATION_CHECKLIST_PRINT_DOCS = [
@@ -1497,10 +1506,16 @@ export function openChecklistDocumentView(html: string): void {
   viewWindow.focus();
 }
 
-async function mergePdfBlobs(blobs: Blob[]): Promise<Blob> {
+type MergePdfPart = {
+  blob: Blob;
+  /** Only Playwright-rendered checklist HTML should strip Chromium blank pages. */
+  stripBlanks: boolean;
+};
+
+async function mergePdfParts(parts: MergePdfPart[]): Promise<Blob> {
   const merged = await PDFDocument.create();
-  for (const blob of blobs) {
-    const cleaned = await stripBlankPdfPages(blob);
+  for (const part of parts) {
+    const cleaned = part.stripBlanks ? await stripBlankPdfPages(part.blob) : part.blob;
     const bytes = new Uint8Array(await cleaned.arrayBuffer());
     const doc = await PDFDocument.load(bytes, { ignoreEncryption: true });
     const pages = await merged.copyPages(doc, doc.getPageIndices());
@@ -1538,9 +1553,42 @@ function pdfPageContentByteLength(page: ReturnType<PDFDocument["getPage"]>): num
   return streamSize(contents);
 }
 
+/** True when the page embeds images/forms (typical scanned attachment pages). */
+function pdfPageHasXObjects(page: ReturnType<PDFDocument["getPage"]>): boolean {
+  try {
+    const resources = page.node.Resources();
+    if (!resources) return false;
+    const xObject = resources.lookup(PDFName.of("XObject"));
+    if (!xObject) return false;
+    if (xObject instanceof PDFDict) return xObject.keys().length > 0;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function looksLikePdfBytes(bytes: Uint8Array): boolean {
+  let i = 0;
+  while (
+    i < bytes.length &&
+    (bytes[i] === 0x20 || bytes[i] === 0x09 || bytes[i] === 0x0d || bytes[i] === 0x0a)
+  ) {
+    i += 1;
+  }
+  return (
+    bytes.length >= i + 5 &&
+    bytes[i] === 0x25 &&
+    bytes[i + 1] === 0x50 &&
+    bytes[i + 2] === 0x44 &&
+    bytes[i + 3] === 0x46 &&
+    bytes[i + 4] === 0x2d
+  ); // %PDF-
+}
+
 /**
  * Drop trailing / interstitial near-empty pages that Chromium sometimes emits
  * when print CSS uses full-page min-height.
+ * Never strip scanned/image pages (tiny content stream + XObject).
  */
 async function stripBlankPdfPages(blob: Blob): Promise<Blob> {
   const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -1554,7 +1602,7 @@ async function stripBlankPdfPages(blob: Blob): Promise<Blob> {
   for (let i = 0; i < count; i++) {
     const page = src.getPage(i);
     const size = pdfPageContentByteLength(page);
-    if (size > BLANK_MAX_BYTES) keep.push(i);
+    if (size > BLANK_MAX_BYTES || pdfPageHasXObjects(page)) keep.push(i);
   }
 
   // Never delete everything — keep original if heuristic fails.
@@ -1791,13 +1839,25 @@ async function renderAttachmentAsPdfBlob(opts: {
   documentRef: string;
 }): Promise<Blob> {
   const pathName = attachmentPathName(opts.url, opts.documentRef);
+  const bytes = new Uint8Array(await opts.blob.arrayBuffer());
   const isPdf =
+    looksLikePdfBytes(bytes) ||
     opts.blob.type.includes("pdf") ||
     /\.pdf(?:\?|$)/i.test(pathName) ||
     /\.pdf$/i.test(opts.documentRef);
-  if (isPdf) return opts.blob;
 
-  const html = await buildAttachmentHtmlPage(opts);
+  if (isPdf) {
+    // Validate mergeability up front so callers get a clear failure.
+    await PDFDocument.load(bytes, { ignoreEncryption: true });
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
+    return new Blob([copy], { type: "application/pdf" });
+  }
+
+  const html = await buildAttachmentHtmlPage({
+    ...opts,
+    blob: new Blob([bytes], { type: opts.blob.type || "application/octet-stream" }),
+  });
   return await renderPdfViaPlaywright({
     html: prepareHtmlForBulkPdf(html),
     filename: "attachment.pdf",
@@ -1870,7 +1930,32 @@ async function buildChecklistCombinedPdfBlob(opts: {
   docs?: { id: ChecklistPrintDocId; html: string }[];
   attachmentRefs?: string[];
 }): Promise<Blob> {
-  const blobs: Blob[] = [];
+  const parts: MergePdfPart[] = [];
+  const failedAttachments: string[] = [];
+
+  async function pushAttachment(label: string, documentRef: string): Promise<void> {
+    try {
+      const url = await resolveChecklistAttachmentUrl(documentRef);
+      const res = await fetch(url);
+      if (!res.ok) {
+        failedAttachments.push(label);
+        return;
+      }
+      const blob = await res.blob();
+      parts.push({
+        blob: await renderAttachmentAsPdfBlob({
+          blob,
+          url,
+          label,
+          documentRef,
+        }),
+        // Never strip attachment pages — scanned PDFs look "blank" to content-stream heuristics.
+        stripBlanks: false,
+      });
+    } catch {
+      failedAttachments.push(label);
+    }
+  }
 
   if (opts.items && opts.items.length > 0) {
     for (const item of opts.items) {
@@ -1883,25 +1968,10 @@ async function buildChecklistCombinedPdfBlob(opts: {
           landscape: settings.orientation === "landscape",
           margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
         });
-        blobs.push(blob);
+        parts.push({ blob, stripBlanks: true });
         continue;
       }
-      try {
-        const url = await resolveChecklistAttachmentUrl(item.documentRef);
-        const res = await fetch(url);
-        if (!res.ok) continue;
-        const blob = await res.blob();
-        blobs.push(
-          await renderAttachmentAsPdfBlob({
-            blob,
-            url,
-            label: item.label,
-            documentRef: item.documentRef,
-          }),
-        );
-      } catch {
-        // Skip missing / unreadable attachments; continue with remaining items.
-      }
+      await pushAttachment(item.label, item.documentRef);
     }
   } else {
     if (opts.docs && opts.docs.length > 0) {
@@ -1914,7 +1984,7 @@ async function buildChecklistCombinedPdfBlob(opts: {
           landscape: settings.orientation === "landscape",
           margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
         });
-        blobs.push(blob);
+        parts.push({ blob, stripBlanks: true });
       }
     } else {
       const html = (opts.html ?? "").trim();
@@ -1926,36 +1996,38 @@ async function buildChecklistCombinedPdfBlob(opts: {
           landscape: false,
           margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
         });
-        blobs.push(blob);
+        parts.push({ blob, stripBlanks: true });
       }
     }
 
     for (const ref of opts.attachmentRefs ?? []) {
       const trimmed = ref.trim();
       if (!trimmed) continue;
-      try {
-        const url = await resolveChecklistAttachmentUrl(trimmed);
-        const res = await fetch(url);
-        if (!res.ok) continue;
-        const blob = await res.blob();
-        blobs.push(
-          await renderAttachmentAsPdfBlob({
-            blob,
-            url,
-            label: fileNameFromStoredDocumentRef(trimmed) || "Attachment",
-            documentRef: trimmed,
-          }),
-        );
-      } catch {
-        // Skip non-mergeable / missing attachments.
-      }
+      await pushAttachment(
+        fileNameFromStoredDocumentRef(trimmed) || "Attachment",
+        trimmed,
+      );
     }
   }
 
-  if (blobs.length === 0) throw new Error("Nothing to export as PDF.");
+  if (failedAttachments.length > 0) {
+    const preview = failedAttachments.slice(0, 5).join(", ");
+    const more =
+      failedAttachments.length > 5 ? ` (+${failedAttachments.length - 5} more)` : "";
+    throw new Error(
+      `Could not include attachment(s) in the PDF: ${preview}${more}. Uncheck or re-upload them and try again.`,
+    );
+  }
+
+  if (parts.length === 0) throw new Error("Nothing to export as PDF.");
   const merged =
-    blobs.length === 1 ? await stripBlankPdfPages(blobs[0]!) : await mergePdfBlobs(blobs);
-  return await stampContinuousPageNumbers(await stripBlankPdfPages(merged));
+    parts.length === 1
+      ? parts[0]!.stripBlanks
+        ? await stripBlankPdfPages(parts[0]!.blob)
+        : parts[0]!.blob
+      : await mergePdfParts(parts);
+  // Do not strip blanks on the final merged pack — that removed scanned attachment pages.
+  return await stampContinuousPageNumbers(merged);
 }
 
 export async function downloadChecklistCombinedPdf(opts: {

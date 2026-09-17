@@ -6,6 +6,9 @@ import { bisIsCodeDisplayLabel } from "@backend/modules/bis/bis-project-is-code-
 import { buildBisProjectTitle } from "@backend/modules/bis/bis-project-scope-label";
 import {
   buildBisProjectLicenseScopeNotes,
+  mergeLicenseScopeStates,
+  parseBisProjectLicenseScopeNotes,
+  parseSourceLicenseIdFromNotes,
 } from "@backend/modules/bis/bis-project-license-scope-notes";
 import type { LicenseScopeTableRow } from "@backend/modules/bis/application-checklist-notes";
 import {
@@ -1183,12 +1186,17 @@ export async function convertLicenseToApplication(
   return { ok: true, id: created.id as string };
 }
 
-/**
- * Start a BIS Inclusion case from an existing operative license.
- * Keeps CM/L on the new row; does not archive the source license.
- */
 export async function createInclusionFromLicense(
-  licenseId: string,
+  input:
+    | string
+    | {
+        licenseId: string;
+        startDate?: string;
+        endDate?: string;
+        inclusionScopeFormat?: "plain" | "table";
+        inclusionScopePlain?: string;
+        inclusionScopeRows?: LicenseScopeTableRow[];
+      },
 ): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const supabase = await createClient();
   const {
@@ -1196,13 +1204,18 @@ export async function createInclusionFromLicense(
   } = await supabase.auth.getUser();
   if (!user) return { ok: false, error: "Not signed in" };
 
-  const trimmedId = licenseId?.trim();
+  const opts =
+    typeof input === "string"
+      ? { licenseId: input }
+      : input;
+
+  const trimmedId = opts.licenseId?.trim();
   if (!trimmedId) return { ok: false, error: "Invalid license" };
 
   const { data: existing, error: fetchError } = await supabase
     .from("bis_projects")
     .select(
-      "id, title, project_kind, status, client_id, is_code_id, portal_user_id, portal_password, case_handled_by, case_referred_by, billing_amount, billing_frequency, target_date, cm_l_digits, license_number, notes, is_qe_managed",
+      "id, title, project_kind, status, client_id, is_code_id, portal_user_id, portal_password, case_handled_by, case_referred_by, billing_amount, billing_frequency, target_date, cm_l_digits, license_number, notes, is_qe_managed, license_validity_date",
     )
     .eq("id", trimmedId)
     .maybeSingle();
@@ -1221,12 +1234,73 @@ export async function createInclusionFromLicense(
   if (!clientId) return { ok: false, error: "Client is missing on this license." };
   if (!isCodeId) return { ok: false, error: "IS code is missing on this license." };
 
+  const today = new Date().toISOString().split("T")[0]!;
+  const startDate =
+    opts.startDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.startDate.trim())
+      ? opts.startDate.trim()
+      : today;
+  const endDate =
+    opts.endDate && /^\d{4}-\d{2}-\d{2}$/.test(opts.endDate.trim())
+      ? opts.endDate.trim()
+      : null;
+
+  const scopeFormat = opts.inclusionScopeFormat === "table" ? "table" : "plain";
+  const scopePlain = (opts.inclusionScopePlain ?? "").trim();
+  const scopeRows = (opts.inclusionScopeRows ?? []).filter(
+    (r) => r.component.trim() || r.value.trim(),
+  );
+  if (scopeFormat === "plain" && !scopePlain) {
+    return { ok: false, error: "Enter Inclusion Scope (plain text)." };
+  }
+  if (scopeFormat === "table" && scopeRows.length === 0) {
+    return { ok: false, error: "Enter at least one Inclusion Scope row." };
+  }
+
   const inclusionKind = await inclusionProjectKindDbValue(supabase);
   const title = await buildTitle(supabase, clientId, isCodeId, "BIS inclusion");
-  const today = new Date().toISOString().split("T")[0]!;
   const now = new Date().toISOString();
   const cmDigits = String(existing.cm_l_digits ?? "").replace(/\D/g, "");
   const licenseNo = String(existing.license_number ?? "").trim();
+
+  const notesPayload: Record<string, unknown> = {
+    type: "application_checklist",
+    items: [],
+    source_license_id: trimmedId,
+    meta: {
+      application_procedure: "Simplified",
+      application_number: "",
+      date_of_application: startDate,
+      bis_branch_name: "",
+      dealing_officer_name: "",
+      dealing_officer_designation: "",
+      inspection_officer_name: "",
+      inspection_officer_designation: "",
+      branch_head_name: "",
+      branch_head_designation: "",
+      nature_of_inspection: "",
+      date_of_inspection: "",
+      marking_clause: "",
+      packaging_clause: "",
+      product_manual_number: "",
+      firm_scale: "",
+      weekly_off: [],
+    },
+  };
+  if (scopeFormat === "table") {
+    notesPayload.license_scope_format = "table";
+    notesPayload.license_scope_rows = scopeRows;
+    notesPayload.license_scope = scopeRows
+      .map((r, i) => {
+        const c = r.component.trim();
+        const v = r.value.trim();
+        if (c && v) return `${i + 1}. ${c}: ${v}`;
+        if (c) return `${i + 1}. ${c}`;
+        return `${i + 1}. ${v}`;
+      })
+      .join("\n");
+  } else {
+    notesPayload.license_scope = scopePlain;
+  }
 
   const { data: created, error: insertError } = await supabase
     .from("bis_projects")
@@ -1239,8 +1313,8 @@ export async function createInclusionFromLicense(
       cm_l_digits: cmDigits || null,
       license_validity_date: null,
       license_number: licenseNo || null,
-      start_date: today,
-      target_date: null,
+      start_date: startDate,
+      target_date: endDate,
       case_handled_by:
         String(existing.case_handled_by ?? "").trim() || "Amit Kumar",
       case_referred_by: String(existing.case_referred_by ?? "").trim() || "QE",
@@ -1251,12 +1325,7 @@ export async function createInclusionFromLicense(
       portal_password:
         (existing.portal_password as string | null)?.trim() || null,
       application_stage: DEFAULT_BIS_APPLICATION_STAGE,
-      notes: [
-        String(existing.notes ?? "").trim(),
-        `Inclusion started from license${cmDigits ? ` CM/L-${cmDigits}` : ""}.`,
-      ]
-        .filter(Boolean)
-        .join("\n"),
+      notes: JSON.stringify(notesPayload),
       is_qe_managed: existing.is_qe_managed !== false,
       created_by: user.id,
       updated_at: now,
@@ -1264,7 +1333,17 @@ export async function createInclusionFromLicense(
     .select("id")
     .single();
 
-  if (insertError) return { ok: false, error: insertError.message };
+  if (insertError) {
+    const msg = insertError.message ?? "";
+    if (/bis_projects_cm_l_digits_uidx|duplicate key/i.test(msg)) {
+      return {
+        ok: false,
+        error:
+          "This CM/L is already linked to another granted license record. If a previous inclusion exists, finish or remove it first.",
+      };
+    }
+    return { ok: false, error: insertError.message };
+  }
   if (!created?.id) return { ok: false, error: "Failed to create inclusion case." };
 
   revalidatePath("/dashboard");
@@ -1272,4 +1351,124 @@ export async function createInclusionFromLicense(
   revalidatePath("/dashboard/bis-projects");
   revalidatePath("/dashboard/our-bis-licenses");
   return { ok: true, id: created.id as string };
+}
+
+/**
+ * Finish an inclusion case: merge its Inclusion Scope into the source license scope,
+ * then close the inclusion row (leaves the New Inclusion pending list).
+ */
+export async function completeInclusionCase(
+  inclusionId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const trimmedId = inclusionId?.trim();
+  if (!trimmedId) return { ok: false, error: "Invalid inclusion case" };
+
+  const { data: inclusion, error: fetchError } = await supabase
+    .from("bis_projects")
+    .select(
+      "id, project_kind, client_id, is_code_id, cm_l_digits, license_number, notes, target_date, license_validity_date",
+    )
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!inclusion) return { ok: false, error: "Inclusion case not found." };
+  if (!isInclusionProjectKind(inclusion.project_kind)) {
+    return { ok: false, error: "Only inclusion cases can be finished this way." };
+  }
+  if ((inclusion.license_validity_date ?? "").trim()) {
+    return { ok: false, error: "This inclusion case is already finished." };
+  }
+
+  let sourceId = parseSourceLicenseIdFromNotes(inclusion.notes);
+  if (!sourceId) {
+    const clientId = (inclusion.client_id as string | null)?.trim() ?? "";
+    const isCodeId = (inclusion.is_code_id as string | null)?.trim() ?? "";
+    const cmDigits = String(inclusion.cm_l_digits ?? "").replace(/\D/g, "");
+    if (!clientId || !isCodeId || !cmDigits) {
+      return {
+        ok: false,
+        error: "Cannot find the source license for this inclusion case.",
+      };
+    }
+    const { data: matches, error: matchError } = await supabase
+      .from("bis_projects")
+      .select("id, project_kind, license_validity_date")
+      .eq("client_id", clientId)
+      .eq("is_code_id", isCodeId)
+      .eq("cm_l_digits", cmDigits)
+      .not("license_validity_date", "is", null)
+      .neq("id", trimmedId)
+      .limit(20);
+    if (matchError) return { ok: false, error: matchError.message };
+    const licenseMatch = (matches ?? []).find(
+      (r) =>
+        !isInclusionProjectKind(r.project_kind) &&
+        !isApplicationProjectKind(r.project_kind),
+    );
+    sourceId = licenseMatch?.id ?? null;
+  }
+
+  if (!sourceId) {
+    return { ok: false, error: "Source license not found for this inclusion." };
+  }
+
+  const { data: license, error: licenseError } = await supabase
+    .from("bis_projects")
+    .select("id, notes, license_validity_date, project_kind")
+    .eq("id", sourceId)
+    .maybeSingle();
+
+  if (licenseError) return { ok: false, error: licenseError.message };
+  if (!license) return { ok: false, error: "Source license not found." };
+  if (isInclusionProjectKind(license.project_kind)) {
+    return { ok: false, error: "Source record is not a license." };
+  }
+
+  const inclusionScope = parseBisProjectLicenseScopeNotes(inclusion.notes);
+  const licenseScope = parseBisProjectLicenseScopeNotes(license.notes);
+  const merged = mergeLicenseScopeStates(licenseScope, inclusionScope);
+  const nextLicenseNotes = buildBisProjectLicenseScopeNotes(license.notes, merged);
+
+  const finishDate =
+    (inclusion.target_date as string | null)?.trim() ||
+    (license.license_validity_date as string | null)?.trim() ||
+    new Date().toISOString().split("T")[0]!;
+
+  const now = new Date().toISOString();
+  const { error: licenseUpdateError } = await supabase
+    .from("bis_projects")
+    .update({ notes: nextLicenseNotes, updated_at: now })
+    .eq("id", sourceId);
+  if (licenseUpdateError) return { ok: false, error: licenseUpdateError.message };
+
+  const inclusionCm = String(inclusion.cm_l_digits ?? "").replace(/\D/g, "");
+  const { error: inclusionUpdateError } = await supabase
+    .from("bis_projects")
+    .update({
+      // Leave pending list; clear CM/L digits so partial unique index stays with the source license.
+      cm_l_digits: null,
+      license_number:
+        inclusionCm.length === 10
+          ? `CM/L-${inclusionCm}`
+          : String(inclusion.license_number ?? "").trim() || null,
+      license_validity_date: finishDate,
+      application_stage: "License Granted",
+      status: "completed",
+      updated_at: now,
+    })
+    .eq("id", trimmedId);
+  if (inclusionUpdateError) return { ok: false, error: inclusionUpdateError.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-new-inclusion");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/our-bis-licenses");
+  return { ok: true };
 }

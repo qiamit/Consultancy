@@ -318,8 +318,9 @@ export function defaultUpdatedSchemeOfInspectionPrintSettings(): PrintSettings {
     orientation: "portrait",
     margin_top: 5,
     margin_bottom: 5,
-    margin_left: 15,
-    margin_right: 10,
+    // Sheet-only padding (see @media print .doc-page { padding: 0 }). Keep L/R modest so Table 1 uses page width.
+    margin_left: 10,
+    margin_right: 8,
   };
 }
 
@@ -429,6 +430,11 @@ export function buildUpdatedSchemeOfInspectionHtml(
       }
     }
     @media print {
+      /* Margins live on each sheet only — avoid stacking with engine .doc-page padding (PDF was too narrow). */
+      .doc-page {
+        padding: 0 !important;
+        max-width: none !important;
+      }
       .print-sheet-page-gap {
         display: none !important;
       }

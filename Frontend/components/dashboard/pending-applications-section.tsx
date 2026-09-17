@@ -1301,6 +1301,7 @@ function ApplicationFormModal({
         const newObj = JSON.parse(payload) as Record<string, unknown>;
         if (existingObj && typeof existingObj === "object" && existingObj.type === "application_checklist") {
           const preserveKeys = [
+            "source_license_id",
             "license_scope",
             "license_scope_format",
             "license_scope_rows",
@@ -3603,6 +3604,7 @@ export function PendingApplicationsSection({
   variant = "pending_applications",
   isAdmin = false,
   inclusionLicenses = [],
+  inclusionClients = [],
 }: {
   rows: ApplicationRow[];
   variant?: "pending_applications" | "expired_licenses" | "inclusion";
@@ -3610,6 +3612,8 @@ export function PendingApplicationsSection({
   isAdmin?: boolean;
   /** Existing licenses available when starting a new Inclusion case. */
   inclusionLicenses?: import("@/components/dashboard/modals/start-inclusion-from-license-modal").InclusionLicensePickRow[];
+  /** Client Master rows for Inclusion Select Client (type-to-search). */
+  inclusionClients?: import("@/components/dashboard/modals/start-inclusion-from-license-modal").InclusionClientOption[];
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -4293,6 +4297,7 @@ export function PendingApplicationsSection({
     {addApplicationOpen && isInclusion && (
       <StartInclusionFromLicenseModal
         licenses={inclusionLicenses}
+        clients={inclusionClients}
         onClose={() => setAddApplicationOpen(false)}
         onCreated={(id) => {
           setAddApplicationOpen(false);

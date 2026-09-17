@@ -42,24 +42,30 @@ export default async function BisNewInclusionPage() {
   const selectCols =
     "id, title, status, project_kind, created_at, target_date, client_id, cm_l_digits, license_number, license_validity_date, is_code_id, portal_user_id, portal_password, application_stage, is_qe_managed, clients(name, company_name, email, state), is_codes(is_number, revision_year, is_code_title)";
 
-  const [{ data: inclusionRaw }, { data: licensesRaw }] = await Promise.all([
-    supabase
-      .from("bis_projects")
-      .select(selectCols)
-      .in("project_kind", inclusionKinds)
-      .is("license_validity_date", null)
-      .or("status.is.null,status.eq.in_progress")
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("bis_projects")
-      .select(selectCols)
-      .not("project_kind", "in", applicationKindFilter)
-      .not("project_kind", "in", inFilter(inclusionKinds))
-      .not("license_validity_date", "is", null)
-      .or("status.is.null,status.eq.in_progress")
-      .order("license_validity_date", { ascending: false })
-      .limit(500),
-  ]);
+  const [{ data: inclusionRaw }, { data: licensesRaw }, { data: clientsRaw }] =
+    await Promise.all([
+      supabase
+        .from("bis_projects")
+        .select(selectCols)
+        .in("project_kind", inclusionKinds)
+        .is("license_validity_date", null)
+        .or("status.is.null,status.eq.in_progress")
+        .order("created_at", { ascending: false }),
+      // Operative licenses for inclusion picker (any status; must have validity + CM/L client).
+      supabase
+        .from("bis_projects")
+        .select(selectCols)
+        .not("project_kind", "in", applicationKindFilter)
+        .not("project_kind", "in", inFilter(inclusionKinds))
+        .not("license_validity_date", "is", null)
+        .not("client_id", "is", null)
+        .order("license_validity_date", { ascending: false })
+        .limit(2000),
+      supabase
+        .from("clients")
+        .select("id, name, company_name")
+        .order("company_name", { ascending: true }),
+    ]);
 
   type ClientJoin = {
     name: string | null;
@@ -126,11 +132,28 @@ export default async function BisNewInclusionPage() {
       cm_l_digits: r.cm_l_digits,
       license_number: r.license_number,
       license_validity_date: r.license_validity_date,
+      client_id: r.client_id,
       client_name: r.client_name,
+      is_code_id: r.is_code_id,
       is_number: r.is_number,
       is_revision_year: r.is_revision_year,
       is_code_title: r.is_code_title,
     }));
+
+  const inclusionClients = (clientsRaw ?? [])
+    .map((c) => {
+      const company = String(c.company_name ?? "").trim();
+      const name = String(c.name ?? "").trim();
+      return {
+        id: String(c.id),
+        label: company || name || "Unknown Client",
+        filterText: [company, name].filter(Boolean).join(" "),
+      };
+    })
+    .filter((c) => c.id)
+    .sort((a, b) =>
+      a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
+    );
 
   return (
     <div className="w-full">
@@ -140,6 +163,7 @@ export default async function BisNewInclusionPage() {
           variant="inclusion"
           isAdmin={isAdmin}
           inclusionLicenses={inclusionLicenses}
+          inclusionClients={inclusionClients}
         />
       </Suspense>
     </div>

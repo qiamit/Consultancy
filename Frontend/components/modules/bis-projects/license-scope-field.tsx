@@ -15,12 +15,16 @@ export function LicenseScopeField({
   rowsJson,
   onPlainTextChange,
   onRowsJsonChange,
+  label = "Licence Scope",
+  placeholder = "Enter licence / manufacturing scope…",
 }: {
   scopeType: LicenseScopeFormat;
   plainText: string;
   rowsJson: string;
   onPlainTextChange: (v: string) => void;
   onRowsJsonChange: (v: string) => void;
+  label?: string;
+  placeholder?: string;
 }) {
   const [tableRows, setTableRows] = useState(() => rowsFromScopeJson(rowsJson));
 
@@ -34,7 +38,7 @@ export function LicenseScopeField({
   return (
     <div className="min-w-0 sm:col-span-2 lg:col-span-4">
       <label htmlFor="bis_license_scope" className={BIS_FIELD_LABEL_CLASS}>
-        Licence Scope
+        {label}
       </label>
 
       <input type="hidden" name="license_scope_format" value={scopeType} />
@@ -52,7 +56,7 @@ export function LicenseScopeField({
           value={plainText}
           onChange={(e) => onPlainTextChange(e.target.value)}
           className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
-          placeholder="Enter licence / manufacturing scope…"
+          placeholder={placeholder}
         />
       ) : (
         <>
