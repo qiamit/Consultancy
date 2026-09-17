@@ -237,7 +237,7 @@ export const APPLICATION_CHECKLIST_PRINT_DOCS = [
   { id: "process_flow_chart", label: "Process Flow Chart" },
   { id: "process_description", label: "Process Description" },
   { id: "cmpf_305", label: "List of Plant & Machinery" },
-  { id: "cmpf_306", label: "List of Testing Equipments - CMPF - 306" },
+  { id: "cmpf_306", label: "List of Testing Equipments" },
   { id: "cmpf_307", label: "Brand Name Declaration" },
   { id: "cmpf_310", label: "Acceptance of Marking Fee" },
   { id: "cmpf_311", label: "Acceptance of SIT" },

@@ -12,7 +12,7 @@ import {
   sortFtrTestRowsByClause,
 } from "@backend/modules/bis/factory-test-report";
 import { formatFtrObservedForDisplay } from "@backend/modules/bis/ftr-observed-formula";
-import { iframeSizeForPagedPrintSettings } from "@backend/modules/print/paged-preview";
+import { iframeSizeForPagedPrintSettings, printSheetMinHeightCss } from "@backend/modules/print/paged-preview";
 import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate, parseToDate } from "@backend/shared/format-date";
 
@@ -353,7 +353,11 @@ export function buildFactoryTestReportHtml(
   );
 
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  // Letterhead is embedded per sheet; outer letterhead is suppressed below.
+  const sheetMinHeight = printSheetMinHeightCss(letterheadSettings, {
+    reserveOuterLetterhead: false,
+    pageHeightMm: pageSize.heightMm,
+  });
   const company = buildFactoryTestReportCompany(data, assets);
   const letterheadHtml = letterheadSettings.show_letterhead
     ? buildLetterheadHtml(company, letterheadSettings)
@@ -375,9 +379,10 @@ export function buildFactoryTestReportHtml(
       width: 100%;
       box-sizing: border-box;
       min-height: ${sheetMinHeight};
-      height: ${sheetMinHeight};
       display: flex;
       flex-direction: column;
+      page-break-after: auto;
+      break-after: auto;
     }
     .ftr-sheet-inner {
       display: flex;

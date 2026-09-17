@@ -171,7 +171,11 @@ export function buildProcessDescriptionHtml(
   assets?: ProcessDescriptionPrintAssets,
 ): string {
   const letterheadSettings = processDescriptionLetterheadSettings(settings);
-  const sheetMinHeight = `calc(297mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  // Letterhead (.lh-wrap) sits above .pd-sheet inside .doc-page. Without this
+  // reserve, min-height ≈ full A4 and overflows onto a blank second page.
+  const letterheadReserveMm = 32;
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm - ${letterheadReserveMm}mm)`;
   const styles = `
     .pd-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -181,6 +185,8 @@ export function buildProcessDescriptionHtml(
       min-height: ${sheetMinHeight};
       box-sizing: border-box;
       padding-bottom: 4mm;
+      page-break-after: auto;
+      break-after: auto;
     }
     .pd-page-indicator {
       position: absolute;

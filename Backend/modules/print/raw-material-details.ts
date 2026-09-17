@@ -313,7 +313,7 @@ export function buildRawMaterialDetailsHtml(
 ): string {
   const letterheadSettings = rawMaterialDetailsLetterheadSettings(settings);
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-  const letterheadReserveMm = 26;
+  const letterheadReserveMm = letterheadSettings.show_letterhead ? 32 : 0;
   const sheetMinHeightFirst = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm - ${letterheadReserveMm}mm)`;
   const sheetMinHeightCont = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
   const styles = `

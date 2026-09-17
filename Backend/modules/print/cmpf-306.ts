@@ -236,34 +236,23 @@ function buildFooterHtml(data: Cmpf306LetterData): string {
   const bisDesig = esc(data.inspectionOfficerDesignation) || "----";
   const dateInsp = formatMetaDate(data.dateOfInspection);
 
-  const box =
-    "border:1px solid #111;padding:0;vertical-align:top;width:50%;";
-  // Match CMPF 305 declaration box height / fonts / stamp position.
-  const cellInner =
-    "display:flex;flex-direction:column;min-height:277px;height:100%;";
-  const declBlock = "padding:6px 8px 4px;font-size:9.5px;line-height:1.4;";
-  const sigArea =
-    "flex:1;background:#eef2f7;padding:6px 8px;display:flex;flex-direction:column;min-height:137px;";
-  const sigSpacer = "flex:1;min-height:34px;";
-  const sigLine = "font-size:9.5px;line-height:1.45;";
-
   return `
 <p class="cmpf-extra-note"><em>Note: Attach Extra Sheet, If Required</em></p>
-<table style="width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed;">
+<table class="cmpf-decl-table">
   <tr>
-    <td style="${box}">
-      <div style="${cellInner}">
-        <div style="${declBlock}">
-          <p style="margin:0 0 8px;text-align:justify;">
+    <td class="cmpf-decl-box">
+      <div class="cmpf-decl-cell-inner">
+        <div class="cmpf-decl-text">
+          <p style="margin:0 0 6px;text-align:justify;">
             I hereby declare that the Equipments of which details are given overleaf is owned by me and are actually installed in the premises.*
           </p>
           <p style="margin:0;text-align:justify;">
             I also declare that in case of grant of licence, I will send prior intimation to BIS whenever any machinery is takenout of the premises of the firm due to any reason.
           </p>
         </div>
-        <div style="${sigArea}">
-          <div style="${sigSpacer}"></div>
-          <div style="${sigLine}">
+        <div class="cmpf-decl-sig-area">
+          <div class="cmpf-decl-sig-spacer"></div>
+          <div class="cmpf-decl-sig-line">
             <div>Sig. of Firm's Representative :-</div>
             <div style="position:relative;display:inline-block;min-width:210px;padding-right:95px;">
               ${signatorySignatureOverlayHtml(data.signatureImageUrl, {
@@ -281,16 +270,16 @@ function buildFooterHtml(data: Cmpf306LetterData): string {
         </div>
       </div>
     </td>
-    <td style="${box}">
-      <div style="${cellInner}">
-        <div style="${declBlock}">
+    <td class="cmpf-decl-box">
+      <div class="cmpf-decl-cell-inner">
+        <div class="cmpf-decl-text">
           <p style="margin:0;text-align:right;">
             I have checked and found that Equipments of which details are given overleaf was available during my Inspection
           </p>
         </div>
-        <div style="${sigArea}">
-          <div style="${sigSpacer}"></div>
-          <div style="${sigLine};text-align:right;">
+        <div class="cmpf-decl-sig-area">
+          <div class="cmpf-decl-sig-spacer"></div>
+          <div class="cmpf-decl-sig-line" style="text-align:right;">
             <div>Sig. of BIS Certification Officer :-</div>
             <div>Name :- ${bisName}</div>
             <div>Designation :- ${bisDesig}</div>
@@ -440,7 +429,7 @@ function buildFormCoverPageHtml(
 ): string {
   return `
 ${buildPageGapHtml(1, totalPages)}
-<div class="cmpf-sheet">
+<div class="cmpf-sheet cmpf-sheet-cover">
   <div class="cmpf-sheet-body">
     ${buildFormCoverHeaderHtml(data)}
     ${buildToBlockHtml(data)}
@@ -564,7 +553,10 @@ export function buildCmpf306Html(
   const letterheadSettings = cmpf306LetterheadSettings(settings);
   const company = buildCmpf306Company(data, assets);
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  // Outer letterhead sits above the cover sheet; continuation pages embed their own.
+  const letterheadReserveMm = letterheadSettings.show_letterhead ? 32 : 0;
   const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  const coverSheetHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm - ${letterheadReserveMm}mm)`;
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -577,6 +569,13 @@ export function buildCmpf306Html(
       padding-bottom: 4mm;
       display: flex;
       flex-direction: column;
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .cmpf-sheet-cover {
+      min-height: ${coverSheetHeight};
+      max-height: ${coverSheetHeight};
+      overflow: hidden;
     }
     .cmpf-sheet-body {
       flex: 1 1 auto;
@@ -596,10 +595,10 @@ export function buildCmpf306Html(
     }
     .cmpf-title {
       text-align: center;
-      font-size: 14px;
+      font-size: 13px;
       font-weight: 700;
       text-decoration: underline;
-      margin: 0 0 12px;
+      margin: 0 0 6px;
       letter-spacing: 0.02em;
       flex-shrink: 0;
     }
@@ -633,21 +632,23 @@ export function buildCmpf306Html(
     }
     .cmpf-to-block {
       font-size: 11px;
-      line-height: 1.55;
-      margin: 8px 0 4px;
+      line-height: 1.45;
+      margin: 4px 0 2px;
       flex-shrink: 0;
     }
     .cmpf-extra-note {
-      margin: 14px 0 4px;
-      font-size: 11px;
+      margin: 4px 0 2px;
+      font-size: 10px;
       text-align: left;
+      flex-shrink: 0;
     }
     .cmpf-footnote {
-      margin: 10px 0 0;
-      font-size: 9px;
+      margin: 4px 0 0;
+      font-size: 8.5px;
       font-weight: 700;
-      line-height: 1.4;
+      line-height: 1.35;
       text-align: justify;
+      flex-shrink: 0;
     }
     .cmpf-equipment-table {
       width: 100%;
@@ -695,20 +696,68 @@ export function buildCmpf306Html(
       text-align: center;
     }
     .cmpf-dummy-equipment-table {
-      margin-top: 8px;
-      margin-bottom: 4px;
+      margin-top: 6px;
+      margin-bottom: 2px;
       flex-shrink: 0;
     }
     .cmpf-dummy-equipment-table .cmpf-dummy-merge {
       text-align: center;
       font-weight: 700;
       font-size: 10px;
-      padding: 10px 6px;
+      padding: 8px 6px;
     }
     .cmpf-footer-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      margin-top: 4px;
+      padding-top: 2px;
+      display: flex;
+      flex-direction: column;
+    }
+    .cmpf-decl-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 2px;
+      table-layout: fixed;
+      flex: 1 1 auto;
+      min-height: 0;
+      height: 100%;
+    }
+    .cmpf-decl-box {
+      border: 1px solid #111;
+      padding: 0;
+      vertical-align: top;
+      width: 50%;
+      height: 100%;
+    }
+    .cmpf-decl-cell-inner {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+    }
+    .cmpf-decl-text {
+      padding: 5px 7px 3px;
+      font-size: 9px;
+      line-height: 1.35;
       flex-shrink: 0;
-      margin-top: auto;
-      padding-top: 4px;
+    }
+    .cmpf-decl-sig-area {
+      flex: 1 1 auto;
+      min-height: 42px;
+      background: #eef2f7;
+      padding: 5px 7px;
+      display: flex;
+      flex-direction: column;
+    }
+    .cmpf-decl-sig-spacer {
+      flex: 1 1 auto;
+      min-height: 18px;
+    }
+    .cmpf-decl-sig-line {
+      font-size: 9px;
+      line-height: 1.4;
+      flex-shrink: 0;
     }
     .cmpf-continuation-signatory {
       flex-shrink: 0;
@@ -747,6 +796,12 @@ export function buildCmpf306Html(
       .cmpf-sheet:last-of-type {
         page-break-after: auto;
         break-after: auto;
+      }
+      .cmpf-sheet-cover {
+        page-break-after: always;
+        break-after: page;
+        page-break-inside: avoid;
+        break-inside: avoid;
       }
     }
   `;

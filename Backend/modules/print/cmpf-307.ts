@@ -172,7 +172,7 @@ function buildSinglePageHtml(
   isLastPage: boolean,
 ): string {
   return `
-<div class="cmpf-sheet${pageNum > 1 ? " page-break" : ""}">
+<div class="cmpf-sheet${pageNum === 1 ? " cmpf-sheet-first" : ""}${pageNum > 1 ? " page-break" : ""}">
   ${buildTitleHtml()}
   ${pageNum === 1 ? buildLetterIntroHtml(data) : ""}
   ${buildBrandTableHtml(pageRows, startIndex)}
@@ -258,7 +258,12 @@ export function buildCmpf307Html(
 ): string {
   const letterheadSettings = cmpf307LetterheadSettings(settings);
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
+  // Outer letterhead sits above the first sheet inside .doc-page. Without this
+  // reserve, min-height ≈ full page and overflows onto a blank second page
+  // that only shows the absolute "Page 01 of 01" indicator.
+  const letterheadReserveMm = letterheadSettings.show_letterhead ? 32 : 0;
   const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  const firstSheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm - ${letterheadReserveMm}mm)`;
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -268,6 +273,11 @@ export function buildCmpf307Html(
       min-height: ${sheetMinHeight};
       box-sizing: border-box;
       padding-bottom: 4mm;
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .cmpf-sheet-first {
+      min-height: ${firstSheetMinHeight};
     }
     .cmpf-form-id {
       text-align: right;
@@ -280,7 +290,7 @@ export function buildCmpf307Html(
       font-size: 13px;
       font-weight: 700;
       text-decoration: underline;
-      margin: 0 0 12px;
+      margin: 0 0 10px;
       letter-spacing: 0.02em;
       line-height: 1.35;
     }
@@ -297,7 +307,7 @@ export function buildCmpf307Html(
       justify-content: space-between;
       align-items: flex-start;
       gap: 16px;
-      margin: 0 0 12px;
+      margin: 0 0 10px;
     }
     .cmpf-to-block {
       flex: 1;
@@ -313,7 +323,7 @@ export function buildCmpf307Html(
       line-height: 1.55;
     }
     .cmpf-section-heading {
-      margin: 12px 0 6px;
+      margin: 10px 0 6px;
       font-size: 10px;
     }
     .cmpf-notes-block p {
@@ -335,7 +345,7 @@ export function buildCmpf307Html(
       text-align: justify;
     }
     .cmpf-signatory-block {
-      margin-top: 28px;
+      margin-top: 20px;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
@@ -348,7 +358,7 @@ export function buildCmpf307Html(
       text-align: right;
     }
     .cmpf-signatory-sig {
-      margin-top: 32px;
+      margin-top: 24px;
       min-width: 200px;
       text-align: right;
     }
@@ -359,7 +369,17 @@ export function buildCmpf307Html(
       line-height: 1.35;
       text-align: right;
     }
-    .page-break { page-break-before: always; }
+    .page-break { page-break-before: always; break-before: page; }
+    @media print {
+      .cmpf-sheet {
+        page-break-after: always;
+        break-after: page;
+      }
+      .cmpf-sheet:last-of-type {
+        page-break-after: auto;
+        break-after: auto;
+      }
+    }
   `;
 
   return buildPrintDocument({

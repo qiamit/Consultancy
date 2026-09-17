@@ -30,6 +30,8 @@ import { formatDisplayDate } from "@backend/shared/format-date";
 
 import { buildClassSignatoryBlockHtml } from "@backend/modules/print/signatory-signature";
 
+import { printSheetMinHeightCss } from "@backend/modules/print/paged-preview";
+
 
 
 export type AuthorizationLetterLetterData = Omit<
@@ -424,9 +426,7 @@ export function buildAuthorizationLetterHtml(
 
   const letterheadSettings = authorizationLetterLetterheadSettings(settings);
 
-  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  const sheetMinHeight = printSheetMinHeightCss(letterheadSettings);
 
   const styles = `
 
@@ -445,6 +445,10 @@ export function buildAuthorizationLetterHtml(
       box-sizing: border-box;
 
       padding-bottom: 4mm;
+
+      page-break-after: auto;
+
+      break-after: auto;
 
     }
 

@@ -14,6 +14,26 @@ export function printPageGapHtml(pageNum: number, totalPages: number): string {
   return `<div class="print-sheet-page-gap" aria-hidden="true">Page break · ${padPrintPageNum(pageNum - 1)} → ${padPrintPageNum(pageNum)}</div>`;
 }
 
+/** Approximate outer `.lh-wrap` height when letterhead sits above the first sheet. */
+export const PRINT_OUTER_LETTERHEAD_RESERVE_MM = 32;
+
+/**
+ * CSS min-height for a print sheet that fills one paper page inside `.doc-page` padding.
+ * When `reserveOuterLetterhead` is true (default if `show_letterhead`), subtracts space for
+ * the document-level letterhead so the sheet does not overflow onto a blank second page.
+ */
+export function printSheetMinHeightCss(
+  settings: PrintSettings,
+  opts?: { reserveOuterLetterhead?: boolean; pageHeightMm?: number },
+): string {
+  const pageHeightMm =
+    opts?.pageHeightMm ?? iframeSizeForPrintSettings(settings).heightMm;
+  const reserveOuter =
+    opts?.reserveOuterLetterhead ?? Boolean(settings.show_letterhead);
+  const reserveMm = reserveOuter ? PRINT_OUTER_LETTERHEAD_RESERVE_MM : 0;
+  return `calc(${pageHeightMm}mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm - ${reserveMm}mm)`;
+}
+
 /** Iframe height for N paper-sized preview sheets (+ labeled gaps). */
 export function iframeSizeForPagedPrintSettings(
   settings: PrintSettings,
@@ -30,8 +50,8 @@ export function iframeSizeForPagedPrintSettings(
 
 /** Shared sheet / page-break CSS used by letter-style BIS previews. */
 export function pagedPrintSheetStyles(settings: PrintSettings): string {
-  const pageSize = iframeSizeForPrintSettings(settings);
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${settings.margin_top}mm - ${settings.margin_bottom}mm)`;
+  const sheetMinHeight = printSheetMinHeightCss(settings, { reserveOuterLetterhead: false });
+  const firstSheetMinHeight = printSheetMinHeightCss(settings);
   return `
     .print-sheet {
       position: relative;
@@ -41,6 +61,11 @@ export function pagedPrintSheetStyles(settings: PrintSettings): string {
       padding-bottom: 6mm;
       display: flex;
       flex-direction: column;
+      page-break-after: auto;
+      break-after: auto;
+    }
+    .print-sheet:first-of-type {
+      min-height: ${firstSheetMinHeight};
     }
     .print-sheet-body {
       flex: 1 1 auto;

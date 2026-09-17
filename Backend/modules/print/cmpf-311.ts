@@ -180,7 +180,10 @@ export function buildCmpf311Html(
 ): string {
   const letterheadSettings = cmpf311LetterheadSettings(settings);
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  // Outer letterhead sits above the sheet; reserve it so "Page 01 of 01" stays
+  // on the same page instead of spilling onto a blank second page.
+  const letterheadReserveMm = letterheadSettings.show_letterhead ? 32 : 0;
+  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm - ${letterheadReserveMm}mm)`;
   const styles = `
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -190,6 +193,8 @@ export function buildCmpf311Html(
       min-height: ${sheetMinHeight};
       box-sizing: border-box;
       padding-bottom: 4mm;
+      page-break-after: auto;
+      break-after: auto;
     }
     .cmpf-form-id {
       text-align: right;
@@ -202,7 +207,7 @@ export function buildCmpf311Html(
       font-size: 14px;
       font-weight: 700;
       text-decoration: underline;
-      margin: 0 0 12px;
+      margin: 0 0 10px;
       line-height: 1.35;
     }
     .cmpf-page-indicator {
@@ -228,17 +233,17 @@ export function buildCmpf311Html(
       margin: 8px 0 10px;
     }
     .cmpf-ref-line {
-      margin: 0 0 14px;
+      margin: 0 0 12px;
       font-size: 10px;
     }
     .cmpf-declaration {
-      margin: 0 0 24px;
+      margin: 0 0 20px;
       font-size: 10px;
       line-height: 1.55;
       text-align: justify;
     }
     .cmpf-signatory-block {
-      margin-top: 28px;
+      margin-top: 20px;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
@@ -251,7 +256,7 @@ export function buildCmpf311Html(
       text-align: right;
     }
     .cmpf-signatory-sig {
-      margin-top: 32px;
+      margin-top: 24px;
       min-width: 200px;
       text-align: right;
     }

@@ -169,9 +169,9 @@ function buildSignatoryBlockHtml(data: Cmpf310LetterData): string {
 /** True when letterhead + body is unlikely to fit on one selected paper page. */
 export function cmpf310NeedsSecondPage(settings: PrintSettings): boolean {
   const { heightMm } = iframeSizeForPrintSettings(settings);
-  const letterheadMm = settings.show_letterhead ? 55 : 0;
-  // Full document height inside @page: margins + letterhead + letter body.
-  const bodyMm = 210;
+  const letterheadMm = settings.show_letterhead ? 32 : 0;
+  // Approximate Form-III body (header + letter + rate table + payment + signatory).
+  const bodyMm = 195;
   return (
     settings.margin_top + settings.margin_bottom + letterheadMm + bodyMm >
     heightMm - 2

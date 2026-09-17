@@ -11,6 +11,7 @@ import { formatApplicationNumberDisplay } from "@backend/modules/bis/application
 import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { buildClassSignatoryBlockHtml } from "@backend/modules/print/signatory-signature";
+import { printSheetMinHeightCss } from "@backend/modules/print/paged-preview";
 
 export type UndertakingGeneralIssLetterData = Omit<
   ManufacturingScopeDeclarationData,
@@ -168,8 +169,7 @@ export function buildUndertakingGeneralIssHtml(
   assets?: UndertakingGeneralIssPrintAssets,
 ): string {
   const letterheadSettings = undertakingGeneralIssLetterheadSettings(settings);
-  const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
+  const sheetMinHeight = printSheetMinHeightCss(letterheadSettings);
   const styles = `
     .ugi-sheet {
       font-family: "Times New Roman", Times, serif;
@@ -179,6 +179,8 @@ export function buildUndertakingGeneralIssHtml(
       min-height: ${sheetMinHeight};
       box-sizing: border-box;
       padding-bottom: 4mm;
+      page-break-after: auto;
+      break-after: auto;
     }
     .ugi-page-indicator {
       position: absolute;
