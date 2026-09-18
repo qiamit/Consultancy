@@ -879,6 +879,13 @@ export async function convertApplicationToLicense(
 
   if (fetchError) return { ok: false, error: fetchError.message };
   if (!existing) return { ok: false, error: "Project not found." };
+  if (isInclusionProjectKind(existing.project_kind)) {
+    return {
+      ok: false,
+      error:
+        "Inclusion cases do not get a new license number. Use Complete Inclusion to merge scope into the existing license.",
+    };
+  }
   if (!isApplicationProjectKind(existing.project_kind)) {
     return { ok: false, error: "Only pending applications can be converted to a license." };
   }
@@ -929,6 +936,28 @@ export async function updateBisProjectLicenseDetails(
   const trimmedDate = licenseValidityDate?.trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmedDate)) {
     return { ok: false, error: "Pick a valid license validity date." };
+  }
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("bis_projects")
+    .select("project_kind")
+    .eq("id", trimmedId)
+    .maybeSingle();
+
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!existing) return { ok: false, error: "Project not found." };
+  if (isInclusionProjectKind(existing.project_kind)) {
+    return {
+      ok: false,
+      error:
+        "Inclusion does not update license validity. Complete Inclusion only adds scope to the existing license.",
+    };
+  }
+  if (isApplicationProjectKind(existing.project_kind)) {
+    return {
+      ok: false,
+      error: "Convert the application to a license first.",
+    };
   }
 
   const { error } = await supabase
@@ -1354,8 +1383,8 @@ export async function createInclusionFromLicense(
 }
 
 /**
- * Finish an inclusion case: merge its Inclusion Scope into the source license scope,
- * then close the inclusion row (leaves the New Inclusion pending list).
+ * Finish an inclusion case: merge Inclusion Scope into the source license only.
+ * Does NOT create a new CM/L, does NOT change source license validity.
  */
 export async function completeInclusionCase(
   inclusionId: string,
@@ -1372,7 +1401,7 @@ export async function completeInclusionCase(
   const { data: inclusion, error: fetchError } = await supabase
     .from("bis_projects")
     .select(
-      "id, project_kind, client_id, is_code_id, cm_l_digits, license_number, notes, target_date, license_validity_date",
+      "id, project_kind, status, client_id, is_code_id, cm_l_digits, license_number, notes, target_date, license_validity_date",
     )
     .eq("id", trimmedId)
     .maybeSingle();
@@ -1382,7 +1411,8 @@ export async function completeInclusionCase(
   if (!isInclusionProjectKind(inclusion.project_kind)) {
     return { ok: false, error: "Only inclusion cases can be finished this way." };
   }
-  if ((inclusion.license_validity_date ?? "").trim()) {
+  const inclusionStatus = String(inclusion.status ?? "").trim().toLowerCase();
+  if (inclusionStatus === "completed") {
     return { ok: false, error: "This inclusion case is already finished." };
   }
 
@@ -1421,13 +1451,16 @@ export async function completeInclusionCase(
 
   const { data: license, error: licenseError } = await supabase
     .from("bis_projects")
-    .select("id, notes, license_validity_date, project_kind")
+    .select("id, notes, project_kind")
     .eq("id", sourceId)
     .maybeSingle();
 
   if (licenseError) return { ok: false, error: licenseError.message };
   if (!license) return { ok: false, error: "Source license not found." };
-  if (isInclusionProjectKind(license.project_kind)) {
+  if (
+    isInclusionProjectKind(license.project_kind) ||
+    isApplicationProjectKind(license.project_kind)
+  ) {
     return { ok: false, error: "Source record is not a license." };
   }
 
@@ -1436,12 +1469,8 @@ export async function completeInclusionCase(
   const merged = mergeLicenseScopeStates(licenseScope, inclusionScope);
   const nextLicenseNotes = buildBisProjectLicenseScopeNotes(license.notes, merged);
 
-  const finishDate =
-    (inclusion.target_date as string | null)?.trim() ||
-    (license.license_validity_date as string | null)?.trim() ||
-    new Date().toISOString().split("T")[0]!;
-
   const now = new Date().toISOString();
+  // Source license: scope only — never touch CM/L or validity.
   const { error: licenseUpdateError } = await supabase
     .from("bis_projects")
     .update({ notes: nextLicenseNotes, updated_at: now })
@@ -1452,13 +1481,13 @@ export async function completeInclusionCase(
   const { error: inclusionUpdateError } = await supabase
     .from("bis_projects")
     .update({
-      // Leave pending list; clear CM/L digits so partial unique index stays with the source license.
+      // Close case; keep out of license lists. No new number / no validity grant.
       cm_l_digits: null,
       license_number:
         inclusionCm.length === 10
           ? `CM/L-${inclusionCm}`
           : String(inclusion.license_number ?? "").trim() || null,
-      license_validity_date: finishDate,
+      license_validity_date: null,
       application_stage: "License Granted",
       status: "completed",
       updated_at: now,

@@ -4,6 +4,7 @@ import { DashboardHome } from "@/components/dashboard/dashboard-home";
 import {
   applicationProjectKindDbValues,
   inFilter,
+  nonLicenseProjectKindDbValues,
 } from "@backend/modules/bis/bis-project-kind";
 import { dashboardLicenseDateBounds } from "@backend/shared/dashboard-date-bounds";
 import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
@@ -71,8 +72,12 @@ export default async function DashboardHomePage({
   const access = await ensureProfileAccess(supabase, user);
   if (!access) redirect("/login");
 
-  const applicationKinds = await applicationProjectKindDbValues(supabase);
+  const [applicationKinds, nonLicenseKinds] = await Promise.all([
+    applicationProjectKindDbValues(supabase),
+    nonLicenseProjectKindDbValues(supabase),
+  ]);
   const applicationKindFilter = inFilter(applicationKinds);
+  const nonLicenseKindFilter = inFilter(nonLicenseKinds);
   const { today, yesterday, plus30Days, plus90Days, minus90Days } =
     dashboardLicenseDateBounds();
 
@@ -81,7 +86,7 @@ export default async function DashboardHomePage({
       .from("bis_projects")
       .select("id", { count: "exact", head: true })
       .not("license_validity_date", "is", null)
-      .not("project_kind", "in", applicationKindFilter);
+      .not("project_kind", "in", nonLicenseKindFilter);
 
   const [
     clientsRes,

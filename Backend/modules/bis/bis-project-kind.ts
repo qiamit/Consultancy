@@ -106,11 +106,81 @@ export async function inclusionProjectKindDbValue(
 export function isPendingInclusionRow(row: {
   project_kind: string;
   license_validity_date?: string | null;
+  status?: string | null;
 }): boolean {
-  return (
-    isInclusionProjectKind(row.project_kind) &&
-    !(row.license_validity_date ?? "").trim()
-  );
+  if (!isInclusionProjectKind(row.project_kind)) return false;
+  // Finished inclusions must not reappear as pending (or as licenses).
+  if ((row.license_validity_date ?? "").trim()) return false;
+  const status = (row.status ?? "").trim().toLowerCase();
+  if (status === "completed" || status === "cancelled") return false;
+  return true;
+}
+
+/** Inclusion row finished (scope merged) — still listed under New Inclusion, last. */
+export function isCompletedInclusionRow(row: {
+  project_kind: string;
+  license_validity_date?: string | null;
+  status?: string | null;
+}): boolean {
+  if (!isInclusionProjectKind(row.project_kind)) return false;
+  const status = (row.status ?? "").trim().toLowerCase();
+  if (status === "completed") return true;
+  // Legacy finish set a validity date on the inclusion case.
+  return Boolean((row.license_validity_date ?? "").trim());
+}
+
+/** Pending + completed inclusion cases for the New Inclusion list (not cancelled). */
+export function isInclusionCaseListRow(row: {
+  project_kind: string;
+  status?: string | null;
+}): boolean {
+  if (!isInclusionProjectKind(row.project_kind)) return false;
+  const status = (row.status ?? "").trim().toLowerCase();
+  return status !== "cancelled";
+}
+
+/** Pending first (newest), then completed last (newest within group). */
+export function compareInclusionListRows(
+  a: {
+    created_at?: string | null;
+    updated_at?: string | null;
+    license_validity_date?: string | null;
+    status?: string | null;
+    project_kind: string;
+  },
+  b: {
+    created_at?: string | null;
+    updated_at?: string | null;
+    license_validity_date?: string | null;
+    status?: string | null;
+    project_kind: string;
+  },
+): number {
+  const aDone = isCompletedInclusionRow(a);
+  const bDone = isCompletedInclusionRow(b);
+  if (aDone !== bDone) return aDone ? 1 : -1;
+  const aTime = aDone
+    ? Date.parse(String(a.updated_at ?? a.created_at ?? "")) || 0
+    : Date.parse(String(a.created_at ?? "")) || 0;
+  const bTime = bDone
+    ? Date.parse(String(b.updated_at ?? b.created_at ?? "")) || 0
+    : Date.parse(String(b.created_at ?? "")) || 0;
+  return bTime - aTime;
+}
+
+/**
+ * project_kind values that are cases / workflows — not operative licenses.
+ * Use to keep Inclusion (and Application) rows out of All / Our BIS Licenses.
+ */
+export async function nonLicenseProjectKindDbValues(
+  supabase: AppDbClient,
+  optionKey: string = DROPDOWN_KEY_BIS_PROJECT_KIND,
+): Promise<string[]> {
+  const [applications, inclusions] = await Promise.all([
+    applicationProjectKindDbValues(supabase, optionKey),
+    inclusionProjectKindDbValues(supabase, optionKey),
+  ]);
+  return Array.from(new Set([...applications, ...inclusions]));
 }
 
 /** Preferred `project_kind` value for a converted / renewed license row. */

@@ -6,8 +6,8 @@ import { loadIsCodeFormDropdownOptions } from "@backend/shared/data/is-code-form
 import type { BisProjectMasterRow } from "@backend/shared/types/bis-project-master";
 import { createClient } from "@backend/db/client/server";
 import {
-  applicationProjectKindDbValues,
   inFilter,
+  nonLicenseProjectKindDbValues,
 } from "@backend/modules/bis/bis-project-kind";
 
 function MasterFallback() {
@@ -48,8 +48,9 @@ export default async function BisProjectsPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
-  const applicationKinds = await applicationProjectKindDbValues(supabase);
-  const applicationKindFilter = inFilter(applicationKinds);
+  // Exclude Application + Inclusion cases — only real operative licenses belong here.
+  const nonLicenseKinds = await nonLicenseProjectKindDbValues(supabase);
+  const nonLicenseKindFilter = inFilter(nonLicenseKinds);
 
   const [
     { data: bisRaw, error: bisError },
@@ -65,7 +66,7 @@ export default async function BisProjectsPage({
         created_at, updated_at,
         clients(name, company_name)`,
       )
-      .not("project_kind", "in", applicationKindFilter)
+      .not("project_kind", "in", nonLicenseKindFilter)
       .order("created_at", { ascending: false }),
     supabase
       .from("clients")

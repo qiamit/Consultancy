@@ -1,8 +1,8 @@
 import { createClient } from "@backend/db/client/server";
 import { PendingRenewalsSection } from "@/components/dashboard/pending-renewals-section";
 import {
-  applicationProjectKindDbValues,
   inFilter,
+  nonLicenseProjectKindDbValues,
 } from "@backend/modules/bis/bis-project-kind";
 import { dashboardLicenseDateBounds } from "@backend/shared/dashboard-date-bounds";
 
@@ -10,8 +10,8 @@ export const dynamic = "force-dynamic";
 
 export default async function ExpiredLicensesPage() {
   const supabase = await createClient();
-  const applicationKinds = await applicationProjectKindDbValues(supabase);
-  const applicationKindFilter = inFilter(applicationKinds);
+  const nonLicenseKinds = await nonLicenseProjectKindDbValues(supabase);
+  const nonLicenseKindFilter = inFilter(nonLicenseKinds);
   const { minus90Days } = dashboardLicenseDateBounds();
 
   const selectCols =
@@ -22,7 +22,7 @@ export default async function ExpiredLicensesPage() {
     .from("bis_projects")
     .select(selectCols)
     .not("license_validity_date", "is", null)
-    .not("project_kind", "in", applicationKindFilter)
+    .not("project_kind", "in", nonLicenseKindFilter)
     .lt("license_validity_date", minus90Days)
     .or("status.is.null,status.eq.in_progress")
     .order("license_validity_date", { ascending: true });

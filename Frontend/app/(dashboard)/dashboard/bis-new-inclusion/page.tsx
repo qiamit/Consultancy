@@ -7,9 +7,10 @@ import {
 } from "@backend/modules/auth/ensure-access";
 import {
   applicationProjectKindDbValues,
+  compareInclusionListRows,
   inclusionProjectKindDbValues,
   inFilter,
-  isPendingInclusionRow,
+  isInclusionCaseListRow,
   type BisApplicationSource,
 } from "@backend/modules/bis/bis-project-kind";
 
@@ -40,17 +41,17 @@ export default async function BisNewInclusionPage() {
   const applicationKindFilter = inFilter(applicationKinds);
 
   const selectCols =
-    "id, title, status, project_kind, created_at, target_date, client_id, cm_l_digits, license_number, license_validity_date, is_code_id, portal_user_id, portal_password, application_stage, is_qe_managed, clients(name, company_name, email, state), is_codes(is_number, revision_year, is_code_title)";
+    "id, title, status, project_kind, created_at, updated_at, target_date, client_id, cm_l_digits, license_number, license_validity_date, is_code_id, portal_user_id, portal_password, application_stage, is_qe_managed, clients(name, company_name, email, state), is_codes(is_number, revision_year, is_code_title)";
 
   const [{ data: inclusionRaw }, { data: licensesRaw }, { data: clientsRaw }] =
     await Promise.all([
+      // Pending + completed inclusion cases (completed sort to the bottom in UI).
       supabase
         .from("bis_projects")
         .select(selectCols)
         .in("project_kind", inclusionKinds)
-        .is("license_validity_date", null)
-        .or("status.is.null,status.eq.in_progress")
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(2000),
       // Operative licenses for inclusion picker (any status; must have validity + CM/L client).
       supabase
         .from("bis_projects")
@@ -104,6 +105,7 @@ export default async function BisNewInclusionPage() {
       application_stage: (r.application_stage as string | null) ?? "Draft",
       notes: null,
       created_at: r.created_at as string | null,
+      updated_at: (r.updated_at as string | null) ?? null,
       source: "bis_projects" as BisApplicationSource,
       is_qe_managed: Boolean(r.is_qe_managed),
     };
@@ -111,12 +113,8 @@ export default async function BisNewInclusionPage() {
 
   const inclusionRows = (inclusionRaw ?? [])
     .map((r) => mapBisRow(r as Record<string, unknown>))
-    .filter(isPendingInclusionRow)
-    .sort((a, b) => {
-      const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return tb - ta;
-    });
+    .filter(isInclusionCaseListRow)
+    .sort(compareInclusionListRows);
 
   const inclusionLicenses = (licensesRaw ?? [])
     .map((r) => mapBisRow(r as Record<string, unknown>))

@@ -17,7 +17,7 @@ import {
 import { createClient } from "@backend/db/client/client";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
 import { uploadTechnicalStaffDocument } from "@backend/modules/storage/technical-staff-documents";
-import { updateBisProjectTargetDate, updateBisProjectNotes, updateBisProjectApplicationStage, convertLicenseToApplication, deletePendingApplicationsAsAdmin } from "@backend/actions/bis-projects";
+import { updateBisProjectTargetDate, updateBisProjectNotes, updateBisProjectApplicationStage, convertLicenseToApplication, deletePendingApplicationsAsAdmin, completeInclusionCase } from "@backend/actions/bis-projects";
 import {
   updateBisNewApplicationNotes,
   updateBisNewApplicationTargetDate,
@@ -283,9 +283,11 @@ import {
 } from "@backend/modules/bis/top-management";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
 import {
+  compareInclusionListRows,
   isApplicationProjectKind,
+  isCompletedInclusionRow,
+  isInclusionCaseListRow,
   isPendingApplicationRow,
-  isPendingInclusionRow,
   type BisApplicationSource,
 } from "@backend/modules/bis/bis-project-kind";
 import {
@@ -449,9 +451,11 @@ type ApplicationRow = {
   status: string;
   project_kind: string;
   created_at: string | null;
+  updated_at?: string | null;
   target_date: string | null;
   client_id: string | null;
   cm_l_digits: string | null;
+  license_number?: string | null;
   license_validity_date: string | null;
   client_name: string;
   client_state?: string | null;
@@ -3635,6 +3639,9 @@ export function PendingApplicationsSection({
   const [convertedIds, setConvertedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [convertingId, setConvertingId] = useState<string | null>(null);
   const [isConverting, startConvert] = useTransition();
+  const [completingInclusionId, setCompletingInclusionId] = useState<string | null>(null);
+  const [isCompletingInclusion, startCompleteInclusion] = useTransition();
+  const [completeInclusionError, setCompleteInclusionError] = useState<string | null>(null);
   const [isDeleting, startDelete] = useTransition();
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -3695,15 +3702,17 @@ export function PendingApplicationsSection({
       variant === "pending_applications"
         ? rows.filter(isPendingApplicationRow)
         : variant === "inclusion"
-          ? rows.filter(isPendingInclusionRow)
+          ? rows.filter(isInclusionCaseListRow)
           : rows.filter((r) => !isApplicationProjectKind(r.project_kind));
-    return base.filter((r) => !convertedIds.has(r.id));
+    const withoutConverted = base.filter((r) => !convertedIds.has(r.id));
+    if (variant !== "inclusion") return withoutConverted;
+    return [...withoutConverted].sort(compareInclusionListRows);
   }, [rows, convertedIds, variant]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     const stateQ = stateFilter.trim().toLowerCase();
-    return visibleRows.filter((r) => {
+    const matched = visibleRows.filter((r) => {
       if (stateFilter !== "all") {
         const rowState = (r.client_state ?? "").trim().toLowerCase();
         if (!rowState || rowState !== stateQ) return false;
@@ -3714,6 +3723,7 @@ export function PendingApplicationsSection({
         r.title.toLowerCase().includes(q) ||
         (r.is_number?.toLowerCase().includes(q) ?? false) ||
         (r.cm_l_digits?.toLowerCase().includes(q) ?? false) ||
+        (r.license_number?.toLowerCase().includes(q) ?? false) ||
         (r.client_state?.toLowerCase().includes(q) ?? false) ||
         normalizeBisApplicationStage(
           applicationStages[r.id] ?? r.application_stage,
@@ -3722,14 +3732,16 @@ export function PendingApplicationsSection({
           .includes(q);
       return matchSearch;
     });
-  }, [visibleRows, search, applicationStages, stateFilter]);
+    if (variant !== "inclusion") return matched;
+    return [...matched].sort(compareInclusionListRows);
+  }, [visibleRows, search, applicationStages, stateFilter, variant]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize);
   const isExpired = variant === "expired_licenses";
   const isInclusion = variant === "inclusion";
   const grandTotal = visibleRows.length;
-  const tableColCount = isExpired ? 7 : isInclusion ? 9 : 8;
+  const tableColCount = isExpired ? 7 : isInclusion ? 10 : 8;
   const pageRowIds = paginated.map((r) => r.id);
   const allPageSelected =
     pageRowIds.length > 0 && pageRowIds.every((id) => selectedIds.has(id));
@@ -3962,6 +3974,19 @@ export function PendingApplicationsSection({
         </div>
       </header>
 
+      {completeInclusionError && (
+        <div className="mx-4 mb-2 rounded-lg border border-red-200 bg-red-50 px-4 py-2.5 text-sm text-red-700 dark:border-red-800 dark:bg-red-950/30 dark:text-red-300">
+          {completeInclusionError}
+          <button
+            type="button"
+            className="ml-2 font-semibold underline"
+            onClick={() => setCompleteInclusionError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="overflow-x-auto">
         {visibleRows.length === 0 ? (
@@ -4016,12 +4041,25 @@ export function PendingApplicationsSection({
                 {!isExpired && !isInclusion && (
                   <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Convert to License</th>
                 )}
+                {isInclusion && (
+                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Complete Inclusion</th>
+                )}
                 <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-100 dark:divide-zinc-800">
-              {paginated.map((r) => (
-                <tr key={r.id} className="hover:bg-zinc-50 dark:hover:bg-zinc-800/40">
+              {paginated.map((r) => {
+                const inclusionDone =
+                  isInclusion && isCompletedInclusionRow(r);
+                return (
+                <tr
+                  key={r.id}
+                  className={
+                    inclusionDone
+                      ? "bg-zinc-50/80 opacity-90 hover:bg-zinc-100 dark:bg-zinc-900/40 dark:hover:bg-zinc-800/50"
+                      : "hover:bg-zinc-50 dark:hover:bg-zinc-800/40"
+                  }
+                >
                   <td className="w-11 px-3 py-3 text-center align-middle">
                     <div className="flex items-center justify-center">
                       <input
@@ -4059,7 +4097,7 @@ export function PendingApplicationsSection({
                     <td className="px-4 py-3 text-center font-mono text-xs font-semibold text-zinc-800 dark:text-zinc-200">
                       {r.cm_l_digits
                         ? formatCmDisplay(r.project_kind, r.cm_l_digits)
-                        : "—"}
+                        : (r.license_number ?? "").trim() || "—"}
                     </td>
                   )}
                   <td className="px-4 py-3 text-xs text-zinc-700 dark:text-zinc-300">
@@ -4103,6 +4141,44 @@ export function PendingApplicationsSection({
                         </svg>
                         Convert
                       </button>
+                    </td>
+                  )}
+                  {isInclusion && (
+                    <td className="px-4 py-3 text-center">
+                      {inclusionDone ? (
+                        <span className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
+                          Completed
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          title="Merge inclusion scope into the existing license (no new CM/L, no validity change)"
+                          disabled={
+                            isCompletingInclusion && completingInclusionId === r.id
+                          }
+                          onClick={() => {
+                            setCompleteInclusionError(null);
+                            setCompletingInclusionId(r.id);
+                            startCompleteInclusion(async () => {
+                              const res = await completeInclusionCase(r.id);
+                              setCompletingInclusionId(null);
+                              if (!res.ok) {
+                                setCompleteInclusionError(res.error);
+                                return;
+                              }
+                              router.refresh();
+                            });
+                          }}
+                          className="inline-flex items-center gap-1 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 hover:bg-teal-100 disabled:opacity-50 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-200 dark:hover:bg-teal-950/50"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                          {isCompletingInclusion && completingInclusionId === r.id
+                            ? "Completing…"
+                            : "Complete"}
+                        </button>
+                      )}
                     </td>
                   )}
                   <td className="px-4 py-3 text-center">
@@ -4167,7 +4243,8 @@ export function PendingApplicationsSection({
                     )}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
             <tfoot className="border-t border-zinc-200 bg-zinc-100 text-sm font-medium text-zinc-800 dark:border-zinc-700 dark:bg-zinc-800/90 dark:text-zinc-200">
               <tr>
