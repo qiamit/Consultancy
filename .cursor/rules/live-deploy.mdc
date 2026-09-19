@@ -1,0 +1,18 @@
+---
+description: After any code change requested by the user, deploy immediately to live qengineering.in
+alwaysApply: true
+---
+
+# Live deploy after code changes
+
+When the user asks for a change and you modify application code:
+
+1. Implement the change and verify it builds or the relevant check passes when practical.
+2. Commit and push the working branch.
+3. **Immediately deploy to production** so https://qengineering.in updates:
+   - Prefer: `npm run deploy:live -- "<short summary of change>"`
+   - Or: `bash scripts/deploy-live.sh "<short summary of change>"`
+4. Wait until Railway deployment status is `SUCCESS` before telling the user it is live.
+5. If Railway CLI is not authenticated, run `railway login --browserless`, relay the one-click activate URL to the user immediately, then retry deploy after they sign in.
+
+Do not leave production outdated after finishing a code change unless the user explicitly says not to deploy (e.g. draft-only / PR-only work).

@@ -48,9 +48,17 @@ Next.js 16 (App Router) + Railway Postgres + S3-compatible storage for BIS licen
 
 See [`DEPLOY.md`](DEPLOY.md).
 
+**Ship to live immediately after a code change:**
+
+```bash
+npm run deploy:live -- "What changed"
+```
+
+That deploys the current tree to Railway **Consultancy** → https://qengineering.in.
+
 1. Set the same env vars on the **Consultancy** service.
 2. Run `npm run migrate` against production `DATABASE_URL` (release command or one-off).
-3. Deploy from repo root (`railway up` / GitHub). Build: `npm run build` → `next build Frontend`.
+3. Or deploy via GitHub integration / `railway up`. Build: `npm run build` → `next build Frontend`.
 
 Production app URL: https://qengineering.in (also https://consultancy-production-9720.up.railway.app)
 

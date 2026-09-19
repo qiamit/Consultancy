@@ -8,6 +8,7 @@
     "start": "next start Frontend -H 0.0.0.0",
     "lint": "eslint Frontend Backend",
     "migrate": "node scripts/apply-migrations.cjs",
+    "deploy:live": "bash scripts/deploy-live.sh",
     "pdf:dev": "npm --prefix pdf-service run start",
     "pdf:install": "npm --prefix pdf-service ci && npm --prefix pdf-service run install-browser"
   },

@@ -1,5 +1,19 @@
 # Deploy checklist (Railway)
 
+## Instant live deploy (preferred)
+
+After any code change, deploy straight to production:
+
+```bash
+npm run deploy:live -- "Short summary of what changed"
+```
+
+This runs [`scripts/deploy-live.sh`](scripts/deploy-live.sh) → `railway up` on service **Consultancy** → live at https://qengineering.in.
+
+First time on a machine: `railway login`, then optionally `railway link --project 82c48fa4-4d69-4d89-bd7b-b3b5ec047cdc`.
+
+Cursor Cloud Agents follow [`.cursor/rules/live-deploy.mdc`](.cursor/rules/live-deploy.mdc): code change → commit/push → `npm run deploy:live`.
+
 ## Railway project
 
 - Project: **Consultancy Management** (`82c48fa4-4d69-4d89-bd7b-b3b5ec047cdc`)
