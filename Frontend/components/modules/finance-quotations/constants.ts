@@ -78,20 +78,53 @@ export function rowToForm(
   row: FinanceQuotationRow,
   defaultBankDetails?: string,
 ): QuotationFormState {
-  const linesRaw = row.finance_quotation_lines ?? [];
+  const linesRawUnknown = row.finance_quotation_lines as
+    | FinanceQuotationRow["finance_quotation_lines"]
+    | Record<string, unknown>
+    | null
+    | undefined;
+  const linesRaw = Array.isArray(linesRawUnknown)
+    ? linesRawUnknown
+    : linesRawUnknown
+      ? [linesRawUnknown as NonNullable<FinanceQuotationRow["finance_quotation_lines"]>[number]
+      : [];
   const sorted = [...linesRaw].sort((a, b) => a.sort_order - b.sort_order);
-  const lines: QuotationLineForm[] =
+  let lines: QuotationLineForm[] =
     sorted.length > 0
       ? sorted.map((L) => ({
           product_master_item_id: L.product_master_item_id ?? "",
           item_description: L.item_description ?? "",
           unit_of_item: L.unit_of_item ?? "",
-          qty: String(L.qty),
-          unit_rate: String(L.unit_rate),
+          qty: String(L.qty ?? 0),
+          unit_rate: String(L.unit_rate ?? 0),
           line_discount: (L.line_discount ?? "").trim() || "0%",
-          gst_rate: L.gst_rate ?? "0%",
+          gst_rate: (L.gst_rate ?? "").trim() || "0%",
         }))
-      : [emptyLine()];
+      : [];
+
+  // If line rows are missing but header totals exist, keep a professional summary line.
+  if (
+    lines.length === 0 &&
+    (Number(row.grand_total) > 0 || Number(row.subtotal) > 0)
+  ) {
+    const taxable = Number(row.subtotal) || Number(row.grand_total) || 0;
+    const tax = Number(row.tax_total) || 0;
+    const gstPct =
+      taxable > 0 ? Math.round((tax / taxable) * 10000) / 100 : 0;
+    lines = [
+      {
+        product_master_item_id: "",
+        item_description: "Quotation items (see records)",
+        unit_of_item: "Nos",
+        qty: "1",
+        unit_rate: String(taxable),
+        line_discount: "0%",
+        gst_rate: `${gstPct}%`,
+      },
+    ];
+  }
+
+  if (lines.length === 0) lines = [emptyLine()];
 
   const qParts = splitQuotationNumberForFormLib(row.quotation_number ?? "");
   const bankDetails =

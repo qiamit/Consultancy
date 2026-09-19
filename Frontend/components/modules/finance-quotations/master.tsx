@@ -41,6 +41,7 @@ import { printFinanceQuotationsList } from "./print-finance-quotation-list";
 import {
   createQuotationPdfBlob,
   downloadQuotationPdf,
+  quotationPdfInputFromRow,
 } from "./quotation-pdf";
 import { filterQuotationsBySearch, PAGE_SIZE_OPTIONS } from "./search-utils";
 import { FinanceQuotationsTable } from "./table";
@@ -304,21 +305,21 @@ export function FinanceQuotationsMaster({
   const downloadRow = useCallback(
     async (r: FinanceQuotationRow) => {
       try {
-        const formValues = rowToForm(r, defaultBankDetails);
         const client =
           (r.client_id ? clientById.get(r.client_id) : null) ?? null;
-        const quotationNumber =
-          (r.quotation_number || "").trim() || "quotation";
-        await downloadQuotationPdf({
-          form: formValues,
-          quotationNumber,
-          client,
-          productById,
-          printSettings,
-          sealSignImageUrl,
-          letterheadUpperImageUrl,
-          letterheadLowerImageUrl,
-        });
+        await downloadQuotationPdf(
+          quotationPdfInputFromRow({
+            row: r,
+            client,
+            productById,
+            defaultBankDetails,
+            printSettings,
+            printCompany,
+            sealSignImageUrl,
+            letterheadUpperImageUrl,
+            letterheadLowerImageUrl,
+          }),
+        );
       } catch (err) {
         window.alert(
           err instanceof Error
@@ -332,6 +333,7 @@ export function FinanceQuotationsMaster({
       defaultBankDetails,
       letterheadLowerImageUrl,
       letterheadUpperImageUrl,
+      printCompany,
       printSettings,
       productById,
       sealSignImageUrl,
@@ -344,19 +346,21 @@ export function FinanceQuotationsMaster({
         (r.quotation_number || "").trim() || "quotation";
       const shareText = `Quotation ${quotationNumber}`;
       try {
-        const formValues = rowToForm(r, defaultBankDetails);
         const client =
           (r.client_id ? clientById.get(r.client_id) : null) ?? null;
-        const blob = await createQuotationPdfBlob({
-          form: formValues,
-          quotationNumber,
-          client,
-          productById,
-          printSettings,
-          sealSignImageUrl,
-          letterheadUpperImageUrl,
-          letterheadLowerImageUrl,
-        });
+        const blob = await createQuotationPdfBlob(
+          quotationPdfInputFromRow({
+            row: r,
+            client,
+            productById,
+            defaultBankDetails,
+            printSettings,
+            printCompany,
+            sealSignImageUrl,
+            letterheadUpperImageUrl,
+            letterheadLowerImageUrl,
+          }),
+        );
         const file = new File([blob], `${quotationNumber}.pdf`, {
           type: "application/pdf",
         });
@@ -387,6 +391,7 @@ export function FinanceQuotationsMaster({
       defaultBankDetails,
       letterheadLowerImageUrl,
       letterheadUpperImageUrl,
+      printCompany,
       printSettings,
       productById,
       sealSignImageUrl,

@@ -39,6 +39,10 @@ import { ClientMasterEmbedModal } from "@/components/modules/finance/client-mast
 import { ProductMasterEmbedModal } from "@/components/modules/finance/product-master-embed-modal";
 import { DEFAULT_PRINT_SETTINGS, type PrintCompanyInfo, type PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
+import {
+  createQuotationPdfBlob,
+  downloadQuotationPdf as downloadQuotationPdfFile,
+} from "./quotation-pdf";
 
 type ClientDetailsPreview = {
   name: string;
@@ -523,68 +527,40 @@ ${letterheadLowerImageUrl ? `<img class="headimg" src="${letterheadLowerImageUrl
     });
   };
   const createPdfBlob = async (): Promise<Blob> => {
-    const html2pdf = (await import("html2pdf.js")).default;
-    const { styles, docInner } = buildQuotationDocumentParts();
-    const mount = document.createElement("div");
-    mount.className = "finance-quotation-pdf-mount";
-    mount.style.cssText =
-      "position:fixed;left:0;top:0;width:210mm;opacity:0;pointer-events:none;z-index:-1;";
-    mount.innerHTML = `<style>${styles}</style><div class="doc">${docInner}</div>`;
-    document.body.appendChild(mount);
-    const target = mount.querySelector(".doc") as HTMLElement | null;
-    if (!target) {
-      mount.remove();
-      throw new Error("Quotation PDF mount missing .doc root");
-    }
-    const waitForImages = (root: HTMLElement) => {
-      const imgs = [...root.querySelectorAll("img")];
-      return Promise.all(
-        imgs.map(
-          (img) =>
-            new Promise<void>((resolve) => {
-              if (img.complete && img.naturalHeight > 0) {
-                resolve();
-                return;
-              }
-              const done = () => resolve();
-              img.addEventListener("load", done, { once: true });
-              img.addEventListener("error", done, { once: true });
-              window.setTimeout(done, 4000);
-            }),
-        ),
-      );
-    };
-    try {
-      await waitForImages(target);
-      await new Promise<void>((r) => requestAnimationFrame(() => r()));
-      const blob = (await html2pdf()
-        .from(target)
-        .set({
-          margin: [6, 6, 6, 6],
-          filename: `${quotationNumber || "quotation"}.pdf`,
-          image: { type: "jpeg", quality: 0.98 },
-          html2canvas: {
-            scale: 2,
-            useCORS: true,
-            logging: false,
-            backgroundColor: "#ffffff",
-          },
-          jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
-        })
-        .outputPdf("blob")) as Blob;
-      return blob;
-    } finally {
-      mount.remove();
-    }
+    return createQuotationPdfBlob({
+      form: formValues,
+      quotationNumber: quotationNumber || "quotation",
+      client: selectedClientDetails,
+      productById,
+      printSettings,
+      printCompany: {
+        ...printCompany,
+        letterhead_upper_url: letterheadUpperImageUrl,
+        letterhead_lower_url: letterheadLowerImageUrl,
+        seal_sign_url: sealSignImageUrl,
+      },
+      sealSignImageUrl,
+      letterheadUpperImageUrl,
+      letterheadLowerImageUrl,
+    });
   };
   const downloadQuotationPdf = async () => {
-    const blob = await createPdfBlob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${quotationNumber || "quotation"}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
+    await downloadQuotationPdfFile({
+      form: formValues,
+      quotationNumber: quotationNumber || "quotation",
+      client: selectedClientDetails,
+      productById,
+      printSettings,
+      printCompany: {
+        ...printCompany,
+        letterhead_upper_url: letterheadUpperImageUrl,
+        letterhead_lower_url: letterheadLowerImageUrl,
+        seal_sign_url: sealSignImageUrl,
+      },
+      sealSignImageUrl,
+      letterheadUpperImageUrl,
+      letterheadLowerImageUrl,
+    });
   };
   const shareQuotation = async () => {
     const shareText = `Quotation ${quotationNumber || formValues.id}`;
