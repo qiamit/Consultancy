@@ -34,7 +34,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Technical Consultancy — Operations",
+  title: "Consultancy Pro",
   description:
     "BIS licensing, ISO accreditation, testing, calibration, clients, and finance.",
 };

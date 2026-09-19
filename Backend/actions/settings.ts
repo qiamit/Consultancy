@@ -205,7 +205,7 @@ export async function updateAppSettings(formData: FormData) {
     redirect("/dashboard?error=admin_required");
   }
 
-  const site_title = str(formData, "site_title") || "Technical Consultancy";
+  const site_title = str(formData, "site_title") || "Consultancy Pro";
   const document_number_prefix = str(formData, "document_number_prefix");
   const document_number_suffix = str(formData, "document_number_suffix");
   const reference_prefix = str(formData, "reference_prefix");

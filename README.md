@@ -1,4 +1,4 @@
-# Technical Consultancy — Web App
+# Consultancy Pro — Web App
 
 Next.js 16 (App Router) + Railway Postgres + S3-compatible storage for BIS licensing, ISO / accreditation, testing, calibration, client, and finance workflows.
 

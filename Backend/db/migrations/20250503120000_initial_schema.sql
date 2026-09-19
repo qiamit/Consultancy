@@ -119,7 +119,7 @@ create table public.company_settings (
 -- App (single row)
 create table public.app_settings (
   id int primary key default 1 check (id = 1),
-  site_title text not null default 'Technical Consultancy',
+  site_title text not null default 'Consultancy Pro',
   updated_at timestamptz not null default now()
 );
 
