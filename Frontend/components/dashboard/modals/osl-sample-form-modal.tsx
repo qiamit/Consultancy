@@ -8,6 +8,9 @@ import { DROPDOWN_KEY_BIS_PROJECT_CLIENT } from "@backend/shared/dropdown-keys";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 import {
   createOslSampleRequirementRow,
+  parseSampleFor,
+  todayYmdLocal,
+  type OslSampleFor,
   type OslSamplePriority,
   type OslSampleRequirementRow,
 } from "@backend/modules/bis/osl-sample-requirements";
@@ -51,20 +54,41 @@ export function OslSampleFormModal({
   const [declaredValue, setDeclaredValue] = useState(draft.declared_value);
   const [batchNumber, setBatchNumber] = useState(draft.batch_number);
   const [dateOfManufacturing, setDateOfManufacturing] = useState(
-    draft.date_of_manufacturing,
+    draft.date_of_manufacturing?.trim() || todayYmdLocal(),
   );
-  const [sampleQuantity, setSampleQuantity] = useState(draft.sample_quantity);
-  const [batchQuantity, setBatchQuantity] = useState(draft.batch_quantity);
+  const [sampleQuantity, setSampleQuantity] = useState(
+    draft.sample_quantity?.trim() || "1 Mtr X 2 Nos + 50 mm X 5 Nos",
+  );
+  const [batchQuantity, setBatchQuantity] = useState(
+    draft.batch_quantity?.trim() || "0.50 Tonne Approx",
+  );
   const [sampleCode, setSampleCode] = useState(draft.sample_code);
   const [qrCode, setQrCode] = useState(draft.qr_code);
-  const [sampleType, setSampleType] = useState(draft.sample_type);
+  const [sampleType, setSampleType] = useState(
+    draft.sample_type?.trim() || "AS",
+  );
   const [priority, setPriority] = useState<OslSamplePriority>(draft.priority);
   const [laboratoryName, setLaboratoryName] = useState(draft.laboratory_name);
+  const [shelfLife, setShelfLife] = useState(
+    draft.shelf_life?.trim() || "Life Long",
+  );
+  const [modeOfDisposal, setModeOfDisposal] = useState(
+    draft.mode_of_disposal?.trim() || "To be Disposed",
+  );
+  const [testingCharges, setTestingCharges] = useState(
+    draft.testing_charges ?? "",
+  );
+  const [testRequired, setTestRequired] = useState(
+    draft.test_required?.trim() || "All Test",
+  );
+  const [sampleFor, setSampleFor] = useState<OslSampleFor>(
+    parseSampleFor(draft.sample_for),
+  );
   const [showAddClient, setShowAddClient] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  function handleSubmit(e?: React.FormEvent) {
+    e?.preventDefault();
     if (!sampleDescription.trim() && !declaredValue.trim() && !batchNumber.trim()) {
       setError("Enter at least Sample Description, Declared Value, or Batch Number.");
       return;
@@ -82,6 +106,12 @@ export function OslSampleFormModal({
       sample_type: sampleType.trim(),
       priority,
       laboratory_name: laboratoryName.trim(),
+      shelf_life: shelfLife.trim(),
+      mode_of_disposal: modeOfDisposal.trim(),
+      testing_charges: testingCharges.trim(),
+      test_required: testRequired.trim(),
+      sample_for: sampleFor,
+      include_in_print: draft.include_in_print !== false,
     });
   }
 
@@ -103,9 +133,10 @@ export function OslSampleFormModal({
             </h2>
             <button
               type="button"
-              onClick={onClose}
+              onClick={() => handleSubmit()}
               className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-              aria-label="Close"
+              aria-label="Save & Close"
+              title="Save & Close"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -116,6 +147,51 @@ export function OslSampleFormModal({
           <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
             <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
               <div className="grid gap-4 sm:grid-cols-2">
+                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3">
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-sample-for">
+                      Sample For
+                    </label>
+                    <select
+                      id="osl-sample-for"
+                      value={sampleFor}
+                      onChange={(e) =>
+                        setSampleFor(parseSampleFor(e.target.value))
+                      }
+                      className={fieldInputClass}
+                    >
+                      <option value="osl">OSL</option>
+                      <option value="ft">FT</option>
+                      <option value="it">IT</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-sample-code">
+                      Sample Code
+                    </label>
+                    <input
+                      id="osl-sample-code"
+                      type="text"
+                      value={sampleCode}
+                      onChange={(e) => setSampleCode(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="Code…"
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-qr-code">
+                      QR Code
+                    </label>
+                    <input
+                      id="osl-qr-code"
+                      type="text"
+                      value={qrCode}
+                      onChange={(e) => setQrCode(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="QR…"
+                    />
+                  </div>
+                </div>
                 <div className="sm:col-span-2">
                   <label className={fieldLabelClass} htmlFor="osl-sample-description">
                     Sample Description
@@ -142,136 +218,170 @@ export function OslSampleFormModal({
                     placeholder="Declared values / composition…"
                   />
                 </div>
-                <div>
-                  <label className={fieldLabelClass} htmlFor="osl-batch-number">
-                    Batch Number
-                  </label>
-                  <input
-                    id="osl-batch-number"
-                    type="text"
-                    value={batchNumber}
-                    onChange={(e) => setBatchNumber(e.target.value)}
-                    className={fieldInputClass}
-                    placeholder="Batch…"
-                  />
-                </div>
-                <div>
-                  <label className={fieldLabelClass} htmlFor="osl-dom">
-                    Date of Manufacturing
-                  </label>
-                  <input
-                    id="osl-dom"
-                    type="date"
-                    value={dateOfManufacturing}
-                    onChange={(e) => setDateOfManufacturing(e.target.value)}
-                    className={fieldInputClass}
-                  />
-                </div>
-                <div>
-                  <label className={fieldLabelClass} htmlFor="osl-sample-qty">
-                    Sample Quantity
-                  </label>
-                  <input
-                    id="osl-sample-qty"
-                    type="text"
-                    value={sampleQuantity}
-                    onChange={(e) => setSampleQuantity(e.target.value)}
-                    className={fieldInputClass}
-                    placeholder="Qty…"
-                  />
-                </div>
-                <div>
-                  <label className={fieldLabelClass} htmlFor="osl-batch-qty">
-                    Batch Quantity
-                  </label>
-                  <input
-                    id="osl-batch-qty"
-                    type="text"
-                    value={batchQuantity}
-                    onChange={(e) => setBatchQuantity(e.target.value)}
-                    className={fieldInputClass}
-                    placeholder="Qty…"
-                  />
-                </div>
-                <div>
-                  <label className={fieldLabelClass} htmlFor="osl-sample-code">
-                    Sample Code
-                  </label>
-                  <input
-                    id="osl-sample-code"
-                    type="text"
-                    value={sampleCode}
-                    onChange={(e) => setSampleCode(e.target.value)}
-                    className={fieldInputClass}
-                    placeholder="Code…"
-                  />
-                </div>
-                <div>
-                  <label className={fieldLabelClass} htmlFor="osl-qr-code">
-                    QR Code
-                  </label>
-                  <input
-                    id="osl-qr-code"
-                    type="text"
-                    value={qrCode}
-                    onChange={(e) => setQrCode(e.target.value)}
-                    className={fieldInputClass}
-                    placeholder="QR…"
-                  />
-                </div>
-                <div>
-                  <label className={fieldLabelClass} htmlFor="osl-sample-type">
-                    Sample Type
-                  </label>
-                  <input
-                    id="osl-sample-type"
-                    type="text"
-                    value={sampleType}
-                    onChange={(e) => setSampleType(e.target.value)}
-                    className={fieldInputClass}
-                    placeholder="Type…"
-                  />
-                </div>
-                <div>
-                  <label className={fieldLabelClass} htmlFor="osl-priority">
-                    Priority
-                  </label>
-                  <select
-                    id="osl-priority"
-                    value={priority}
-                    onChange={(e) =>
-                      setPriority(e.target.value as OslSamplePriority)
-                    }
-                    className={fieldInputClass}
-                  >
-                    <option value="Priority">Priority</option>
-                    <option value="Non Priority">Non Priority</option>
-                  </select>
-                </div>
-                <div className="sm:col-span-2">
-                  <span className={fieldLabelClass}>Name of the Laboratory</span>
-                  <div className="mt-1.5">
-                    <ClientDropdownField
-                      hideLabel
-                      inputRowShellClassName={labShell}
-                      listZIndexClass="z-[520]"
-                      overlayZIndexClass="z-[530]"
-                      optionKey={DROPDOWN_KEY_BIS_PROJECT_CLIENT}
-                      name={`osl_lab_form_${draft.id}`}
-                      label="Name of the Laboratory"
-                      dialogTitle="Clients"
-                      addPlaceholder="New client label"
-                      manageAriaLabel="Add new client"
-                      value={laboratoryName}
-                      onChange={setLaboratoryName}
-                      options={clientOptions}
-                      selectedValue={laboratoryName}
-                      onClearSelection={() => setLaboratoryName("")}
-                      includeEmptyOption={false}
-                      searchPlaceholder="Search client…"
-                      blankInputWhenNoSelection
-                      onSuffixButtonClick={() => setShowAddClient(true)}
+                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3">
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-batch-number">
+                      Batch Number
+                    </label>
+                    <input
+                      id="osl-batch-number"
+                      type="text"
+                      value={batchNumber}
+                      onChange={(e) => setBatchNumber(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="Batch…"
                     />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-dom">
+                      Date of Manufacturing
+                    </label>
+                    <input
+                      id="osl-dom"
+                      type="date"
+                      value={dateOfManufacturing}
+                      onChange={(e) => setDateOfManufacturing(e.target.value)}
+                      className={fieldInputClass}
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-shelf-life">
+                      Shelf Life
+                    </label>
+                    <input
+                      id="osl-shelf-life"
+                      type="text"
+                      value={shelfLife}
+                      onChange={(e) => setShelfLife(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="Life Long"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3">
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-sample-qty">
+                      Sample Quantity
+                    </label>
+                    <input
+                      id="osl-sample-qty"
+                      type="text"
+                      value={sampleQuantity}
+                      onChange={(e) => setSampleQuantity(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="1 Mtr X 2 Nos + 50 mm X 5 Nos"
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-batch-qty">
+                      Batch Quantity
+                    </label>
+                    <input
+                      id="osl-batch-qty"
+                      type="text"
+                      value={batchQuantity}
+                      onChange={(e) => setBatchQuantity(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="0.50 Tonne Approx"
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-priority">
+                      Priority
+                    </label>
+                    <select
+                      id="osl-priority"
+                      value={priority}
+                      onChange={(e) =>
+                        setPriority(e.target.value as OslSamplePriority)
+                      }
+                      className={fieldInputClass}
+                    >
+                      <option value="Priority">Priority</option>
+                      <option value="Non Priority">Non Priority</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3">
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-sample-type">
+                      Sample Type
+                    </label>
+                    <input
+                      id="osl-sample-type"
+                      type="text"
+                      value={sampleType}
+                      onChange={(e) => setSampleType(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="AS"
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-mode-disposal">
+                      Mode Of Disposal
+                    </label>
+                    <input
+                      id="osl-mode-disposal"
+                      type="text"
+                      value={modeOfDisposal}
+                      onChange={(e) => setModeOfDisposal(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="To be Disposed"
+                    />
+                  </div>
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-test-required">
+                      Test Required
+                    </label>
+                    <input
+                      id="osl-test-required"
+                      type="text"
+                      value={testRequired}
+                      onChange={(e) => setTestRequired(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="All Test"
+                    />
+                  </div>
+                </div>
+                <div className="grid gap-4 sm:col-span-2 sm:grid-cols-3">
+                  <div>
+                    <label className={fieldLabelClass} htmlFor="osl-testing-charges">
+                      Testing Charges
+                    </label>
+                    <input
+                      id="osl-testing-charges"
+                      type="text"
+                      value={testingCharges}
+                      onChange={(e) => setTestingCharges(e.target.value)}
+                      className={fieldInputClass}
+                      placeholder="Rs. …"
+                    />
+                  </div>
+                  <div className="sm:col-span-2">
+                    <span className={fieldLabelClass}>Name of the Laboratory</span>
+                    <div className="mt-1.5">
+                      <ClientDropdownField
+                        hideLabel
+                        inputRowShellClassName={labShell}
+                        listZIndexClass="z-[520]"
+                        overlayZIndexClass="z-[530]"
+                        optionKey={DROPDOWN_KEY_BIS_PROJECT_CLIENT}
+                        name={`osl_lab_form_${draft.id}`}
+                        label="Name of the Laboratory"
+                        dialogTitle="Clients"
+                        addPlaceholder="New client label"
+                        manageAriaLabel="Add new client"
+                        value={laboratoryName}
+                        onChange={setLaboratoryName}
+                        options={clientOptions}
+                        selectedValue={laboratoryName}
+                        onClearSelection={() => setLaboratoryName("")}
+                        includeEmptyOption={false}
+                        searchPlaceholder="Search client…"
+                        blankInputWhenNoSelection
+                        onSuffixButtonClick={() => setShowAddClient(true)}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>

@@ -6,6 +6,7 @@ import {
   PROCESS_FLOW_HIERARCHY_LAYOUTS,
   PROCESS_FLOW_LEVEL_LABELS,
   PROCESS_FLOW_PRINT_CHART_SIZES,
+  boxDimensionsForFontSize,
   type ProcessFlowChartSettings,
 } from "@backend/modules/bis/process-flow-chart-settings";
 
@@ -193,6 +194,21 @@ export function ProcessFlowChartSettingsPanel({
       <section className="space-y-3 border-t border-zinc-800 pt-4">
         <p className={labelClass}>Spacing</p>
         <div>
+          <p className={`${labelClass} mb-1`}>Box font size ({settings.box_font_size}px)</p>
+          <input
+            type="range"
+            min={12}
+            max={24}
+            step={1}
+            value={settings.box_font_size}
+            onChange={(e) => onChange(boxDimensionsForFontSize(Number(e.target.value)))}
+            className="w-full"
+          />
+          <p className="mt-1 text-[10px] text-zinc-500">
+            Box height &amp; width scale with font so text stays inside.
+          </p>
+        </div>
+        <div>
           <p className={`${labelClass} mb-1`}>Row gap ({settings.row_gap}px)</p>
           <input
             type="range"
@@ -208,9 +224,9 @@ export function ProcessFlowChartSettingsPanel({
           <p className={`${labelClass} mb-1`}>Column gap ({settings.col_gap}px)</p>
           <input
             type="range"
-            min={8}
-            max={48}
-            step={2}
+            min={0}
+            max={40}
+            step={1}
             value={settings.col_gap}
             onChange={(e) => onChange({ col_gap: Number(e.target.value) })}
             className="w-full"
@@ -221,7 +237,7 @@ export function ProcessFlowChartSettingsPanel({
           <input
             type="range"
             min={36}
-            max={96}
+            max={120}
             step={2}
             value={settings.box_height}
             onChange={(e) => onChange({ box_height: Number(e.target.value) })}

@@ -319,18 +319,24 @@ export function AppointmentLetterCreatorModal({
     return result.ref;
   }
 
-  function handleSave() {
+  async function handleSave(): Promise<boolean> {
     if (!draft.person_name.trim()) {
       setError("Name of person is required.");
-      return;
+      return false;
     }
     setError(null);
-    startSave(async () => {
-      const url = await uploadGeneratedLetter(previewHtml);
-      if (!url) return;
-      onCreated(url);
-      setSavedFlash(true);
-      window.setTimeout(() => setSavedFlash(false), 2000);
+    return new Promise<boolean>((resolve) => {
+      startSave(async () => {
+        const url = await uploadGeneratedLetter(previewHtml);
+        if (!url) {
+          resolve(false);
+          return;
+        }
+        onCreated(url);
+        setSavedFlash(true);
+        window.setTimeout(() => setSavedFlash(false), 2000);
+        resolve(true);
+      });
     });
   }
 

@@ -42,6 +42,8 @@ export type PlantLayoutShape =
       strokeWidth: number;
       label: string;
       hierarchyType?: string;
+      /** Explicit label size for process-flow boxes; omit for auto size. */
+      fontSize?: number;
     }
   | {
       id: string;
@@ -159,6 +161,7 @@ export function parsePlantLayoutShapes(raw: unknown): PlantLayoutShape[] {
         strokeWidth: Number(r.strokeWidth) > 0 ? Number(r.strokeWidth) : 3,
         label: String(r.label ?? ""),
         hierarchyType: String(r.hierarchyType ?? "").trim() || undefined,
+        fontSize: Number(r.fontSize) > 0 ? Number(r.fontSize) : undefined,
       });
       continue;
     }
@@ -218,23 +221,16 @@ function rectangleDisplayText(shape: Extract<PlantLayoutShape, { type: "rectangl
   return shape.label.trim();
 }
 
-function wrapTextInRect(
+function measureWrappedLines(
   ctx: CanvasRenderingContext2D,
   text: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  fontSize: number,
-) {
-  const trimmed = text.trim();
-  if (!trimmed) return;
-
-  const padding = 8;
-  const maxWidth = Math.max(20, width - padding * 2);
-  const lineHeight = fontSize * 1.2;
+  maxWidth: number,
+): string[] {
   const lines: string[] = [];
-  const paragraphs = trimmed.split("\n").map((line) => line.trim()).filter(Boolean);
+  const paragraphs = text
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean);
 
   for (const paragraph of paragraphs) {
     let current = "";
@@ -251,16 +247,82 @@ function wrapTextInRect(
     if (current) lines.push(current);
   }
 
+  return lines;
+}
+
+function fitFontSizeToRect(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  width: number,
+  height: number,
+  preferredFontSize: number,
+): { fontSize: number; lines: string[]; lineHeight: number; padding: number } {
+  const padding = 8;
+  const maxWidth = Math.max(20, width - padding * 2);
+  const maxInnerHeight = Math.max(12, height - padding * 2);
+  let fontSize = Math.max(10, Math.min(28, Math.round(preferredFontSize)));
+
+  while (fontSize >= 10) {
+    ctx.font = `600 ${fontSize}px Arial, Helvetica, sans-serif`;
+    const lineHeight = fontSize * 1.2;
+    const lines = measureWrappedLines(ctx, text, maxWidth);
+    if (lines.length === 0 || lines.length * lineHeight <= maxInnerHeight + 0.5) {
+      return { fontSize, lines, lineHeight, padding };
+    }
+    fontSize -= 1;
+  }
+
+  ctx.font = `600 10px Arial, Helvetica, sans-serif`;
+  const lineHeight = 12;
+  const lines = measureWrappedLines(ctx, text, maxWidth);
+  const maxLines = Math.max(1, Math.floor(maxInnerHeight / lineHeight));
+  return {
+    fontSize: 10,
+    lines: lines.slice(0, maxLines),
+    lineHeight,
+    padding,
+  };
+}
+
+function wrapTextInRect(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  preferredFontSize: number,
+) {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  const { fontSize, lines, lineHeight, padding } = fitFontSizeToRect(
+    ctx,
+    trimmed,
+    width,
+    height,
+    preferredFontSize,
+  );
   if (lines.length === 0) return;
 
+  const maxWidth = Math.max(20, width - padding * 2);
   const totalHeight = lines.length * lineHeight;
   let drawY = y + Math.max(padding, (height - totalHeight) / 2);
+  const bottom = y + height - padding;
 
+  ctx.font = `600 ${fontSize}px Arial, Helvetica, sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   for (const line of lines) {
-    if (drawY + lineHeight > y + height - padding) break;
-    ctx.fillText(line, x + width / 2, drawY, maxWidth);
+    if (drawY + lineHeight > bottom + 0.5) break;
+    let drawLine = line;
+    if (ctx.measureText(drawLine).width > maxWidth) {
+      while (drawLine.length > 1 && ctx.measureText(`${drawLine}…`).width > maxWidth) {
+        drawLine = drawLine.slice(0, -1);
+      }
+      drawLine = `${drawLine}…`;
+    }
+    ctx.fillText(drawLine, x + width / 2, drawY);
     drawY += lineHeight;
   }
 }
@@ -392,8 +454,15 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: PlantLayoutShape) {
     const displayText = rectangleDisplayText(shape);
     if (displayText.trim()) {
       ctx.fillStyle = shape.strokeColor;
-      const fontSize = Math.max(12, Math.min(18, Math.floor(Math.min(shape.width, shape.height) / 6)));
-      ctx.font = `${fontSize}px Arial`;
+      const autoSize = Math.max(
+        14,
+        Math.min(20, Math.floor(Math.min(shape.width, shape.height) / 3.2)),
+      );
+      const preferredFontSize =
+        shape.fontSize && shape.fontSize > 0
+          ? Math.max(12, Math.min(28, Math.round(shape.fontSize)))
+          : autoSize;
+      // wrapTextInRect fits font so glyphs never leave the box
       wrapTextInRect(
         ctx,
         displayText,
@@ -401,7 +470,7 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: PlantLayoutShape) {
         shape.y,
         shape.width,
         shape.height,
-        fontSize,
+        preferredFontSize,
       );
     }
     return;
@@ -664,7 +733,7 @@ export async function renderPlantLayoutScene(
   width: number,
   height: number,
   shapes: PlantLayoutShape[],
-  selectedId: string | null,
+  selectedId: string | string[] | null,
 ): Promise<void> {
   drawGrid(ctx, width, height);
 
@@ -677,8 +746,13 @@ export async function renderPlantLayoutScene(
     drawShape(ctx, shape);
   }
 
-  if (selectedId) {
-    const selected = shapes.find((shape) => shape.id === selectedId);
+  const selectedIds = Array.isArray(selectedId)
+    ? selectedId
+    : selectedId
+      ? [selectedId]
+      : [];
+  for (const id of selectedIds) {
+    const selected = shapes.find((shape) => shape.id === id);
     if (selected && selected.type !== "legacy") drawSelection(ctx, selected);
   }
 }

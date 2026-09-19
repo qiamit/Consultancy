@@ -115,6 +115,26 @@ export function ProcessFlowChartModal({
   const canvasEditorRef = useRef<ProcessFlowChartEditorHandle>(null);
   const imageUploadInputRef = useRef<HTMLInputElement>(null);
 
+  // If parent loads a filled chart while this modal still shows blank (race on open), restore it.
+  // Do NOT restore whenever local has fewer rows — that undoes Delete / edits until Save.
+  useEffect(() => {
+    const storedFilled = (storedDocument.outline_items ?? []).filter((i) => i.text.trim()).length;
+    const localFilled = (document.outline_items ?? []).filter((i) => i.text.trim()).length;
+    if (localFilled > 0) return;
+    if (storedFilled <= 0) return;
+    setDocument({
+      ...storedDocument,
+      chart_settings: parseProcessFlowChartSettings({
+        ...(storedDocument.chart_settings ?? defaultProcessFlowChartDocument().chart_settings),
+        print_chart_size:
+          storedDocument.chart_settings?.print_chart_size ??
+          document.chart_settings?.print_chart_size ??
+          "fit_page",
+      }),
+    });
+    setEditorRevision((n) => n + 1);
+  }, [storedDocument, document]);
+
   useEffect(() => {
     let cancelled = false;
     void loadCompanyPrintContext().then(({ printSettings: fromDb, assetUrls }) => {
@@ -229,7 +249,17 @@ export function ProcessFlowChartModal({
   const isFullNumber = letterData.isNumber?.trim() || "—";
 
   function patchDocument(patch: Partial<ProcessFlowChartStored>) {
-    setDocument((prev) => ({ ...prev, ...patch }));
+    setDocument((prev) => {
+      // Never let an empty editor snapshot wipe a filled chart (HMR / race).
+      if (patch.outline_items) {
+        const prevFilled = (prev.outline_items ?? []).filter((i) => i.text.trim()).length;
+        const nextFilled = patch.outline_items.filter((i) => i.text.trim()).length;
+        if (prevFilled > 0 && nextFilled === 0) {
+          return prev;
+        }
+      }
+      return { ...prev, ...patch };
+    });
   }
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
@@ -251,22 +281,23 @@ export function ProcessFlowChartModal({
     }));
   }
 
-  function handleSave() {
-    startSave(async () => {
-      const snapshot = await canvasEditorRef.current?.captureSnapshot();
-      const nextDocument: ProcessFlowChartStored = snapshot
-        ? {
-            ...document,
-            drawing_data_url: snapshot.drawing_data_url,
-            shapes: snapshot.shapes,
-            outline_items: snapshot.outline_items,
-          }
-        : document;
+  async function handleSave() {
+    // Await snapshot before closing — Close runs Save then unmounts.
+    const snapshot = await canvasEditorRef.current?.captureSnapshot();
+    const nextDocument: ProcessFlowChartStored = snapshot
+      ? {
+          ...document,
+          drawing_data_url: snapshot.drawing_data_url,
+          shapes: snapshot.shapes,
+          outline_items: snapshot.outline_items,
+        }
+      : document;
 
-      if (snapshot) {
-        setDocument(nextDocument);
-      }
+    if (snapshot) {
+      setDocument(nextDocument);
+    }
 
+    startSave(() => {
       onSave({
         ...nextDocument,
         chart_settings:

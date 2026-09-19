@@ -1,81 +1,170 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo } from "react";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import {
+  isSampleIncludedInPrint,
+  parseSampleFor,
   rowHasContent,
+  sampleForLabel,
+  type OslSampleFor,
   type OslSampleRequirementRow,
 } from "@backend/modules/bis/osl-sample-requirements";
+
 const themes = {
   light: {
-    wrap: "@container flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700",
-    thead: "bg-zinc-100 dark:bg-zinc-800",
-    thLeft:
-      "border border-zinc-200 px-2 py-2 text-left align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
-    thCenter:
-      "border border-zinc-200 px-2 py-2 text-center align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
-    tdLeft:
-      "border border-zinc-200 px-2 py-2.5 align-middle text-left text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300",
-    tdCenter:
-      "border border-zinc-200 px-2 py-2.5 align-middle text-center text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300",
-    selectCell:
-      "border border-zinc-200 bg-zinc-50 px-2 py-2.5 text-center align-middle dark:border-zinc-700 dark:bg-zinc-800/60",
+    wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700",
     empty: "px-4 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400",
     editBtn:
-      "rounded p-1.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
+      "rounded-lg p-1.5 text-zinc-500 hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/40 dark:hover:text-amber-300",
     copyBtn:
-      "rounded p-1.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-sky-600 dark:hover:bg-zinc-800 dark:hover:text-sky-300",
+      "rounded-lg p-1.5 text-zinc-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950/40 dark:hover:text-sky-300",
     delBtn:
-      "rounded p-1.5 text-sm leading-none text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800 dark:hover:text-red-400",
+      "rounded-lg p-1.5 text-zinc-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400",
     muted: "text-zinc-400 dark:text-zinc-500",
-    highlight: "ring-2 ring-inset ring-sky-500/60 bg-sky-50/80 dark:bg-sky-950/20",
-    card: "rounded-lg border border-zinc-200 bg-zinc-50/80 p-3 dark:border-zinc-700 dark:bg-zinc-950/50",
+    highlight: "ring-2 ring-sky-500/80",
+    card: "rounded-2xl border border-zinc-200 bg-gradient-to-br from-white to-zinc-50 shadow-sm dark:border-zinc-700 dark:from-zinc-900 dark:to-zinc-950",
+    panel: "rounded-xl border border-zinc-200/80 bg-zinc-50/90 p-3 dark:border-zinc-800 dark:bg-zinc-950/60",
     cardLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
-    cardValue: "mt-0.5 text-xs text-zinc-800 dark:text-zinc-200",
+    cardValue: "mt-0.5 text-xs leading-snug text-zinc-800 dark:text-zinc-100",
+    heroLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
+    heroValue: "mt-1 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-50",
     addBtn:
       "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
-    chk: "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500",
+    metaRow: "flex gap-2 border-b border-zinc-200/70 py-1.5 last:border-b-0 dark:border-zinc-800/80",
   },
   dark: {
-    wrap: "@container flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800",
-    thead: "bg-zinc-800",
-    thLeft:
-      "border border-zinc-700 px-2 py-2 text-left align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
-    thCenter:
-      "border border-zinc-700 px-2 py-2 text-center align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
-    tdLeft:
-      "border border-zinc-700 px-2 py-2.5 align-middle text-left text-xs text-zinc-300",
-    tdCenter:
-      "border border-zinc-700 px-2 py-2.5 align-middle text-center text-xs text-zinc-300",
-    selectCell:
-      "border border-zinc-700 bg-zinc-800/60 px-2 py-2.5 text-center align-middle",
+    wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800",
     empty: "px-4 py-10 text-center text-sm text-zinc-500",
     editBtn:
-      "rounded p-1.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200",
+      "rounded-lg p-1.5 text-zinc-400 hover:bg-amber-950/50 hover:text-amber-300",
     copyBtn:
-      "rounded p-1.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-sky-300",
+      "rounded-lg p-1.5 text-zinc-400 hover:bg-sky-950/50 hover:text-sky-300",
     delBtn:
-      "rounded p-1.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-red-400",
+      "rounded-lg p-1.5 text-zinc-400 hover:bg-red-950/50 hover:text-red-400",
     muted: "text-zinc-500",
-    highlight: "ring-2 ring-inset ring-sky-500/60 bg-sky-950/20",
-    card: "rounded-lg border border-zinc-700 bg-zinc-950/60 p-3",
+    highlight: "ring-2 ring-sky-500/80",
+    card: "rounded-2xl border border-zinc-700/90 bg-gradient-to-br from-zinc-900 via-zinc-950 to-zinc-950 shadow-[0_8px_30px_rgba(0,0,0,0.25)]",
+    panel: "rounded-xl border border-zinc-800 bg-zinc-950/80 p-3",
     cardLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
-    cardValue: "mt-0.5 text-xs text-zinc-200",
+    cardValue: "mt-0.5 text-xs leading-snug text-zinc-100",
+    heroLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
+    heroValue: "mt-1 text-sm font-semibold leading-snug text-zinc-50",
     addBtn:
       "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
-    chk: "h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-sky-500 focus:ring-sky-500/30",
+    metaRow: "flex gap-2 border-b border-zinc-800/90 py-1.5 last:border-b-0",
   },
 } as const;
-
-function cellText(value: string, mutedClass: string) {
-  const v = value.trim();
-  if (!v) return <span className={mutedClass}>—</span>;
-  return <span className="block max-w-full break-words">{v}</span>;
-}
 
 function fieldOrDash(value: string) {
   const v = value.trim();
   return v || "—";
+}
+
+function sampleForBadgeClass(kind: OslSampleFor): string {
+  if (kind === "ft") {
+    return "border-amber-500/40 bg-amber-500/15 text-amber-200";
+  }
+  if (kind === "it") {
+    return "border-violet-500/40 bg-violet-500/15 text-violet-200";
+  }
+  return "border-teal-500/40 bg-teal-500/15 text-teal-200";
+}
+
+function MetaItem({
+  label,
+  value,
+  labelClass,
+  valueClass,
+  mono = false,
+  rowClass,
+}: {
+  label: string;
+  value: string;
+  labelClass: string;
+  valueClass: string;
+  mono?: boolean;
+  rowClass: string;
+}) {
+  return (
+    <div className={rowClass}>
+      <dt className={`w-[38%] shrink-0 ${labelClass}`}>{label}</dt>
+      <dd
+        className={`min-w-0 flex-1 text-xs leading-snug ${valueClass} ${
+          mono ? "font-mono break-all" : "break-words"
+        }`}
+      >
+        {fieldOrDash(value)}
+      </dd>
+    </div>
+  );
+}
+
+function IconEdit() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 7.125L16.875 4.5" />
+    </svg>
+  );
+}
+
+function IconCopy() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75A1.125 1.125 0 013.75 20.625V10.5A1.125 1.125 0 014.875 9.375H8.25" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25H18a1.125 1.125 0 001.125-1.125V5.625A1.125 1.125 0 0018 4.5h-9.75A1.125 1.125 0 007.125 5.625V8.25" />
+    </svg>
+  );
+}
+
+function IconTrash() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0V4.306c0-.682-.448-1.28-1.087-1.487A48.23 48.23 0 0012 2.25c-.875 0-1.73.066-2.563.192A1.875 1.875 0 008.25 4.306V5.79" />
+    </svg>
+  );
+}
+
+function InLetterToggle({
+  on,
+  onToggle,
+}: {
+  on: boolean;
+  onToggle: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      onClick={onToggle}
+      title={
+        on
+          ? "Included in letter table (print / Word / PDF). Click to exclude."
+          : "Excluded from letter table. Click to include."
+      }
+      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold tracking-wide transition-colors ${
+        on
+          ? "border-sky-500/50 bg-sky-500/20 text-sky-200"
+          : "border-zinc-600/70 bg-zinc-800/50 text-zinc-500"
+      }`}
+    >
+      <span
+        className={`relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors ${
+          on ? "bg-sky-500" : "bg-zinc-600"
+        }`}
+        aria-hidden
+      >
+        <span
+          className={`absolute h-2.5 w-2.5 rounded-full bg-white shadow transition-transform ${
+            on ? "translate-x-3" : "translate-x-0.5"
+          }`}
+        />
+      </span>
+      In Letter
+    </button>
+  );
 }
 
 export function OslSampleRequirementsTableEditor({
@@ -83,6 +172,7 @@ export function OslSampleRequirementsTableEditor({
   onEdit,
   onCopy,
   onRemove,
+  onUpdate,
   theme = "light",
   focusSampleIndex = null,
 }: {
@@ -90,66 +180,24 @@ export function OslSampleRequirementsTableEditor({
   onEdit: (row: OslSampleRequirementRow) => void;
   onCopy: (row: OslSampleRequirementRow) => void;
   onRemove: (row: OslSampleRequirementRow) => void;
+  onUpdate: (row: OslSampleRequirementRow) => void;
   theme?: keyof typeof themes;
   focusSampleIndex?: number | null;
 }) {
   const t = themes[theme];
   const visibleRows = useMemo(() => rows.filter(rowHasContent), [rows]);
-  const visibleIds = useMemo(() => visibleRows.map((r) => r.id), [visibleRows]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
-  const selectAllRef = useRef<HTMLInputElement>(null);
-  const selectAllCardsRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setSelectedIds((prev) => {
-      const next = new Set([...prev].filter((id) => visibleIds.includes(id)));
-      return next.size === prev.size ? prev : next;
-    });
-  }, [visibleIds]);
-
-  const allSelected =
-    visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
-  const someSelected =
-    visibleIds.some((id) => selectedIds.has(id)) && !allSelected;
-
-  useEffect(() => {
-    for (const el of [selectAllRef.current, selectAllCardsRef.current]) {
-      if (el) el.indeterminate = someSelected;
-    }
-  }, [someSelected]);
 
   useEffect(() => {
     if (focusSampleIndex == null || focusSampleIndex < 0) return;
-    const nodes = document.querySelectorAll(
+    const el = document.querySelector(
       `[data-osl-sample-index="${focusSampleIndex}"]`,
     );
-    const el =
-      Array.from(nodes).find((node) => (node as HTMLElement).offsetParent !== null) ??
-      nodes[0];
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [focusSampleIndex, visibleRows.length]);
 
-  function toggleRow(id: string) {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  function toggleSelectAll() {
-    setSelectedIds((prev) => {
-      if (visibleIds.length > 0 && visibleIds.every((id) => prev.has(id))) {
-        return new Set();
-      }
-      return new Set(visibleIds);
-    });
-  }
-
   function rowActions(row: OslSampleRequirementRow, srNo: string) {
     return (
-      <div className="inline-flex items-center justify-center gap-0.5">
+      <div className="inline-flex items-center gap-0.5 rounded-xl border border-zinc-700/80 bg-zinc-950/40 p-0.5">
         <button
           type="button"
           onClick={() => onEdit(row)}
@@ -157,7 +205,7 @@ export function OslSampleRequirementsTableEditor({
           aria-label={`Edit sample ${srNo}`}
           title="Edit"
         >
-          ✏️
+          <IconEdit />
         </button>
         <button
           type="button"
@@ -166,7 +214,7 @@ export function OslSampleRequirementsTableEditor({
           aria-label={`Copy sample ${srNo}`}
           title="Copy"
         >
-          📋
+          <IconCopy />
         </button>
         <button
           type="button"
@@ -175,7 +223,7 @@ export function OslSampleRequirementsTableEditor({
           aria-label={`Delete sample ${srNo}`}
           title="Delete"
         >
-          🗑️
+          <IconTrash />
         </button>
       </div>
     );
@@ -188,212 +236,127 @@ export function OslSampleRequirementsTableEditor({
           No samples added yet. Use &ldquo;Add Sample&rdquo; to enter sample details.
         </p>
       ) : (
-        <>
-          {/* PWA / narrow: stacked cards — no horizontal scroll */}
-          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-2 @[900px]:hidden">
-            <label className="flex items-center gap-2 px-1 text-xs text-zinc-400">
-              <input
-                ref={selectAllCardsRef}
-                type="checkbox"
-                checked={allSelected}
-                onChange={toggleSelectAll}
-                className={t.chk}
-                aria-label="Select all samples"
-              />
-              Select all
-            </label>
+        <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:p-4">
+          <p className={`text-xs ${t.muted}`}>
+            {visibleRows.length} sample{visibleRows.length === 1 ? "" : "s"}
+            {" · "}
+            Toggle <span className="text-zinc-300">In Letter</span> to include or
+            exclude a sample from print / Word / PDF.
+          </p>
+
+          <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {visibleRows.map((row, index) => {
               const srNo = String(index + 1).padStart(2, "0");
               const highlighted = focusSampleIndex === index;
-              const selected = selectedIds.has(row.id);
+              const kind = parseSampleFor(row.sample_for);
+              const sampleFor = sampleForLabel(kind);
+              const inLetter = isSampleIncludedInPrint(row);
               const batchNo = row.batch_number.trim();
               const dom = row.date_of_manufacturing.trim()
                 ? formatDisplayDate(row.date_of_manufacturing)
                 : "";
+
+              const leftMeta = [
+                { label: "Batch No", value: batchNo },
+                { label: "Sample Qty", value: row.sample_quantity },
+                { label: "Sample Code", value: row.sample_code, mono: true },
+                { label: "Mode Of Disposal", value: row.mode_of_disposal },
+                { label: "Laboratory", value: row.laboratory_name },
+              ] as const;
+
+              const rightMeta = [
+                { label: "DOM", value: dom },
+                { label: "Batch Qty", value: row.batch_quantity },
+                { label: "QR Code", value: row.qr_code, mono: true },
+                { label: "Test Required", value: row.test_required },
+                { label: "Shelf Life", value: row.shelf_life },
+                { label: "Sample Type", value: row.sample_type },
+                { label: "Testing Charges", value: row.testing_charges },
+              ] as const;
+
               return (
-                <div
+                <article
                   key={row.id}
                   data-osl-sample-index={index}
-                  className={`${t.card} ${highlighted ? t.highlight : ""}`}
+                  className={`${t.card} ${highlighted ? t.highlight : ""} ${
+                    inLetter ? "" : "opacity-70"
+                  }`}
                 >
-                  <div className="mb-2 flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => toggleRow(row.id)}
-                      className={`${t.chk} mt-0.5 shrink-0`}
-                      aria-label={`Select sample ${srNo}`}
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className={t.cardLabel}>Sample Description</p>
-                      <p className={`${t.cardValue} font-medium break-words`}>
-                        {fieldOrDash(row.sample_description)}
-                      </p>
+                  <div className="p-3.5">
+                    <div className="mb-3 flex items-center gap-2.5">
+                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                        <InLetterToggle
+                          on={inLetter}
+                          onToggle={() =>
+                            onUpdate({
+                              ...row,
+                              include_in_print: !inLetter,
+                            })
+                          }
+                        />
+                        <span
+                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide ${sampleForBadgeClass(kind)}`}
+                        >
+                          {sampleFor}
+                        </span>
+                        {row.priority.trim() ? (
+                          <span className="inline-flex items-center rounded-full border border-zinc-600/70 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
+                            {row.priority}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="shrink-0">{rowActions(row, srNo)}</div>
                     </div>
-                    <div className="shrink-0">{rowActions(row, srNo)}</div>
+
+                    <div className="mb-3 grid gap-2.5 sm:grid-cols-2">
+                      <div className={t.panel}>
+                        <p className={t.heroLabel}>Sample Description</p>
+                        <p className={`${t.heroValue} break-words`}>
+                          {fieldOrDash(row.sample_description)}
+                        </p>
+                      </div>
+                      <div className={t.panel}>
+                        <p className={t.heroLabel}>Declared Value</p>
+                        <p className={`${t.heroValue} break-words font-medium`}>
+                          {fieldOrDash(row.declared_value)}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <dl className={t.panel}>
+                        {leftMeta.map((item) => (
+                          <MetaItem
+                            key={item.label}
+                            label={item.label}
+                            value={item.value}
+                            labelClass={t.cardLabel}
+                            valueClass={t.cardValue.replace("mt-0.5 ", "")}
+                            mono={"mono" in item ? Boolean(item.mono) : false}
+                            rowClass={t.metaRow}
+                          />
+                        ))}
+                      </dl>
+                      <dl className={t.panel}>
+                        {rightMeta.map((item) => (
+                          <MetaItem
+                            key={item.label}
+                            label={item.label}
+                            value={item.value}
+                            labelClass={t.cardLabel}
+                            valueClass={t.cardValue.replace("mt-0.5 ", "")}
+                            mono={"mono" in item ? Boolean(item.mono) : false}
+                            rowClass={t.metaRow}
+                          />
+                        ))}
+                      </dl>
+                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <div className="min-w-0 col-span-2">
-                      <p className={t.cardLabel}>Declared Value</p>
-                      <p className={`${t.cardValue} break-words`}>
-                        {fieldOrDash(row.declared_value)}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className={t.cardLabel}>Batch No / DOM</p>
-                      <p className={`${t.cardValue} break-words`}>
-                        {batchNo || dom ? (
-                          <>
-                            {batchNo || "—"}
-                            <span className={`mt-0.5 block text-[10px] ${t.muted}`}>
-                              {dom || "—"}
-                            </span>
-                          </>
-                        ) : (
-                          "—"
-                        )}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className={t.cardLabel}>Sample Qty</p>
-                      <p className={`${t.cardValue} break-words`}>
-                        {fieldOrDash(row.sample_quantity)}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className={t.cardLabel}>Batch Qty</p>
-                      <p className={`${t.cardValue} break-words`}>
-                        {fieldOrDash(row.batch_quantity)}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className={t.cardLabel}>Sample Code</p>
-                      <p className={`${t.cardValue} break-all font-mono`}>
-                        {fieldOrDash(row.sample_code)}
-                      </p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className={t.cardLabel}>Type</p>
-                      <p className={t.cardValue}>{fieldOrDash(row.sample_type)}</p>
-                    </div>
-                    <div className="min-w-0">
-                      <p className={t.cardLabel}>Priority</p>
-                      <p className={t.cardValue}>{fieldOrDash(row.priority)}</p>
-                    </div>
-                    <div className="min-w-0 col-span-2">
-                      <p className={t.cardLabel}>Laboratory</p>
-                      <p className={`${t.cardValue} break-words`}>
-                        {fieldOrDash(row.laboratory_name)}
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                </article>
               );
             })}
           </div>
-
-          {/* Wide pane: table */}
-          <div className="hidden min-h-0 flex-1 overflow-auto @[900px]:block">
-            <table className="w-full min-w-[1100px] border-collapse text-xs">
-              <thead className={`${t.thead} sticky top-0 z-[1]`}>
-                <tr>
-                  <th className={`${t.thCenter} w-12`}>
-                    <input
-                      ref={selectAllRef}
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleSelectAll}
-                      className={t.chk}
-                      aria-label="Select all samples"
-                    />
-                  </th>
-                  <th className={t.thLeft}>Sample Description</th>
-                  <th className={t.thCenter}>Declared Value</th>
-                  <th className={t.thCenter}>
-                    Batch No
-                    <span className="mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-500">
-                      DOM
-                    </span>
-                  </th>
-                  <th className={t.thCenter}>Sample Qty</th>
-                  <th className={t.thCenter}>Batch Qty</th>
-                  <th className={t.thCenter}>Sample Code</th>
-                  <th className={t.thCenter}>Type</th>
-                  <th className={`${t.thCenter} whitespace-nowrap`}>Priority</th>
-                  <th className={t.thCenter}>Laboratory</th>
-                  <th className={`${t.thCenter} w-28`}>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleRows.map((row, index) => {
-                  const srNo = String(index + 1).padStart(2, "0");
-                  const highlighted = focusSampleIndex === index;
-                  const selected = selectedIds.has(row.id);
-                  const batchNo = row.batch_number.trim();
-                  const dom = row.date_of_manufacturing.trim()
-                    ? formatDisplayDate(row.date_of_manufacturing)
-                    : "";
-                  return (
-                    <tr
-                      key={row.id}
-                      data-osl-sample-index={index}
-                      className={highlighted ? t.highlight : undefined}
-                    >
-                      <td className={t.selectCell}>
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          onChange={() => toggleRow(row.id)}
-                          className={t.chk}
-                          aria-label={`Select sample ${srNo}`}
-                        />
-                      </td>
-                      <td className={t.tdLeft}>
-                        {cellText(row.sample_description, t.muted)}
-                      </td>
-                      <td className={t.tdCenter}>
-                        {cellText(row.declared_value, t.muted)}
-                      </td>
-                      <td className={t.tdCenter}>
-                        {batchNo || dom ? (
-                          <span className="mx-auto flex max-w-full flex-col items-center justify-center gap-0.5">
-                            <span className="block max-w-full break-words">
-                              {batchNo || "—"}
-                            </span>
-                            <span className={`block text-[10px] ${t.muted}`}>
-                              {dom || "—"}
-                            </span>
-                          </span>
-                        ) : (
-                          <span className={t.muted}>—</span>
-                        )}
-                      </td>
-                      <td className={t.tdCenter}>
-                        {cellText(row.sample_quantity, t.muted)}
-                      </td>
-                      <td className={t.tdCenter}>
-                        {cellText(row.batch_quantity, t.muted)}
-                      </td>
-                      <td className={t.tdCenter}>
-                        {cellText(row.sample_code, t.muted)}
-                      </td>
-                      <td className={t.tdCenter}>
-                        {cellText(row.sample_type, t.muted)}
-                      </td>
-                      <td className={t.tdCenter}>
-                        {cellText(row.priority, t.muted)}
-                      </td>
-                      <td className={t.tdCenter}>
-                        {cellText(row.laboratory_name, t.muted)}
-                      </td>
-                      <td className={t.tdCenter}>{rowActions(row, srNo)}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </>
+        </div>
       )}
     </div>
   );

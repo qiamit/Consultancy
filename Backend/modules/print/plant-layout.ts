@@ -355,25 +355,32 @@ export function buildPlantLayoutHtml(
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      font-size: 10px;
+      font-size: 11px;
       line-height: 1.45;
+      text-align: right;
+    }
+    .pl-signatory-block-inner {
+      display: inline-block;
+      min-width: 220px;
       text-align: right;
     }
     .pl-signatory-for {
       font-weight: 700;
       text-align: right;
+      white-space: nowrap;
     }
     .pl-signatory-sig {
       margin-top: 40px;
-      min-width: 200px;
+      width: 100%;
       text-align: right;
     }
     .pl-signatory-line {
-      border-top: 1px solid #94a3b8;
-      padding-top: 2px;
-      font-size: 10px;
-      line-height: 1.35;
+      border-top: 1px solid #111;
+      padding-top: 4px;
+      font-size: 11px;
+      line-height: 1.4;
       text-align: right;
+      width: 100%;
     }
     ${fitPageStyles}
   `;

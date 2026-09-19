@@ -34,9 +34,50 @@ export type ProcessFlowChartSettings = {
   col_gap: number;
   box_height: number;
   min_box_width: number;
+  /** Label font size inside process boxes (px on canvas). */
+  box_font_size: number;
   /** full = readable multi-page; fit_page = shrink to one page */
   print_chart_size: ProcessFlowPrintChartSize;
 };
+
+/** Chart defaults at the standard 16px box font. */
+const DEFAULT_BOX_FONT_SIZE = 16;
+const DEFAULT_BOX_HEIGHT = 40;
+const DEFAULT_MIN_BOX_WIDTH = 200;
+
+/**
+ * Derive box height / min width from font size, scaled from 200×40 at 16px.
+ * Used when the font-size slider changes so boxes grow/shrink with the text.
+ */
+export function boxDimensionsForFontSize(fontSize: number): Pick<
+  ProcessFlowChartSettings,
+  "box_font_size" | "box_height" | "min_box_width"
+> {
+  const box_font_size = Math.max(10, Math.min(28, Math.round(fontSize)));
+  const scale = box_font_size / DEFAULT_BOX_FONT_SIZE;
+  const box_height = Math.round(
+    Math.min(120, Math.max(28, DEFAULT_BOX_HEIGHT * scale)),
+  );
+  const min_box_width = Math.round(
+    Math.min(400, Math.max(60, DEFAULT_MIN_BOX_WIDTH * scale)),
+  );
+  return { box_font_size, box_height, min_box_width };
+}
+
+/** Previous auto formula (font 16 → 160×76) — used only to migrate stored settings. */
+function legacyBoxDimensionsForFontSize(fontSize: number): {
+  box_height: number;
+  min_box_width: number;
+} {
+  const box_font_size = Math.max(10, Math.min(28, Math.round(fontSize)));
+  const lineHeight = box_font_size * 1.25;
+  const padding = 16;
+  const lines = box_font_size <= 14 ? 2 : 3;
+  return {
+    box_height: Math.round(Math.min(120, Math.max(40, padding + lines * lineHeight))),
+    min_box_width: Math.round(Math.min(220, Math.max(110, box_font_size * 8.5 + 24))),
+  };
+}
 
 export const DEFAULT_PROCESS_FLOW_CHART_SETTINGS: ProcessFlowChartSettings = {
   hierarchy_layout: "tree",
@@ -48,9 +89,10 @@ export const DEFAULT_PROCESS_FLOW_CHART_SETTINGS: ProcessFlowChartSettings = {
   box_stroke_color: "#111827",
   box_stroke_width: 2,
   row_gap: 28,
-  col_gap: 16,
-  box_height: 54,
-  min_box_width: 130,
+  col_gap: 8,
+  box_font_size: DEFAULT_BOX_FONT_SIZE,
+  box_height: DEFAULT_BOX_HEIGHT,
+  min_box_width: DEFAULT_MIN_BOX_WIDTH,
   print_chart_size: "fit_page",
 };
 
@@ -67,8 +109,9 @@ export function parseProcessFlowChartSettings(raw: unknown): ProcessFlowChartSet
   const colGap = Number(r.col_gap);
   const boxHeight = Number(r.box_height);
   const minBoxWidth = Number(r.min_box_width);
+  const boxFontSize = Number(r.box_font_size);
 
-  return {
+  const parsed: ProcessFlowChartSettings = {
     hierarchy_layout: PROCESS_FLOW_HIERARCHY_LAYOUTS.includes(layout as ProcessFlowHierarchyLayout)
       ? (layout as ProcessFlowHierarchyLayout)
       : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.hierarchy_layout,
@@ -96,17 +139,34 @@ export function parseProcessFlowChartSettings(raw: unknown): ProcessFlowChartSet
     row_gap:
       Number.isFinite(rowGap) && rowGap >= 8 ? rowGap : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.row_gap,
     col_gap:
-      Number.isFinite(colGap) && colGap >= 4 ? colGap : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.col_gap,
+      Number.isFinite(colGap) && colGap >= 0 ? colGap : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.col_gap,
     box_height:
-      Number.isFinite(boxHeight) && boxHeight >= 32
+      Number.isFinite(boxHeight) && boxHeight >= 28
         ? boxHeight
         : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.box_height,
     min_box_width:
-      Number.isFinite(minBoxWidth) && minBoxWidth >= 80
+      Number.isFinite(minBoxWidth) && minBoxWidth >= 60
         ? minBoxWidth
         : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.min_box_width,
+    box_font_size:
+      Number.isFinite(boxFontSize) && boxFontSize >= 10 && boxFontSize <= 28
+        ? Math.round(boxFontSize)
+        : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.box_font_size,
     print_chart_size: PROCESS_FLOW_PRINT_CHART_SIZES.includes(printSize as ProcessFlowPrintChartSize)
       ? (printSize as ProcessFlowPrintChartSize)
       : DEFAULT_PROCESS_FLOW_CHART_SETTINGS.print_chart_size,
   };
+
+  // Migrate previous auto-defaults (e.g. font 16 → 160×76) to the new 200×40 baseline.
+  const legacy = legacyBoxDimensionsForFontSize(parsed.box_font_size);
+  if (
+    parsed.box_height === legacy.box_height &&
+    parsed.min_box_width === legacy.min_box_width
+  ) {
+    const next = boxDimensionsForFontSize(parsed.box_font_size);
+    parsed.box_height = next.box_height;
+    parsed.min_box_width = next.min_box_width;
+  }
+
+  return parsed;
 }

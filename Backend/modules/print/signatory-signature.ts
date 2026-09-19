@@ -27,6 +27,13 @@ export function signatorySignatureOverlayHtml(
   return `<img src="${url.replace(/"/g, "&quot;")}" alt="Signature" style="position:absolute;right:${right};left:${left};top:${top};bottom:${bottom};max-height:${maxHeight};max-width:${maxWidth};width:auto;object-fit:contain;z-index:2;pointer-events:none;" />`;
 }
 
+/** Collapse dash-only placeholders (---, ----, —) so the block looks filled cleanly. */
+export function normalizeSignatoryField(value: string, fallback = "—"): string {
+  const v = String(value ?? "").trim();
+  if (!v || /^[-–—._\s]+$/.test(v)) return fallback;
+  return v;
+}
+
 export function buildRightAlignedSignatoryBlockHtml(options: {
   companyName: string;
   sigName: string;
@@ -36,15 +43,21 @@ export function buildRightAlignedSignatoryBlockHtml(options: {
 }): string {
   const sigAlign = options.sigTextAlign ?? "right";
   const overlay = signatorySignatureOverlayHtml(options.signatureImageUrl);
+  const company = normalizeSignatoryField(options.companyName, "—");
+  const sigName = normalizeSignatoryField(options.sigName);
+  const sigDesig = normalizeSignatoryField(options.sigDesig);
 
+  // One inline column so "For …", the signature line, and Name/Designation share the same width.
   return `
   <div style="margin-top:36px;text-align:right;">
-      <div style="font-weight:700;">For ${options.companyName}</div>
-      <div style="position:relative;margin-top:32px;display:inline-block;min-width:200px;text-align:${sigAlign};">
-        ${overlay}
-        <div style="position:relative;z-index:1;border-top:1px solid #94a3b8;padding-top:2px;font-size:11px;line-height:1.35;text-align:${sigAlign};">
-          <div><strong>Name:</strong> ${options.sigName}</div>
-          <div><strong>Designation:</strong> ${options.sigDesig}</div>
+      <div style="display:inline-block;min-width:220px;text-align:${sigAlign};">
+        <div style="font-weight:700;">For ${company}</div>
+        <div style="position:relative;margin-top:36px;text-align:${sigAlign};">
+          ${overlay}
+          <div style="position:relative;z-index:1;border-top:1px solid #111;padding-top:4px;font-size:11px;line-height:1.35;text-align:${sigAlign};">
+            <div><strong>Name:</strong> ${sigName}</div>
+            <div><strong>Designation:</strong> ${sigDesig}</div>
+          </div>
         </div>
       </div>
   </div>`;
@@ -61,15 +74,20 @@ export function buildClassSignatoryBlockHtml(options: {
   signatureImageUrl?: string;
 }): string {
   const overlay = signatorySignatureOverlayHtml(options.signatureImageUrl);
+  const company = normalizeSignatoryField(options.companyName, "—");
+  const sigName = normalizeSignatoryField(options.sigName);
+  const sigDesig = normalizeSignatoryField(options.sigDesig);
 
   return `
 <div class="${options.blockClass}">
-  <div class="${options.forClass}">For ${options.companyName || "—"}</div>
-  <div class="${options.sigWrapClass}" style="position:relative;">
-    ${overlay}
-    <div class="${options.lineClass}" style="position:relative;z-index:1;">
-      <div><strong>Name:</strong> ${options.sigName}</div>
-      <div><strong>Designation:</strong> ${options.sigDesig}</div>
+  <div class="${options.blockClass}-inner" style="display:inline-block;min-width:220px;text-align:right;">
+    <div class="${options.forClass}">For ${company}</div>
+    <div class="${options.sigWrapClass}" style="position:relative;">
+      ${overlay}
+      <div class="${options.lineClass}" style="position:relative;z-index:1;">
+        <div><strong>Name:</strong> ${sigName}</div>
+        <div><strong>Designation:</strong> ${sigDesig}</div>
+      </div>
     </div>
   </div>
 </div>`;

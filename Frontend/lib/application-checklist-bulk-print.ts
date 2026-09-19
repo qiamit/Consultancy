@@ -49,6 +49,7 @@ import {
   type LocationMapStored,
 } from "@backend/modules/bis/location-map";
 import {
+  isSampleIncludedInPrint,
   rowHasContent as oslSampleRowHasContent,
   type OslSampleRequirementStored,
 } from "@backend/modules/bis/osl-sample-requirements";
@@ -223,6 +224,11 @@ import {
   type LegalDocumentStored,
 } from "@backend/modules/bis/legal-documents";
 import { fileNameFromStoredDocumentRef } from "@backend/modules/storage/cmpf-306-documents";
+import { DOCUMENTS_BUCKET } from "@backend/modules/storage/documents";
+import {
+  decodeStoredDocumentRef,
+  isDirectDocumentUrl,
+} from "@backend/modules/storage/technical-staff-documents";
 import {
   PDFArray,
   PDFDict,
@@ -238,7 +244,8 @@ import {
 export const APPLICATION_CHECKLIST_PRINT_DOCS = [
   { id: "application_copy", label: "Application Copy" },
   { id: "license_scope", label: "Undertaking for License Scope" },
-  { id: "osl_sample_requirements", label: "Sample for Out Side Lab" },
+  { id: "osl_sample_requirements", label: "Sample Requirements" },
+  { id: "factory_test_reports", label: "Factory Test Reports" },
   { id: "top_management", label: "Top Management Details" },
   { id: "technical_staff", label: "Technical Staff Details" },
   { id: "location_map", label: "Location Map" },
@@ -256,8 +263,6 @@ export const APPLICATION_CHECKLIST_PRINT_DOCS = [
   { id: "undertaking_general_iss", label: "Undertaking for General ISS" },
   { id: "self_evaluation_form", label: "Self Evaluation Form" },
   { id: "authorization_letter", label: "Authorization Letter" },
-  { id: "pi_sample_requirements", label: "Sample Offer for Inspection" },
-  { id: "factory_test_reports", label: "Factory Test Reports" },
   { id: "updated_scheme_of_inspection", label: "Updated SIT" },
   { id: "undertaking_long_duration_test", label: "Undertaking for Long Duration Test" },
   { id: "undertaking_minimum_marking_fee", label: "Undertaking for MMF - AIF" },
@@ -287,7 +292,6 @@ export const CHECKLIST_PRINT_DOC_EDIT_KEYS: Record<ChecklistPrintDocId, string> 
   undertaking_general_iss: "undertaking-general-iss",
   self_evaluation_form: "self-evaluation",
   authorization_letter: "authorization-letter",
-  pi_sample_requirements: "pi-sample",
   factory_test_reports: "factory-test-report",
   updated_scheme_of_inspection: "updated-sit",
   undertaking_long_duration_test: "undertaking-long-duration",
@@ -567,6 +571,8 @@ export function buildChecklistBulkListRows(
   for (const doc of APPLICATION_CHECKLIST_PRINT_DOCS) {
     if (doc.id === "factory_test_reports") {
       pushFactoryTestReportRows();
+      // Legal docs sit after Sample Requirements + FTR (binding order).
+      pushLegalDocumentRows();
       continue;
     }
 
@@ -578,11 +584,6 @@ export function buildChecklistBulkListRows(
       hasContent: checklistPrintDocHasContent(doc.id, ctx),
       editKey: CHECKLIST_PRINT_DOC_EDIT_KEYS[doc.id],
     });
-
-    // Application Details slot sits after Sample for OSL in the Application Form grid.
-    if (doc.id === "osl_sample_requirements") {
-      pushLegalDocumentRows();
-    }
 
     if (doc.id === "technical_staff") {
       pushQciAttachmentRows();
@@ -606,14 +607,55 @@ export async function resolveChecklistAttachmentUrl(documentRef: string): Promis
   return url;
 }
 
+/** Same-origin proxy URL — avoids browser CORS on T3/S3 signed URLs. */
+function checklistAttachmentProxyUrl(
+  documentRef: string,
+  disposition: "inline" | "attachment" = "inline",
+): string | null {
+  const path = decodeStoredDocumentRef(documentRef);
+  if (!path) return null;
+  const params = new URLSearchParams({
+    bucket: DOCUMENTS_BUCKET,
+    path,
+    disposition,
+  });
+  return `/api/storage/public?${params.toString()}`;
+}
+
+/** Fetch attachment bytes via app proxy (preferred) or direct URL. */
+async function fetchChecklistAttachmentBlob(
+  documentRef: string,
+): Promise<{ blob: Blob; url: string }> {
+  const trimmed = documentRef.trim();
+  if (!trimmed) throw new Error("Unable to download attachment. File may be missing.");
+
+  const proxy = checklistAttachmentProxyUrl(trimmed, "inline");
+  if (proxy) {
+    const res = await fetch(proxy);
+    if (!res.ok) throw new Error("Unable to download attachment.");
+    return { blob: await res.blob(), url: proxy };
+  }
+
+  if (isDirectDocumentUrl(trimmed)) {
+    const res = await fetch(trimmed);
+    if (!res.ok) throw new Error("Unable to download attachment.");
+    return { blob: await res.blob(), url: trimmed };
+  }
+
+  throw new Error("Unable to open attachment. File may be missing.");
+}
+
 export async function openChecklistAttachmentView(documentRef: string): Promise<void> {
-  const url = await resolveChecklistAttachmentUrl(documentRef);
+  // Prefer same-origin proxy so the browser viewer is not blocked by storage CORS.
+  const proxy = checklistAttachmentProxyUrl(documentRef, "inline");
+  const url = proxy ?? (await resolveChecklistAttachmentUrl(documentRef));
   const win = window.open(url, "_blank", "noopener,noreferrer");
   if (!win) throw new Error("Unable to open preview. Please allow pop-ups and try again.");
 }
 
 export async function openChecklistAttachmentPrint(documentRef: string): Promise<void> {
-  const url = await resolveChecklistAttachmentUrl(documentRef);
+  const proxy = checklistAttachmentProxyUrl(documentRef, "inline");
+  const url = proxy ?? (await resolveChecklistAttachmentUrl(documentRef));
   const win = window.open(url, "_blank", "noopener,noreferrer");
   if (!win) throw new Error("Unable to open print window. Please allow pop-ups and try again.");
   // Give the viewer a moment to load before print (PDF / image).
@@ -628,20 +670,19 @@ export async function openChecklistAttachmentPrint(documentRef: string): Promise
 }
 
 export async function downloadChecklistAttachmentPdf(documentRef: string, label: string): Promise<void> {
-  const url = await resolveChecklistAttachmentUrl(documentRef);
-  const res = await fetch(url);
-  if (!res.ok) throw new Error("Unable to download attachment.");
-  const blob = await res.blob();
+  const { blob, url } = await fetchChecklistAttachmentBlob(documentRef);
   const safe = label.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 80) || "Attachment";
   const pathName = (() => {
     try {
-      return new URL(url).pathname;
+      return new URL(url, window.location.origin).pathname;
     } catch {
-      return "";
+      return decodeStoredDocumentRef(documentRef) ?? "";
     }
   })();
   const extMatch = /\.([a-zA-Z0-9]{2,5})(?:\?|$)/.exec(pathName);
-  const ext = extMatch?.[1]?.toLowerCase() ?? (blob.type.includes("pdf") ? "pdf" : "bin");
+  const ext =
+    extMatch?.[1]?.toLowerCase() ??
+    (blob.type.includes("pdf") ? "pdf" : "bin");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
   a.download = `${safe}.${ext}`;
@@ -716,7 +757,10 @@ export function checklistPrintDocHasContent(
     case "license_scope":
       return licenseScopeHasContent(ctx);
     case "osl_sample_requirements":
-      return ctx.oslSampleRequirements.some(oslSampleRowHasContent);
+      return (
+        ctx.oslSampleRequirements.some(oslSampleRowHasContent) ||
+        ctx.piSampleRequirements.some(oslSampleRowHasContent)
+      );
     case "cmpf_305":
       return ctx.cmpf305Machinery.some(cmpf305RowHasContent);
     case "cmpf_306":
@@ -739,8 +783,6 @@ export function checklistPrintDocHasContent(
       return selfEvaluationFormHasContent(ctx.selfEvaluationForm);
     case "authorization_letter":
       return authorizationLetterHasContent(ctx.authorizationLetter);
-    case "pi_sample_requirements":
-      return ctx.piSampleRequirements.some(oslSampleRowHasContent);
     case "factory_test_reports":
       return (
         ctx.factoryTestReports.some(ftrReportHasContent) ||
@@ -1167,51 +1209,46 @@ function buildSingleChecklistDocHtml(
     }
     case "osl_sample_requirements": {
       const settings = withBulkLetterhead(defaultOslSamplePrintSettings());
-      const data = withDocumentSignatureImage(
-        {
-          ...letter,
-          inspectionDate: resolveSampleOfferLetterDate(
-            ctx.applicationStage,
-            ctx.dateOfInspection,
+      const letterBase = {
+        ...letter,
+        inspectionDate: resolveSampleOfferLetterDate(
+          ctx.applicationStage,
+          ctx.dateOfInspection,
+        ),
+        applicationNumber,
+        signatoryName,
+        signatoryDesignation,
+      };
+      const parts: { id: string; html: string }[] = [];
+      const oslRows = ctx.oslSampleRequirements.filter(isSampleIncludedInPrint);
+      if (oslRows.some(oslSampleRowHasContent)) {
+        parts.push({
+          id: "osl_sample_requirements_osl",
+          html: buildOslSampleRequirementsHtml(
+            withDocumentSignatureImage({ ...letterBase, rows: oslRows }, topManagement),
+            settings,
+            [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
+            "osl",
+            printAssets,
           ),
-          applicationNumber,
-          signatoryName,
-          signatoryDesignation,
-          rows: ctx.oslSampleRequirements,
-        },
-        topManagement,
-      );
-      return buildOslSampleRequirementsHtml(
-        data,
-        settings,
-        [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
-        "osl",
-        printAssets,
-      );
-    }
-    case "pi_sample_requirements": {
-      const settings = withBulkLetterhead(defaultOslSamplePrintSettings());
-      const data = withDocumentSignatureImage(
-        {
-          ...letter,
-          inspectionDate: resolveSampleOfferLetterDate(
-            ctx.applicationStage,
-            ctx.dateOfInspection,
+        });
+      }
+      const piRows = ctx.piSampleRequirements.filter(isSampleIncludedInPrint);
+      if (piRows.some(oslSampleRowHasContent)) {
+        parts.push({
+          id: "osl_sample_requirements_pi",
+          html: buildOslSampleRequirementsHtml(
+            withDocumentSignatureImage({ ...letterBase, rows: piRows }, topManagement),
+            settings,
+            [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
+            "pi",
+            printAssets,
           ),
-          applicationNumber,
-          signatoryName,
-          signatoryDesignation,
-          rows: ctx.piSampleRequirements,
-        },
-        topManagement,
-      );
-      return buildOslSampleRequirementsHtml(
-        data,
-        settings,
-        [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
-        "pi",
-        printAssets,
-      );
+        });
+      }
+      if (parts.length === 0) return "";
+      if (parts.length === 1) return parts[0]!.html;
+      return combineChecklistPrintHtml(parts);
     }
     case "cmpf_305": {
       const settings = withBulkLetterhead(defaultCmpf305PrintSettings());
@@ -1812,10 +1849,7 @@ export async function buildCombinedHtmlFromAllPackItems(
       continue;
     }
     try {
-      const url = await resolveChecklistAttachmentUrl(item.documentRef);
-      const res = await fetch(url);
-      if (!res.ok) continue;
-      const blob = await res.blob();
+      const { blob, url } = await fetchChecklistAttachmentBlob(item.documentRef);
       const html = await buildAttachmentHtmlPage({
         blob,
         url,
@@ -1935,13 +1969,7 @@ async function buildChecklistCombinedPdfBlob(opts: {
 
   async function pushAttachment(label: string, documentRef: string): Promise<void> {
     try {
-      const url = await resolveChecklistAttachmentUrl(documentRef);
-      const res = await fetch(url);
-      if (!res.ok) {
-        failedAttachments.push(label);
-        return;
-      }
-      const blob = await res.blob();
+      const { blob, url } = await fetchChecklistAttachmentBlob(documentRef);
       parts.push({
         blob: await renderAttachmentAsPdfBlob({
           blob,

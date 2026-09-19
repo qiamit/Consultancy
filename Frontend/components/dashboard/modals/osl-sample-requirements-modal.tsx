@@ -41,6 +41,7 @@ import {
   createOslSampleRequirementRow,
   documentHasContent as oslSampleRequirementsHasContent,
   editorRowsFromStored,
+  isSampleIncludedInPrint,
   rowHasContent,
   storedFromEditor,
   type OslSampleRequirementRow,
@@ -197,6 +198,9 @@ export function OslSampleRequirementsModal({
   const labels = sampleOfferLetterLabels(variant);
   const importDocumentKey =
     variant === "pi" ? ("pi_sample_requirements" as const) : ("osl_sample_requirements" as const);
+  const [letterVariant, setLetterVariant] =
+    useState<SampleOfferLetterVariant>(variant);
+  const letterLabels = sampleOfferLetterLabels(letterVariant);
   const [rows, setRows] = useEditorRowsFromStored(initialStored, editorRowsFromStored);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultOslSamplePrintSettings(),
@@ -345,14 +349,24 @@ export function OslSampleRequirementsModal({
     };
   }, [topManagement, letterData.contactPerson]);
 
-  const previewData = useMemo((): OslSampleOfferLetterData  => {
+  const previewData = useMemo((): OslSampleOfferLetterData => {
+    const all = storedFromEditor(rows);
+    // In Letter ON → include in Print Preview / Print / Word / PDF table.
+    // Do not drop by Sample For (OSL/FT/IT); letter OSL|IT toggle only changes wording.
+    const filtered = all.filter((r) => isSampleIncludedInPrint(r));
     return withDocumentSignatureImage({
       ...letterData,
       signatoryName,
       signatoryDesignation,
-      rows: storedFromEditor(rows),
+      rows: filtered,
     }, topManagement);
   }, [letterData, signatoryName, signatoryDesignation, rows, topManagement]);
+
+  const inLetterCount = previewData.rows.length;
+  const totalSampleCount = useMemo(
+    () => storedFromEditor(rows).length,
+    [rows],
+  );
 
   const refreshPreview = useCallback(() => {
     const iframe = iframeRef.current;
@@ -362,14 +376,14 @@ export function OslSampleRequirementsModal({
       previewData,
       printSettings,
       tableColumns,
-      variant,
+      letterVariant,
       printAssets,
     );
     doc.open();
     doc.write(html);
     doc.close();
     requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
-  }, [previewData, printSettings, tableColumns, variant, printAssets]);
+  }, [previewData, printSettings, tableColumns, letterVariant, printAssets]);
 
   useEffect(() => {
     refreshPreview();
@@ -433,6 +447,16 @@ export function OslSampleRequirementsModal({
     setSampleFormRow(undefined);
   }
 
+  function handleUpdateSample(row: OslSampleRequirementRow) {
+    setRows((prev) => {
+      const idx = prev.findIndex((r) => r.id === row.id);
+      if (idx < 0) return prev;
+      const next = [...prev];
+      next[idx] = row;
+      return next;
+    });
+  }
+
   function handleRemoveSample(row: OslSampleRequirementRow) {
     setRows((prev) => prev.filter((r) => r.id !== row.id));
   }
@@ -464,7 +488,7 @@ export function OslSampleRequirementsModal({
         previewData,
         printSettings,
         tableColumns,
-        variant,
+        letterVariant,
         printAssets,
       ),
     );
@@ -478,7 +502,7 @@ export function OslSampleRequirementsModal({
       previewData,
       printSettings,
       tableColumns,
-      variant,
+      letterVariant,
       printAssets,
     ).catch(() => window.alert("Unable to download Word file."));
   }
@@ -491,7 +515,7 @@ export function OslSampleRequirementsModal({
       previewData,
       printSettings,
       tableColumns,
-      variant,
+      letterVariant,
       printAssets,
     );
       await downloadPrintHtmlAsPdf({
@@ -531,7 +555,7 @@ export function OslSampleRequirementsModal({
           companyAddress: letterData.address ?? "",
           isNumber: letterData.isNumber ?? isCodeNumber ?? "",
           isTitle: letterData.isTitle ?? "",
-          variant,
+          variant: letterVariant,
           laboratory_address,
         });
         if (!payload.trim()) {
@@ -571,7 +595,7 @@ export function OslSampleRequirementsModal({
       isNumber: letterData.isNumber ?? isCodeNumber ?? "",
       isTitle: letterData.isTitle ?? "",
       applicationNumber: letterData.applicationNumber ?? "",
-      variant,
+      variant: letterVariant,
       rows: labelRows,
       includeBlvCareOf: includeBlv,
       includeLabMobile: includeMobile,
@@ -710,12 +734,49 @@ export function OslSampleRequirementsModal({
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-white">{labels.modalTitle}</h2>
             <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isFullNumber} />
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                Letter
+              </span>
+              <button
+                type="button"
+                onClick={() => setLetterVariant("osl")}
+                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                  letterVariant === "osl"
+                    ? "bg-teal-600 text-white"
+                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                }`}
+              >
+                OSL
+              </button>
+              <button
+                type="button"
+                onClick={() => setLetterVariant("pi")}
+                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${
+                  letterVariant === "pi"
+                    ? "bg-teal-600 text-white"
+                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+                }`}
+              >
+                IT
+              </button>
+              <span className="text-[11px] text-zinc-500">{letterLabels.documentHeading}</span>
+            </div>
           </div>
           <ModalToolbarActions onClose={onClose}>
           {savedFlash && (
             <span className="text-xs font-semibold text-emerald-400">Saved ✓</span>
           )}
           {saving && <span className="text-xs text-zinc-400">Saving…</span>}
+          <span
+            className="hidden text-[11px] font-medium text-zinc-400 sm:inline"
+            title="Samples with In Letter ON appear in Print Preview / Print / Word / PDF"
+          >
+            In Letter: {inLetterCount}
+            {totalSampleCount !== inLetterCount
+              ? ` / ${totalSampleCount}`
+              : ""}
+          </span>
           <button
             type="button"
             onClick={handleSave}
@@ -738,6 +799,7 @@ export function OslSampleRequirementsModal({
               setShowCourierLabelsPreview(false);
               setShowPrintPreview((prev) => !prev);
             }}
+            title={`Print Preview includes all ${inLetterCount} sample${inLetterCount === 1 ? "" : "s"} with In Letter ON`}
             className={`shrink-0 whitespace-nowrap rounded-lg border px-3 py-1.5 text-xs font-semibold ${
               showPrintPreview
                 ? "border-sky-500 bg-sky-600 text-white"
@@ -749,6 +811,7 @@ export function OslSampleRequirementsModal({
           <button
             type="button"
             onClick={handlePrint}
+            title={`Print includes all ${inLetterCount} sample${inLetterCount === 1 ? "" : "s"} with In Letter ON`}
             className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
           >
             Print
@@ -756,6 +819,7 @@ export function OslSampleRequirementsModal({
           <button
             type="button"
             onClick={handleDownloadWord}
+            title={`Word table includes all ${inLetterCount} sample${inLetterCount === 1 ? "" : "s"} with In Letter ON`}
             className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
           >
             Download Word File
@@ -764,6 +828,7 @@ export function OslSampleRequirementsModal({
             type="button"
             onClick={() => void handleDownloadPdf()}
             disabled={pdfDownloading}
+            title={`PDF table includes all ${inLetterCount} sample${inLetterCount === 1 ? "" : "s"} with In Letter ON`}
             className="shrink-0 whitespace-nowrap rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:opacity-50"
           >
             {pdfDownloading ? "Preparing PDF…" : "Download PDF"}
@@ -849,6 +914,7 @@ export function OslSampleRequirementsModal({
                   onEdit={openEditSampleForm}
                   onCopy={handleCopySample}
                   onRemove={handleRemoveSample}
+                  onUpdate={handleUpdateSample}
                   focusSampleIndex={initialFocusSampleIndex}
                 />
               </div>

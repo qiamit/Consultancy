@@ -274,6 +274,8 @@ import {
 import { parseBisProjectLicenseScopeNotes } from "@backend/modules/bis/bis-project-license-scope-notes";
 import {
   rowHasContent as oslSampleRowHasContent,
+  combineOslAndPiSamples,
+  splitOslAndPiSamples,
   type OslSampleRequirementStored,
 } from "@backend/modules/bis/osl-sample-requirements";
 import {
@@ -375,6 +377,8 @@ import {
 } from "@backend/modules/bis/plant-layout";
 import {
   documentHasContent as processFlowChartDocumentHasContent,
+  parseProcessFlowChart,
+  processFlowChartFilledCount,
   type ProcessFlowChartStored,
 } from "@backend/modules/bis/process-flow-chart";
 import {
@@ -913,7 +917,6 @@ function ApplicationFormModal({
   const [showApplicationDetails, setShowApplicationDetails] = useState(false);
   const [showLicenseScopeEditor, setShowLicenseScopeEditor] = useState(false);
   const [showOslSampleRequirements, setShowOslSampleRequirements] = useState(false);
-  const [showPiSampleRequirements, setShowPiSampleRequirements] = useState(false);
   const [showTopManagement, setShowTopManagement] = useState(false);
   const [showTechnicalStaff, setShowTechnicalStaff] = useState(false);
   const [showFactoryTestReport, setShowFactoryTestReport] = useState(false);
@@ -946,8 +949,7 @@ function ApplicationFormModal({
   const applyDocKey = useCallback((doc: string | null) => {
     const key = isPreparationDocKey(doc) ? doc : null;
     setShowLicenseScopeEditor(key === "license-scope");
-    setShowOslSampleRequirements(key === "osl-sample");
-    setShowPiSampleRequirements(key === "pi-sample");
+    setShowOslSampleRequirements(key === "osl-sample" || key === "pi-sample");
     setShowApplicationDetails(key === "application-details");
     setShowTopManagement(key === "top-management");
     setShowTechnicalStaff(key === "technical-staff");
@@ -994,10 +996,37 @@ function ApplicationFormModal({
     onDocChange?.(null);
   }, [applyDocKey, onDocChange]);
 
+  // Always prefer richer Process Flow Chart from DB when the editor opens empty/wiped.
+  useEffect(() => {
+    if (!showProcessFlowChart) return;
+    let cancelled = false;
+    void (async () => {
+      const supabase = createClient();
+      const notesTable =
+        row.source === "bis_new_applications" ? "bis_new_applications" : "bis_projects";
+      const { data } = await supabase
+        .from(notesTable)
+        .select("notes")
+        .eq("id", row.id)
+        .maybeSingle();
+      if (cancelled || !data?.notes) return;
+      const parsed = parseApplicationChecklistNotes(String(data.notes));
+      const fromDb = parsed.processFlowChart;
+      setProcessFlowChart((prev) => {
+        const dbFilled = processFlowChartFilledCount(fromDb);
+        const prevFilled = processFlowChartFilledCount(prev);
+        if (dbFilled > prevFilled) return fromDb;
+        return prev;
+      });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [showProcessFlowChart, row.id, row.source]);
+
   const hasPreparationDocOpen =
     showLicenseScopeEditor ||
     showOslSampleRequirements ||
-    showPiSampleRequirements ||
     showApplicationDetails ||
     showTopManagement ||
     showTechnicalStaff ||
@@ -1351,6 +1380,22 @@ function ApplicationFormModal({
               newObj[key] = existingObj[key];
             }
           }
+          // Prefer richer Process Flow Chart so a blank editor snapshot cannot wipe DB.
+          if (existingObj.process_flow_chart && newObj.process_flow_chart) {
+            const existingPfc = parseProcessFlowChart(existingObj.process_flow_chart);
+            const newPfc = parseProcessFlowChart(newObj.process_flow_chart);
+            const existingFilled = processFlowChartFilledCount(existingPfc);
+            const newFilled = processFlowChartFilledCount(newPfc);
+            if (existingFilled > newFilled) {
+              newObj.process_flow_chart = existingObj.process_flow_chart;
+            }
+          } else if (
+            existingObj.process_flow_chart &&
+            !newObj.process_flow_chart &&
+            !explicitClear.has("process_flow_chart")
+          ) {
+            newObj.process_flow_chart = existingObj.process_flow_chart;
+          }
           // Prefer filled Application Details fields so a stale concurrent flush
           // cannot wipe values the user just typed / saved.
           if (
@@ -1367,11 +1412,30 @@ function ApplicationFormModal({
           }
           mergedPayload = JSON.stringify(newObj);
         }
-      } catch {
-        // If existing notes are not JSON, keep the newly built payload.
+      } catch (mergeErr) {
+        // Never replace rich existing notes with a sparse payload when merge fails.
+        console.error("application checklist notes merge failed", mergeErr);
+        const existingRaw = String(existingRow?.notes ?? "").trim();
+        if (existingRaw.length > String(payload).length) {
+          mergedPayload = existingRaw;
+        }
       }
 
       if (saveGen !== notesSaveGenRef.current) return;
+
+      // Hard stop: refuse accidental wipe of large saved notes.
+      const existingLen = String(existingRow?.notes ?? "").trim().length;
+      const nextLen = String(mergedPayload ?? "").trim().length;
+      if (existingLen > 5000 && nextLen < Math.max(1000, existingLen * 0.35)) {
+        console.error("Refusing notes save that would wipe most checklist data", {
+          existingLen,
+          nextLen,
+        });
+        window.alert(
+          "Save blocked: this update would erase most of the saved application checklist. Close and reopen the application, then try again.",
+        );
+        return;
+      }
 
       const res =
         row.source === "bis_new_applications"
@@ -1509,20 +1573,12 @@ function ApplicationFormModal({
         };
         applicationMetaRef.current = pendingNotesSaveRef.current.meta;
       }
-      // Wait until notes are hydrated from DB so an early save cannot wipe data.
-      if (!notesHydratedRef.current) return;
-      if (saveNotesTimerRef.current) {
-        clearTimeout(saveNotesTimerRef.current);
-      }
-      saveNotesTimerRef.current = setTimeout(() => {
-        saveNotesTimerRef.current = null;
-        flushNotesSaveRef.current();
-      }, 500);
+      // Local state only — never auto-write to DB. Persist via Save button → saveNotesNow.
     },
     [],
   );
 
-  /** Immediate flush for document Save buttons (skip 500ms debounce). */
+  /** Persist to DB only when the user clicks Save (no debounce / auto-save). */
   const saveNotesNow = useCallback((overrides?: Parameters<typeof saveNotesToDb>[0]) => {
     saveNotesToDb(overrides);
     if (!notesHydratedRef.current) return;
@@ -1539,11 +1595,9 @@ function ApplicationFormModal({
         clearTimeout(saveNotesTimerRef.current);
         saveNotesTimerRef.current = null;
       }
-      if (Object.keys(pendingNotesSaveRef.current).length > 0) {
-        flushNotesSaveRef.current();
-      }
+      // Do not flush on unmount — unsaved edits stay local until Save is clicked.
     };
-    // Mount/unmount only — flush via ref so dependency size stays constant across HMR.
+    // Mount/unmount only.
   }, []);
 
   const reloadOptions = useCallback(async () => {
@@ -1852,14 +1906,7 @@ function ApplicationFormModal({
             });
             notesHydratedRef.current = true;
             setNotesReady(true);
-            // Flush any saves that were queued before notes finished loading.
-            if (Object.keys(pendingNotesSaveRef.current).length > 0) {
-              if (saveNotesTimerRef.current) clearTimeout(saveNotesTimerRef.current);
-              saveNotesTimerRef.current = setTimeout(() => {
-                saveNotesTimerRef.current = null;
-                flushNotesSaveRef.current();
-              }, 0);
-            }
+            // Do not auto-flush queued edits after hydrate — wait for Save button.
           }),
       );
 
@@ -1880,7 +1927,7 @@ function ApplicationFormModal({
                     if (prev.firm_scale.trim()) return prev;
                     const next = { ...prev, firm_scale: scale };
                     applicationMetaRef.current = next;
-                    saveNotesToDb({ meta: next });
+                    // Local only — persist when user clicks Save.
                     return next;
                   });
                 }
@@ -1929,7 +1976,7 @@ function ApplicationFormModal({
     saveNotesToDb({ legalDocuments: storedFromEditor(rows) });
   }
 
-  /** Immediate DB write (skips auto-save debounce) — Application Details Save button. */
+  /** Application Details Save button — persist meta + legal docs to DB. */
   function saveApplicationDetailsNow() {
     if (saveNotesTimerRef.current) {
       clearTimeout(saveNotesTimerRef.current);
@@ -1976,7 +2023,7 @@ function ApplicationFormModal({
   }, [row.id]);
 
   // Auto-pick Firm Scale from Client Master whenever application value is empty.
-  // Do not use a one-shot ref — notes reload can wipe meta after client loads.
+  // Local UI only — does not write to DB until Save.
   useEffect(() => {
     const fromClient = client?.company_scale?.trim() ?? "";
     if (!fromClient) return;
@@ -1984,8 +2031,7 @@ function ApplicationFormModal({
     const next = { ...applicationMetaRef.current, firm_scale: fromClient };
     applicationMetaRef.current = next;
     setApplicationMeta(next);
-    saveNotesToDb({ meta: next });
-  }, [client?.company_scale, applicationMeta.firm_scale, saveNotesToDb]);
+  }, [client?.company_scale, applicationMeta.firm_scale]);
 
   useEffect(() => {
     if (productManualPrefilledRef.current) return;
@@ -2030,13 +2076,17 @@ function ApplicationFormModal({
   }
 
   function saveOslSampleRequirements(rows: OslSampleRequirementStored[]) {
-    setOslSampleRequirements(rows);
-    saveNotesNow({ oslSampleRequirements: rows });
+    const { osl, pi } = splitOslAndPiSamples(rows);
+    setOslSampleRequirements(osl);
+    setPiSampleRequirements(pi);
+    saveNotesNow({ oslSampleRequirements: osl, piSampleRequirements: pi });
   }
 
   function savePiSampleRequirements(rows: OslSampleRequirementStored[]) {
-    setPiSampleRequirements(rows);
-    saveNotesNow({ piSampleRequirements: rows });
+    // Legacy path — keep in sync with combined Sample Requirements save.
+    saveOslSampleRequirements(
+      combineOslAndPiSamples(oslSampleRequirements, rows),
+    );
   }
 
   function saveTopManagement(rows: TopManagementStored[]) {
@@ -2137,8 +2187,19 @@ function ApplicationFormModal({
   }
 
   function saveProcessFlowChart(document: ProcessFlowChartStored) {
-    setProcessFlowChart(document);
-    saveNotesNow({ processFlowChart: document });
+    setProcessFlowChart((prev) => {
+      // Never let an empty/blank chart overwrite a filled one.
+      if (
+        processFlowChartDocumentHasContent(prev) &&
+        !processFlowChartDocumentHasContent(document)
+      ) {
+        return prev;
+      }
+      return document;
+    });
+    if (processFlowChartDocumentHasContent(document)) {
+      saveNotesNow({ processFlowChart: document });
+    }
   }
 
   function saveProcessDescription(document: ProcessDescriptionStored) {
@@ -2157,23 +2218,16 @@ function ApplicationFormModal({
   }
 
   function handleEditSampleFromFtr(source: FtrSampleSource, sampleIndex: number) {
-    setSampleOfferLetterFocusIndex(sampleIndex);
+    const focus =
+      source === "osl"
+        ? sampleIndex
+        : oslSampleRequirements.length + sampleIndex;
+    setSampleOfferLetterFocusIndex(focus);
     setReopenFtrAfterSampleEdit(true);
-    if (source === "osl") openDoc("osl-sample");
-    else openDoc("pi-sample");
+    openDoc("osl-sample");
   }
 
   function closeOslSampleRequirementsModal() {
-    setSampleOfferLetterFocusIndex(null);
-    if (reopenFtrAfterSampleEdit) {
-      setReopenFtrAfterSampleEdit(false);
-      openDoc("factory-test-report");
-    } else {
-      clearDoc();
-    }
-  }
-
-  function closePiSampleRequirementsModal() {
     setSampleOfferLetterFocusIndex(null);
     if (reopenFtrAfterSampleEdit) {
       setReopenFtrAfterSampleEdit(false);
@@ -2362,10 +2416,16 @@ function ApplicationFormModal({
       onOpen: () => openDoc("license-scope"),
     },
     {
-      description: "Sample for Out Side Lab",
+      description: "Sample Requirements",
       accent: "teal",
       icon: <AppDocShortcutIcon kind="sample" />,
       onOpen: () => openDoc("osl-sample"),
+    },
+    {
+      description: "Factory Test Reports",
+      accent: "teal",
+      icon: <AppDocShortcutIcon kind="chart" />,
+      onOpen: () => openDoc("factory-test-report"),
     },
     {
       description: "Application Details",
@@ -2474,18 +2534,6 @@ function ApplicationFormModal({
       accent: "teal",
       icon: <AppDocShortcutIcon kind="document" />,
       onOpen: () => openDoc("authorization-letter"),
-    },
-    {
-      description: "Sample Offer for Inspection",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="sample" />,
-      onOpen: () => openDoc("pi-sample"),
-    },
-    {
-      description: "Factory Test Reports",
-      accent: "teal",
-      icon: <AppDocShortcutIcon kind="chart" />,
-      onOpen: () => openDoc("factory-test-report"),
     },
     {
       description: "Own Updated SIT",
@@ -2889,7 +2937,10 @@ function ApplicationFormModal({
           isCodeNumber={isCode?.is_number ?? row.is_number}
           isCodeId={row.is_code_id}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}
-          rows={oslSampleRequirements}
+          rows={combineOslAndPiSamples(
+            oslSampleRequirements,
+            piSampleRequirements,
+          )}
           clientId={row.client_id}
           excludeImportSource={{
             id: row.id,
@@ -2900,29 +2951,6 @@ function ApplicationFormModal({
           }}
           onSave={saveOslSampleRequirements}
           onClose={closeOslSampleRequirementsModal}
-          initialFocusSampleIndex={sampleOfferLetterFocusIndex}
-        />
-      )}
-
-      {showPiSampleRequirements && (
-        <OslSampleRequirementsModal
-          variant="pi"
-          letterData={buildSampleOfferLetterData()}
-          topManagement={topManagement}
-          isCodeNumber={isCode?.is_number ?? row.is_number}
-          isCodeId={row.is_code_id}
-          revisionYear={isCode?.revision_year ?? row.is_revision_year}
-          rows={piSampleRequirements}
-          clientId={row.client_id}
-          excludeImportSource={{
-            id: row.id,
-            source:
-              row.source === "bis_new_applications"
-                ? "bis_new_applications"
-                : "bis_projects",
-          }}
-          onSave={savePiSampleRequirements}
-          onClose={closePiSampleRequirementsModal}
           initialFocusSampleIndex={sampleOfferLetterFocusIndex}
         />
       )}
@@ -3205,7 +3233,8 @@ function ApplicationFormModal({
             setApplicationMeta(meta);
             const nextLegalRows = editorRowsFromStored(legalDocuments);
             setLegalDocumentRows(nextLegalRows);
-            saveNotesToDb({
+            // Explicit Import action — persist immediately like Save.
+            saveNotesNow({
               meta,
               legalDocuments: storedFromEditor(nextLegalRows),
             });

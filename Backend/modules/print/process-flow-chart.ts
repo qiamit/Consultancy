@@ -95,17 +95,14 @@ function buildDrawingHtml(
 }
 
 function buildSignatoryBlockHtml(data: ProcessFlowChartLetterData): string {
-  const sigName = esc(data.firmRepName) || esc(data.contactPerson) || "—";
-  const sigDesig = esc(data.firmRepDesignation) || "—";
-
   return buildClassSignatoryBlockHtml({
     blockClass: "pfc-signatory-block",
     forClass: "pfc-signatory-for",
     sigWrapClass: "pfc-signatory-sig",
     lineClass: "pfc-signatory-line",
     companyName: esc(data.companyName),
-    sigName,
-    sigDesig,
+    sigName: esc(data.firmRepName) || esc(data.contactPerson),
+    sigDesig: esc(data.firmRepDesignation),
     signatureImageUrl: data.signatureImageUrl,
   });
 }
@@ -211,12 +208,11 @@ export function buildProcessFlowChartHtml(
     }
     .lh-wrap {
       flex-shrink: 0;
-      margin-bottom: 2px !important;
-      padding-top: 2px !important;
-      padding-bottom: 2px !important;
+      margin-bottom: 1px !important;
+      padding: 2px 0 !important;
     }
     .pfc-sheet {
-      flex: 1 1 auto;
+      flex: 1 1 0 !important;
       min-height: 0 !important;
       height: auto !important;
       max-height: none !important;
@@ -230,41 +226,40 @@ export function buildProcessFlowChartHtml(
       flex-shrink: 0;
     }
     .pfc-drawing-wrap {
-      /* Size box to chart content; cap so it still fits the remaining A4 area. */
-      flex: 0 1 auto;
-      min-height: 0 !important;
-      width: 100%;
-      max-height: 100%;
-      margin: 4px 0 !important;
-      position: relative;
+      /* Width = page content width; height hugs chart (fit to content). */
+      flex: 0 0 auto !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      margin: 2px 0 !important;
+      position: relative !important;
       overflow: hidden;
-      text-align: center;
+      line-height: 0;
     }
     .pfc-drawing-image--fit {
       position: static !important;
       display: block;
-      width: auto !important;
-      height: auto !important;
+      width: 100% !important;
       max-width: 100% !important;
-      max-height: 170mm !important;
-      margin: 0 auto !important;
+      height: auto !important;
+      max-height: none !important;
+      margin: 0 !important;
       object-fit: contain;
       object-position: center top;
     }
-    .pfc-title { margin: 0 0 3px !important; font-size: 13px !important; }
-    .pfc-to-row { margin: 0 0 3px !important; gap: 8px !important; }
+    .pfc-title { margin: 0 0 2px !important; font-size: 13px !important; }
+    .pfc-to-row { margin: 0 0 2px !important; gap: 8px !important; }
     .pfc-to-block,
-    .pfc-date-block { font-size: 10px !important; line-height: 1.3 !important; }
+    .pfc-date-block { font-size: 10px !important; line-height: 1.25 !important; }
     .pfc-salutation,
     .pfc-declaration,
     .pfc-truth-declaration {
       margin: 0 0 2px !important;
       font-size: 9px !important;
-      line-height: 1.3 !important;
+      line-height: 1.25 !important;
     }
-    .pfc-signatory-block { margin-top: 2px !important; font-size: 9px !important; line-height: 1.3 !important; }
-    .pfc-signatory-sig { margin-top: 6px !important; min-width: 160px !important; }
-    .pfc-signatory-sig img { max-height: 36px !important; top: -40px !important; }
+    .pfc-signatory-block { margin-top: 4px !important; font-size: 10px !important; line-height: 1.3 !important; }
+    .pfc-signatory-sig { margin-top: 32px !important; }
+    .pfc-signatory-sig img { max-height: 44px !important; top: -48px !important; }
     .pfc-page-indicator { display: none; }
     .doc-page > .pfc-sheet ~ div { display: none !important; }
   `
@@ -329,6 +324,8 @@ export function buildProcessFlowChartHtml(
     }
     .pfc-drawing-wrap {
       margin: 6px 0 8px;
+      width: 100%;
+      max-width: 100%;
       text-align: center;
     }
     .pfc-drawing-image {
@@ -337,13 +334,15 @@ export function buildProcessFlowChartHtml(
       max-width: 100%;
       border: 1px solid #cbd5e1;
       display: block;
-      margin: 0 auto;
+      margin: 0;
     }
     .pfc-drawing-image--fit {
-      width: auto;
+      width: 100%;
       max-width: 100%;
       height: auto;
+      max-height: none;
       object-fit: contain;
+      object-position: center top;
     }
     .pfc-drawing-placeholder {
       border: 1px dashed #94a3b8;
@@ -359,29 +358,36 @@ export function buildProcessFlowChartHtml(
       width: 100%;
     }
     .pfc-signatory-block {
-      margin-top: 10px;
+      margin-top: 12px;
       display: flex;
       flex-direction: column;
       align-items: flex-end;
-      font-size: 10px;
+      font-size: 11px;
       line-height: 1.45;
+      text-align: right;
+    }
+    .pfc-signatory-block-inner {
+      display: inline-block;
+      min-width: 220px;
       text-align: right;
     }
     .pfc-signatory-for {
       font-weight: 700;
       text-align: right;
+      white-space: nowrap;
     }
     .pfc-signatory-sig {
-      margin-top: 18px;
-      min-width: 200px;
+      margin-top: 36px;
+      width: 100%;
       text-align: right;
     }
     .pfc-signatory-line {
-      border-top: 1px solid #94a3b8;
-      padding-top: 2px;
-      font-size: 10px;
-      line-height: 1.35;
+      border-top: 1px solid #111;
+      padding-top: 4px;
+      font-size: 11px;
+      line-height: 1.4;
       text-align: right;
+      width: 100%;
     }
     ${fitPageStyles}
   `;

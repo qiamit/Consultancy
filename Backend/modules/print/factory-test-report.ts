@@ -59,8 +59,13 @@ function formatDateDisplay(raw: string): string {
   return esc(formatDisplayDate(v));
 }
 
+function formatPlainDisplay(raw: string): string {
+  const v = (raw ?? "").trim();
+  return v ? esc(v) : "—";
+}
+
 function fieldRow(label: string, value: string, boldValue = false): string {
-  const display = esc(value) || "—";
+  const display = formatPlainDisplay(value);
   return `<tr>
     <td class="lbl">${esc(label)}</td>
     <td class="sep">:-</td>
@@ -73,15 +78,19 @@ function fieldRowPair(
   value1: string,
   label2: string,
   value2: string,
+  opts?: { value1AsDate?: boolean; value2AsDate?: boolean },
 ): string {
   // Wider second label (colspan 3) so "Date of Manufacturing / Testing Completion" stay one line.
+  // Batch / Heat Number must stay plain text — JS Date parses values like "FM/2062-…" as dates.
+  const display1 = opts?.value1AsDate ? formatDateDisplay(value1) : formatPlainDisplay(value1);
+  const display2 = opts?.value2AsDate !== false ? formatDateDisplay(value2) : formatPlainDisplay(value2);
   return `<tr class="ftr-meta-pair">
     <td class="lbl">${esc(label1)}</td>
     <td class="sep">:-</td>
-    <td class="val">${formatDateDisplay(value1)}</td>
+    <td class="val">${display1}</td>
     <td class="lbl right" colspan="3">${esc(label2)}</td>
     <td class="sep">:-</td>
-    <td class="val" colspan="2">${formatDateDisplay(value2)}</td>
+    <td class="val" colspan="2">${display2}</td>
   </tr>`;
 }
 
@@ -93,10 +102,11 @@ function fieldRowTriple(
   label3: string,
   value3: string,
 ): string {
+  // Application No. is plain text; the two date fields stay date-formatted.
   return `<tr class="ftr-meta-triple">
     <td class="lbl">${esc(label1)}</td>
     <td class="sep">:-</td>
-    <td class="val">${formatDateDisplay(value1)}</td>
+    <td class="val">${formatPlainDisplay(value1)}</td>
     <td class="lbl right">${esc(label2)}</td>
     <td class="sep">:-</td>
     <td class="val">${formatDateDisplay(value2)}</td>
@@ -220,6 +230,7 @@ function buildMetaTableHtml(report: FactoryTestReportStored): string {
           report.date_of_testing_start,
           "Date of Testing Completion",
           report.date_of_testing_completion,
+          { value1AsDate: true },
         )}
       </table>`;
 }
@@ -372,7 +383,7 @@ export function buildFactoryTestReportHtml(
           // Each call is one sample — always start page-break index at 0.
           .map((r, i) => buildSingleReportHtml(r, i, data, letterheadSettings, letterheadHtml))
           .join("")
-      : `<p style="text-align:center;color:#64748b;padding:40px;">No factory test reports. Add samples in Sample for OSL / PI first.</p>`;
+      : `<p style="text-align:center;color:#64748b;padding:40px;">No factory test reports. Add samples in Sample Requirements first.</p>`;
 
   const pageWidthMm = pageSize.widthMm;
   const pageHeightMm = pageSize.heightMm;

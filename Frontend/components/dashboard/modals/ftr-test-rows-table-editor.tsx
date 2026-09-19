@@ -22,10 +22,10 @@ import {
 } from "@backend/modules/bis/ftr-observed-formula";
 
 const decBtn =
-  "flex h-4 w-4 items-center justify-center rounded border border-zinc-600 bg-zinc-800 text-[10px] font-bold leading-none text-zinc-300 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40";
+  "absolute top-1/2 z-[1] flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-sm font-bold leading-none text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40";
 
 const inp =
-  "block w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40";
+  "block w-full rounded-md border border-zinc-700 bg-zinc-950 py-1.5 text-xs text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40";
 
 const FTR_REMARK_OPTIONS = [FTR_REMARK_DEFAULT, FTR_REMARK_NOT_CONFIRM] as const;
 
@@ -97,33 +97,18 @@ function ObservedValueInput({
   }
 
   return (
-    <div className="space-y-1">
-      <div className="flex items-center justify-center gap-1">
-        <button
-          type="button"
-          onMouseDown={handleDecimalButtonMouseDown}
-          onClick={() => adjustDecimals(-1)}
-          disabled={dp <= FTR_OBSERVED_DECIMAL_MIN}
-          className={decBtn}
-          aria-label="Decrease decimal places"
-          title="Fewer decimal places"
-        >
-          −
-        </button>
-        <span className="min-w-[2rem] text-center text-[9px] tabular-nums text-zinc-500">{dp} dp</span>
-        <button
-          type="button"
-          onMouseDown={handleDecimalButtonMouseDown}
-          onClick={() => adjustDecimals(1)}
-          disabled={dp >= FTR_OBSERVED_DECIMAL_MAX}
-          className={decBtn}
-          aria-label="Increase decimal places"
-          title="More decimal places"
-        >
-          +
-        </button>
-      </div>
-      <div className="relative min-w-0">
+    <div className="relative min-w-0">
+      <button
+        type="button"
+        onMouseDown={handleDecimalButtonMouseDown}
+        onClick={() => adjustDecimals(-1)}
+        disabled={dp <= FTR_OBSERVED_DECIMAL_MIN}
+        className={`${decBtn} left-0.5`}
+        aria-label="Decrease decimal places"
+        title={`Fewer decimal places (${dp} dp)`}
+      >
+        −
+      </button>
       <input
         type="text"
         value={draft}
@@ -137,31 +122,26 @@ function ObservedValueInput({
           }
         }}
         list={formulaMode ? listId : undefined}
-        className={`${inp} text-center ${formulaMode ? "pr-7 font-mono text-sky-200" : ""}`}
+        className={`${inp} px-7 text-center ${formulaMode ? "font-mono text-sky-200" : ""}`}
       />
+      <button
+        type="button"
+        onMouseDown={handleDecimalButtonMouseDown}
+        onClick={() => adjustDecimals(1)}
+        disabled={dp >= FTR_OBSERVED_DECIMAL_MAX}
+        className={`${decBtn} right-0.5`}
+        aria-label="Increase decimal places"
+        title={`More decimal places (${dp} dp)`}
+      >
+        +
+      </button>
       {formulaMode ? (
-        <>
-          <datalist id={listId}>
-            {testNames.map((name) => (
-              <option key={name} value={name} />
-            ))}
-          </datalist>
-          <span
-            className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-sky-400"
-            title="Formula mode"
-            aria-hidden
-          >
-            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-              />
-            </svg>
-          </span>
-        </>
-        ) : null}
-      </div>
+        <datalist id={listId}>
+          {testNames.map((name) => (
+            <option key={name} value={name} />
+          ))}
+        </datalist>
+      ) : null}
     </div>
   );
 }
@@ -376,9 +356,9 @@ export function FtrTestRowsTableEditor({
               <td className="px-3 py-2 align-top text-zinc-200">
                 <div className="space-y-0.5">
                   <div className="font-medium leading-snug">{row.test_name || "—"}</div>
-                  {((row.clause_no ?? "").trim() || (row.test_method ?? "").trim()) && (
+                  {((row.clause_no ?? "").trim() || (row.is_reference ?? "").trim()) && (
                     <div className="text-[10px] leading-snug text-zinc-400">
-                      {[(row.clause_no ?? "").trim(), (row.test_method ?? "").trim()]
+                      {[(row.clause_no ?? "").trim(), (row.is_reference ?? "").trim()]
                         .filter(Boolean)
                         .join(" | ")}
                     </div>

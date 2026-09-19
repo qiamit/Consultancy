@@ -16,6 +16,11 @@ import {
   type OslSampleTableColumnKey,
 } from "@backend/modules/print/osl-sample-table-columns";
 import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
+import {
+  isSampleIncludedInPrint,
+  parseSampleFor,
+  sampleForLabel,
+} from "@backend/modules/bis/osl-sample-requirements";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
@@ -114,6 +119,16 @@ function cellForColumn(
       return esc(row.priority) || "Priority";
     case "laboratory":
       return esc(laboratoryInitials(row.laboratory_name));
+    case "shelf_life":
+      return esc(row.shelf_life) || "—";
+    case "mode_of_disposal":
+      return esc(row.mode_of_disposal) || "—";
+    case "testing_charges":
+      return esc(row.testing_charges) || "—";
+    case "test_required":
+      return esc(row.test_required) || "—";
+    case "sample_for":
+      return esc(sampleForLabel(parseSampleFor(row.sample_for)));
     default:
       return "—";
   }
@@ -125,16 +140,21 @@ function buildSampleTableHtml(
 ): string {
   const visible = rows.filter(
     (r) =>
-      r.sample_description.trim() ||
-      r.declared_value.trim() ||
-      r.batch_number.trim() ||
-      r.date_of_manufacturing.trim() ||
-      r.sample_quantity.trim() ||
-      r.batch_quantity.trim() ||
-      r.sample_code.trim() ||
-      r.qr_code.trim() ||
-      r.sample_type.trim() ||
-      r.laboratory_name.trim(),
+      isSampleIncludedInPrint(r) &&
+      (r.sample_description.trim() ||
+        r.declared_value.trim() ||
+        r.batch_number.trim() ||
+        r.date_of_manufacturing.trim() ||
+        r.sample_quantity.trim() ||
+        r.batch_quantity.trim() ||
+        r.sample_code.trim() ||
+        r.qr_code.trim() ||
+        r.sample_type.trim() ||
+        r.laboratory_name.trim() ||
+        r.shelf_life.trim() ||
+        r.mode_of_disposal.trim() ||
+        r.testing_charges.trim() ||
+        r.test_required.trim()),
   );
 
   if (visible.length === 0) {
@@ -258,7 +278,7 @@ function buildOfferLetterBody(
 
   <div style="margin:16px 0;padding:12px 14px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;">
     <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px;">
-      Sample Details for OSL
+      ${variant === "pi" ? "Sample Details for Inspection" : "Sample Details for OSL"}
     </div>
     ${buildSampleTableHtml(data.rows, tableColumns)}
   </div>

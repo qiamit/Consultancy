@@ -87,7 +87,10 @@ function defaultOtherInformation(): string {
   return "N/A";
 }
 
-export function defaultFtrTestingDate(): string {
+/** Default testing dates — prefer Date of Inspection when available. */
+export function defaultFtrTestingDate(dateOfInspection?: string): string {
+  const doi = (dateOfInspection ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(doi)) return doi.slice(0, 10);
   return toYmdDateString(new Date());
 }
 
@@ -234,9 +237,11 @@ function buildReportFromSample(
     source_index: index,
     ...headerFromSampleAndCtx,
     date_of_testing_start:
-      existing?.date_of_testing_start?.trim() || defaultFtrTestingDate(),
+      existing?.date_of_testing_start?.trim() ||
+      defaultFtrTestingDate(ctx.dateOfInspection),
     date_of_testing_completion:
-      existing?.date_of_testing_completion?.trim() || defaultFtrTestingDate(),
+      existing?.date_of_testing_completion?.trim() ||
+      defaultFtrTestingDate(ctx.dateOfInspection),
     witnessed_by: ctx.inspectionOfficerName,
     tested_by: ctx.qualityControlInchargeName,
     test_rows:
@@ -367,15 +372,18 @@ export function ftrReportHasContent(report: FactoryTestReportStored): boolean {
   );
 }
 
-export function editorReportsFromStored(stored: FactoryTestReportStored[]): FactoryTestReportRow[] {
+export function editorReportsFromStored(
+  stored: FactoryTestReportStored[],
+  dateOfInspection?: string,
+): FactoryTestReportRow[] {
   if (stored.length === 0) return [];
-  const today = defaultFtrTestingDate();
+  const fallback = defaultFtrTestingDate(dateOfInspection);
   return stored.map((report, index) => ({
     id: `ftr-report-${index}`,
     ...report,
-    date_of_testing_start: report.date_of_testing_start.trim() || today,
-    date_of_testing_completion: report.date_of_testing_completion.trim() || today,
-    test_rows: report.test_rows ?? [],
+    date_of_testing_start: report.date_of_testing_start.trim() || fallback,
+    date_of_testing_completion: report.date_of_testing_completion.trim() || fallback,
+    test_rows: orderFtrTestRowsClauseWise(report.test_rows ?? []),
   }));
 }
 
@@ -406,19 +414,56 @@ export function storedTestRowsFromEditor(rows: FtrTestRow[]): FtrTestRowStored[]
 }
 
 export function clauseSortKey(clauseNo: string): number {
-  const m = (clauseNo ?? "").trim().match(/(\d+(?:\.\d+)?)/);
-  return m ? parseFloat(m[1]) : Number.MAX_SAFE_INTEGER;
+  const parts = clauseSortKeyParts(clauseNo);
+  // Pack first few segments for simple numeric compares (legacy callers).
+  if (parts[0] === Number.MAX_SAFE_INTEGER) return Number.MAX_SAFE_INTEGER;
+  return (
+    (parts[0] ?? 0) * 1_000_000 +
+    (parts[1] ?? 0) * 1_000 +
+    (parts[2] ?? 0)
+  );
 }
 
-/** Test rows only, sorted ascending by clause number. */
+/** Clause parts for natural order, e.g. "Cl 7.1.2" → [7, 1, 2]. */
+export function clauseSortKeyParts(clauseNo: string): number[] {
+  const s = (clauseNo ?? "").trim();
+  const m = s.match(/(\d+(?:\.\d+)*)/);
+  if (!m?.[1]) return [Number.MAX_SAFE_INTEGER];
+  return m[1].split(".").map((p) => {
+    const n = Number.parseInt(p, 10);
+    return Number.isFinite(n) ? n : 0;
+  });
+}
+
+export function compareClauseNos(a: string, b: string): number {
+  const pa = clauseSortKeyParts(a);
+  const pb = clauseSortKeyParts(b);
+  const n = Math.max(pa.length, pb.length);
+  for (let i = 0; i < n; i++) {
+    const da = pa[i] ?? 0;
+    const db = pb[i] ?? 0;
+    if (da !== db) return da - db;
+  }
+  return 0;
+}
+
+/** Test rows only, sorted ascending by clause number (default table order). */
 export function sortFtrTestRowsByClause(rows: FtrTestRowStored[]): FtrTestRowStored[] {
   return rows
     .filter((r) => r.row_type === "test")
+    .slice()
     .sort((a, b) => {
-      const diff = clauseSortKey(a.clause_no) - clauseSortKey(b.clause_no);
+      const diff = compareClauseNos(a.clause_no, b.clause_no);
       if (diff !== 0) return diff;
-      return a.test_name.localeCompare(b.test_name);
+      return a.test_name.localeCompare(b.test_name, undefined, { sensitivity: "base" });
     });
+}
+
+/** Keep section rows first, then tests in clause order. */
+export function orderFtrTestRowsClauseWise(rows: FtrTestRowStored[]): FtrTestRowStored[] {
+  const sections = rows.filter((r) => r.row_type === "section");
+  const tests = sortFtrTestRowsByClause(rows);
+  return [...sections, ...tests];
 }
 
 /** Options for estimating how many test rows fit on each printed page. */
@@ -583,7 +628,7 @@ export function storedReportsFromEditor(rows: FactoryTestReportRow[]): FactoryTe
   return rows
     .map(({ id: _id, ...rest }) => ({
       ...rest,
-      test_rows: rest.test_rows ?? [],
+      test_rows: orderFtrTestRowsClauseWise(rest.test_rows ?? []),
     }))
     .filter(ftrReportHasContent);
 }

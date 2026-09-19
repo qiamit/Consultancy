@@ -10,10 +10,16 @@ export type OslSampleTableColumnKey =
   | "batch_quantity"
   | "sample_type"
   | "priority"
-  | "laboratory";
+  | "laboratory"
+  | "shelf_life"
+  | "mode_of_disposal"
+  | "testing_charges"
+  | "test_required"
+  | "sample_for";
 
 export const OSL_SAMPLE_TABLE_COLUMN_ORDER: OslSampleTableColumnKey[] = [
   "sr_no",
+  "sample_for",
   "sample_description",
   "declared_value",
   "batch_no",
@@ -25,6 +31,10 @@ export const OSL_SAMPLE_TABLE_COLUMN_ORDER: OslSampleTableColumnKey[] = [
   "sample_type",
   "priority",
   "laboratory",
+  "shelf_life",
+  "mode_of_disposal",
+  "testing_charges",
+  "test_required",
 ];
 
 export const DEFAULT_OSL_SAMPLE_TABLE_COLUMNS: OslSampleTableColumnKey[] = [
@@ -46,6 +56,14 @@ export const OSL_SAMPLE_TABLE_COLUMN_OPTIONS: {
   cellCenter?: boolean;
 }[] = [
   { key: "sr_no", label: "Sr. No.", headerHtml: "Sr<br/>No", stackHeader: true, headerCenter: true },
+  {
+    key: "sample_for",
+    label: "Sample For",
+    headerHtml: "Sample<br/>For",
+    stackHeader: true,
+    headerCenter: true,
+    cellCenter: true,
+  },
   {
     key: "sample_description",
     label: "Sample Description",
@@ -83,6 +101,38 @@ export const OSL_SAMPLE_TABLE_COLUMN_OPTIONS: {
   { key: "sample_type", label: "Sample Type", headerHtml: "Sample Type", headerCenter: true },
   { key: "priority", label: "Priority", headerHtml: "Priority", headerCenter: true },
   { key: "laboratory", label: "Laboratory", headerHtml: "Laboratory", headerCenter: true },
+  {
+    key: "shelf_life",
+    label: "Shelf Life",
+    headerHtml: "Shelf<br/>Life",
+    stackHeader: true,
+    headerCenter: true,
+    cellCenter: true,
+  },
+  {
+    key: "mode_of_disposal",
+    label: "Mode Of Disposal",
+    headerHtml: "Mode Of<br/>Disposal",
+    stackHeader: true,
+    headerCenter: true,
+    cellCenter: true,
+  },
+  {
+    key: "testing_charges",
+    label: "Testing Charges",
+    headerHtml: "Testing<br/>Charges",
+    stackHeader: true,
+    headerCenter: true,
+    cellCenter: true,
+  },
+  {
+    key: "test_required",
+    label: "Test Required",
+    headerHtml: "Test<br/>Required",
+    stackHeader: true,
+    headerCenter: true,
+    wide: true,
+  },
 ];
 
 export function normalizeOslSampleTableColumns(

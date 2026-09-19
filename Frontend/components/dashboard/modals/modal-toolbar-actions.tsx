@@ -9,6 +9,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type MouseEvent as ReactMouseEvent,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -42,6 +43,13 @@ function isElementType(child: ReactElement, tag: string) {
   return typeof child.type === "string" && child.type === tag;
 }
 
+type SaveButtonProps = {
+  children?: ReactNode;
+  onClick?: (
+    event: ReactMouseEvent<HTMLButtonElement>,
+  ) => void | boolean | Promise<void | boolean>;
+};
+
 type ModalToolbarActionsProps = {
   children: ReactNode;
   onClose: () => void;
@@ -54,6 +62,8 @@ type ModalToolbarActionsProps = {
  * On overflow: pins Save (+ status) outside, collapses the rest into a menu
  * just before Close. Very narrow screens use a hamburger trigger.
  * Menu is portaled so it is not clipped under the table / overflow parents.
+ * Close always runs Save first (when a Save button exists), then closes —
+ * return `false` from Save to keep the modal open (e.g. validation failed).
  */
 export function ModalToolbarActions({
   children,
@@ -279,9 +289,27 @@ export function ModalToolbarActions({
 
       <button
         type="button"
-        onClick={onClose}
+        onClick={() => {
+          void (async () => {
+            const saveNode = saveNodes.find(
+              (node): node is ReactElement<SaveButtonProps> =>
+                isValidElement(node) && isSaveButton(node),
+            );
+            if (saveNode?.props.onClick) {
+              const result = await Promise.resolve(
+                saveNode.props.onClick({
+                  preventDefault() {},
+                  stopPropagation() {},
+                } as ReactMouseEvent<HTMLButtonElement>),
+              );
+              if (result === false) return;
+            }
+            onClose();
+          })();
+        }}
         className="shrink-0 rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
-        aria-label="Close"
+        aria-label="Save & Close"
+        title="Save & Close"
       >
         <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />

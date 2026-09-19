@@ -30,6 +30,7 @@ import {
   type SampleOfferLetterVariant,
 } from "@backend/modules/print/sample-offer-letter-variant";
 import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
+import { isSampleIncludedInPrint } from "@backend/modules/bis/osl-sample-requirements";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
@@ -143,16 +144,17 @@ function laboratoryInitials(name: string): string {
 function visibleSampleRows(rows: OslSampleRequirementStored[]): OslSampleRequirementStored[] {
   return rows.filter(
     (r) =>
-      r.sample_description.trim() ||
-      r.declared_value.trim() ||
-      r.batch_number.trim() ||
-      r.date_of_manufacturing.trim() ||
-      r.sample_quantity.trim() ||
-      r.batch_quantity.trim() ||
-      r.sample_code.trim() ||
-      r.qr_code.trim() ||
-      r.sample_type.trim() ||
-      r.laboratory_name.trim(),
+      isSampleIncludedInPrint(r) &&
+      (r.sample_description.trim() ||
+        r.declared_value.trim() ||
+        r.batch_number.trim() ||
+        r.date_of_manufacturing.trim() ||
+        r.sample_quantity.trim() ||
+        r.batch_quantity.trim() ||
+        r.sample_code.trim() ||
+        r.qr_code.trim() ||
+        r.sample_type.trim() ||
+        r.laboratory_name.trim()),
   );
 }
 

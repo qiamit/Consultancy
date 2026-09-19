@@ -23,7 +23,7 @@ export function parseToDate(input: string | Date | null | undefined): Date | nul
   const s = String(input).trim();
   if (!s) return null;
 
-  const ymd = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  const ymd = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/.exec(s);
   if (ymd) {
     const y = Number(ymd[1]);
     const m = Number(ymd[2]);
@@ -35,8 +35,8 @@ export function parseToDate(input: string | Date | null | undefined): Date | nul
     return null;
   }
 
-  const parsed = new Date(s);
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
+  // Do not fall back to `new Date(s)` — it mis-parses codes like "FM/2062-…" as dates.
+  return null;
 }
 
 /** Format dates for display as dd-mmm-yy (e.g. 27-Jun-26). */

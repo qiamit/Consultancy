@@ -63,11 +63,28 @@ export function defaultProcessFlowChartDocument(): ProcessFlowChartStored {
 }
 
 export function documentHasContent(doc: ProcessFlowChartStored): boolean {
-  return (
-    doc.drawing_data_url.trim().length > 0 ||
-    doc.shapes.length > 0 ||
-    doc.outline_items.some((item) => item.text.trim().length > 0)
-  );
+  const hasOutlineText = doc.outline_items.some((item) => item.text.trim().length > 0);
+  if (hasOutlineText) return true;
+  const hasLabeledShape = doc.shapes.some((shape) => {
+    if (shape.type === "rectangle") return shape.label.trim().length > 0;
+    if (shape.type === "circle") return shape.label.trim().length > 0;
+    if (shape.type === "text") return shape.text.trim().length > 0;
+    return false;
+  });
+  return hasLabeledShape;
+}
+
+/** Count filled outline rows — used to prefer richer chart when merging saves. */
+export function processFlowChartFilledCount(doc: ProcessFlowChartStored | null | undefined): number {
+  if (!doc) return 0;
+  const outlineFilled = doc.outline_items.filter((item) => item.text.trim().length > 0).length;
+  if (outlineFilled > 0) return outlineFilled;
+  return doc.shapes.filter((shape) => {
+    if (shape.type === "rectangle") return shape.label.trim().length > 0;
+    if (shape.type === "circle") return shape.label.trim().length > 0;
+    if (shape.type === "text") return shape.text.trim().length > 0;
+    return false;
+  }).length;
 }
 
 export function parseProcessFlowChart(raw: unknown): ProcessFlowChartStored {

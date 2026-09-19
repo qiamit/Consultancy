@@ -23,6 +23,12 @@ const DESKTOP_MIN_WIDTH = 1024;
 /** SSR + hydrate always assume desktop sidebar open so markup matches. */
 const SSR_OPEN = true;
 
+const SSR_FALLBACK: SidebarLayoutValue = {
+  open: SSR_OPEN,
+  toggle: () => {},
+  setOpen: () => {},
+};
+
 function isDesktopViewport() {
   return window.innerWidth >= DESKTOP_MIN_WIDTH;
 }
@@ -31,12 +37,13 @@ function isDesktopViewport() {
  * Returns sidebar layout state. `open` stays at the SSR value until *this*
  * consumer has mounted — required because a parent viewport effect can run
  * before Suspense children hydrate, which would otherwise mismatch aria/class.
+ *
+ * When context is missing (async Server Component + Suspense can SSR a client
+ * consumer before the provider parent is wired), use SSR defaults instead of
+ * throwing so React does not bail out of server rendering.
  */
 export function useSidebarLayout() {
-  const ctx = useContext(SidebarLayoutContext);
-  if (!ctx) {
-    throw new Error("useSidebarLayout must be used within SidebarLayoutProvider");
-  }
+  const ctx = useContext(SidebarLayoutContext) ?? SSR_FALLBACK;
 
   const [mounted, setMounted] = useState(false);
   useEffect(() => {

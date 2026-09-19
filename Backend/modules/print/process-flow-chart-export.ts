@@ -143,14 +143,21 @@ async function buildDrawingParagraphs(
   ];
 }
 
+function normalizeDocxSignatoryField(value: string, fallback = "—"): string {
+  const v = String(value ?? "").trim();
+  if (!v || /^[-–—._\s]+$/.test(v)) return fallback;
+  return v;
+}
+
 async function buildSignatoryParagraphs(data: ProcessFlowChartLetterData): Promise<Paragraph[]> {
-  const sigName = data.firmRepName || data.contactPerson || "—";
-  const sigDesig = data.firmRepDesignation || "—";
+  const company = normalizeDocxSignatoryField(data.companyName || "", "—");
+  const sigName = normalizeDocxSignatoryField(data.firmRepName || data.contactPerson || "");
+  const sigDesig = normalizeDocxSignatoryField(data.firmRepDesignation || "");
   const out: Paragraph[] = [
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 200, after: 0 },
-      children: [bodyRun(`For ${data.companyName || "—"}`, true)],
+      spacing: { before: 240, after: 0 },
+      children: [bodyRun(`For ${company}`, true)],
     }),
   ];
 
@@ -159,7 +166,7 @@ async function buildSignatoryParagraphs(data: ProcessFlowChartLetterData): Promi
     out.push(
       new Paragraph({
         alignment: AlignmentType.RIGHT,
-        spacing: { before: 80, after: 40 },
+        spacing: { before: 120, after: 40 },
         children: [
           new ImageRun({
             type: sigImg.type,
@@ -175,14 +182,12 @@ async function buildSignatoryParagraphs(data: ProcessFlowChartLetterData): Promi
       }),
     );
   } else {
+    // Blank signature clearance, then a clean underline for Name block.
     out.push(
       new Paragraph({
         alignment: AlignmentType.RIGHT,
-        spacing: { before: 200, after: 0 },
-        border: {
-          top: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" },
-        },
-        children: [bodyRun("")],
+        spacing: { before: 360, after: 0 },
+        children: [bodyRun(" ")],
       }),
     );
   }
@@ -191,11 +196,14 @@ async function buildSignatoryParagraphs(data: ProcessFlowChartLetterData): Promi
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       spacing: { before: 40, after: 0 },
+      border: {
+        top: { style: BorderStyle.SINGLE, size: 8, color: "111111" },
+      },
       children: [bodyRun(`Name: ${sigName}`)],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
-      spacing: { before: 20, after: 0 },
+      spacing: { before: 40, after: 0 },
       children: [bodyRun(`Designation: ${sigDesig}`)],
     }),
   );

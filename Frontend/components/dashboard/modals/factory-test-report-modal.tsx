@@ -30,14 +30,18 @@ import {
   mapPageSizeToPlaywrightFormat,
 } from "@/lib/playwright-pdf-client";
 import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
-import { rowHasContent as oslRowHasContent } from "@backend/modules/bis/osl-sample-requirements";
+import {
+  parseSampleFor,
+  rowHasContent as oslRowHasContent,
+  sampleForLabel,
+} from "@backend/modules/bis/osl-sample-requirements";
 import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff";
 import { resolveQualityControlIncharge } from "@backend/modules/bis/technical-staff";
 import {
   editorReportsFromStored,
   mergeTestParametersIntoRows,
+  orderFtrTestRowsClauseWise,
   refreshReportHeadersFromSample,
-  sortFtrTestRowsByClause,
   storedReportsFromEditor,
   syncFactoryTestReportsFromSamples,
   ftrTestRowKey,
@@ -48,25 +52,52 @@ import {
   type FtrTestParameterSeed,
 } from "@backend/modules/bis/factory-test-report";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
+import { formatDisplayDate, toYmdDateString } from "@backend/shared/format-date";
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
 
 const headerInp =
   "block w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-xs text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40";
 
+/** Prefer Date of Inspection for empty Testing Start / Completion fields. */
+function ftrTestingDateFallback(dateOfInspection: string): string {
+  const doi = dateOfInspection.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(doi)) return doi.slice(0, 10);
+  return toYmdDateString(new Date());
+}
+
+/** Dropdown label: OSL | Batch Number | DOM */
+function ftrSampleDropdownLabel(
+  report: FactoryTestReportRow,
+  sample: OslSampleRequirementStored | null | undefined,
+): string {
+  const kind = sample
+    ? sampleForLabel(parseSampleFor(sample.sample_for, report.source === "pi" ? "it" : "osl"))
+    : report.source === "pi"
+      ? "IT"
+      : "OSL";
+  const batch =
+    (sample?.batch_number ?? report.batch_heat_number).trim() || "—";
+  const domRaw = (sample?.date_of_manufacturing ?? report.date_of_manufacturing).trim();
+  const dom = domRaw ? formatDisplayDate(domRaw) : "—";
+  return `${kind} | ${batch} | ${dom}`;
+}
+
 function HeaderField({
   label,
   value,
   onChange,
   type = "text",
+  compact = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
+  compact?: boolean;
 }) {
   return (
-    <div>
+    <div className={compact ? "w-[9.5rem] shrink-0" : undefined}>
       <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
         {label}
       </label>
@@ -117,10 +148,10 @@ export function FactoryTestReportModal({
 }) {
   const rowsKey = JSON.stringify(initialStored);
   const [reports, setReports] = useState<FactoryTestReportRow[]>(() =>
-    editorReportsFromStored(initialStored),
+    editorReportsFromStored(initialStored, dateOfInspection),
   );
   const [activeReportId, setActiveReportId] = useState<string>(
-    () => editorReportsFromStored(initialStored)[0]?.id ?? "",
+    () => editorReportsFromStored(initialStored, dateOfInspection)[0]?.id ?? "",
   );
   const [appliedRowsKey, setAppliedRowsKey] = useState(rowsKey);
   const [autoSynced, setAutoSynced] = useState(false);
@@ -259,7 +290,7 @@ export function FactoryTestReportModal({
       existing: initialStored,
       ctx: ftrContext,
     });
-    const next = editorReportsFromStored(synced);
+    const next = editorReportsFromStored(synced, dateOfInspection);
     if (next.length > 0) {
       setReports(next);
       setActiveReportId((current) =>
@@ -272,7 +303,7 @@ export function FactoryTestReportModal({
       setAppliedRowsKey(rowsKey);
     } else {
       setAppliedRowsKey(rowsKey);
-      const next = editorReportsFromStored(initialStored);
+      const next = editorReportsFromStored(initialStored, dateOfInspection);
       setReports(next);
       setActiveReportId((current) =>
         next.length > 0 && !next.some((r) => r.id === current) ? next[0]!.id : current,
@@ -282,14 +313,19 @@ export function FactoryTestReportModal({
 
   const contextualReports = useMemo(() => {
     if (reports.length === 0) return reports;
+    const testingFallback = ftrTestingDateFallback(ftrContext.dateOfInspection);
     return reports.map((report) => {
       const sample =
         report.source === "osl"
           ? oslSamples[report.source_index]
           : piSamples[report.source_index];
       const patch = refreshReportHeadersFromSample(report, sample, ftrContext);
+      const next = Object.keys(patch).length > 0 ? { ...report, ...patch } : report;
       return {
-        ...(Object.keys(patch).length > 0 ? { ...report, ...patch } : report),
+        ...next,
+        date_of_testing_start: next.date_of_testing_start.trim() || testingFallback,
+        date_of_testing_completion:
+          next.date_of_testing_completion.trim() || testingFallback,
         witnessed_by: ftrContext.inspectionOfficerName,
         tested_by: ftrContext.qualityControlInchargeName,
       };
@@ -405,7 +441,7 @@ export function FactoryTestReportModal({
       existing: storedReportsFromEditor(reports),
       ctx: ftrContext,
     });
-    const next = editorReportsFromStored(synced);
+    const next = editorReportsFromStored(synced, dateOfInspection);
     setReports(next);
     if (next.length > 0) setActiveReportId(next[0].id);
   }
@@ -446,9 +482,7 @@ export function FactoryTestReportModal({
       selected,
       isReference !== "—" ? isReference : activeReport.is_code,
     );
-    const sections = merged.filter((r) => r.row_type === "section");
-    const tests = sortFtrTestRowsByClause(merged);
-    updateActiveReport({ test_rows: [...sections, ...tests] });
+    updateActiveReport({ test_rows: orderFtrTestRowsClauseWise(merged) });
   }
 
   function updateActiveReport(patch: Partial<FactoryTestReportRow>) {
@@ -521,13 +555,6 @@ export function FactoryTestReportModal({
             <span className="text-xs font-semibold text-emerald-400">Saved ✓</span>
           )}
           {saving && <span className="text-xs text-zinc-400">Saving…</span>}
-          <button
-            type="button"
-            onClick={handleSyncFromSamples}
-            className="shrink-0 whitespace-nowrap rounded-lg border border-emerald-700/50 bg-emerald-950/40 px-3 py-1.5 text-xs font-semibold text-emerald-200 hover:bg-emerald-950/70"
-          >
-            Sync from OSL / PI Samples
-          </button>
           <button
             type="button"
             onClick={handleSave}
@@ -604,54 +631,86 @@ export function FactoryTestReportModal({
           {reports.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
               <p className="text-sm text-zinc-400">
-                No FTR reports yet. Add samples in <strong className="text-zinc-200">Sample for OSL</strong> or{" "}
-                <strong className="text-zinc-200">Sample for PI</strong>, then click Sync.
+                No FTR reports yet. Add samples in <strong className="text-zinc-200">Sample Requirements</strong>, then click Sync.
               </p>
               <button
                 type="button"
                 onClick={handleSyncFromSamples}
                 className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-500"
               >
-                Sync from OSL / PI Samples
+                Sync from Sample Requirements
               </button>
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap gap-2 border-b border-zinc-800 px-4 py-3">
-                {reports.map((report, index) => (
+              <div className="flex flex-wrap items-end gap-x-3 gap-y-2 border-b border-zinc-800 px-4 py-3">
+                <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
+                  <div className="min-w-0 max-w-full sm:max-w-md">
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                      Sample
+                    </label>
+                    <div className="relative flex min-w-[16rem] max-w-full items-stretch">
+                      <select
+                        value={activeReport?.id ?? ""}
+                        onChange={(e) => selectReport(e.target.value)}
+                        className="block w-full truncate rounded-lg border border-zinc-600 bg-zinc-950 py-1.5 pl-3 pr-16 text-xs font-semibold text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40"
+                        aria-label="Select FTR sample"
+                      >
+                        {contextualReports.map((report) => {
+                          const sample =
+                            report.source === "osl"
+                              ? oslSamples[report.source_index]
+                              : piSamples[report.source_index];
+                          return (
+                            <option key={report.id} value={report.id}>
+                              {ftrSampleDropdownLabel(report, sample)}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={handleSyncFromSamples}
+                        title="Refresh from Sample Requirements"
+                        aria-label="Refresh from Sample Requirements"
+                        className="absolute inset-y-0 right-1.5 z-10 my-auto flex h-7 w-7 items-center justify-center rounded-md text-base leading-none text-emerald-300 hover:bg-emerald-950/60"
+                      >
+                        🔄
+                      </button>
+                    </div>
+                  </div>
                   <button
-                    key={report.id}
                     type="button"
-                    onClick={() => selectReport(report.id)}
-                    className={`rounded-lg border px-3 py-1.5 text-xs font-semibold transition ${
-                      activeReport?.id === report.id
-                        ? "border-sky-500 bg-sky-950/50 text-sky-200"
-                        : "border-zinc-700 bg-zinc-900 text-zinc-400 hover:border-zinc-600 hover:text-zinc-200"
-                    }`}
+                    onClick={() => setShowSampleDetails(true)}
+                    disabled={!activeLinkedSample}
+                    title="View selected sample details"
+                    className="inline-flex shrink-0 items-center rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
                   >
-                    FTR {index + 1}
-                    {report.sample_label ? ` · ${report.sample_label.slice(0, 24)}` : ""}
+                    View Details
                   </button>
-                ))}
-              </div>
-
-              {activeReport && (
-                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <div className="grid shrink-0 grid-cols-2 gap-3 border-b border-zinc-800 p-4 lg:grid-cols-3 xl:grid-cols-4">
+                </div>
+                {activeReport ? (
+                  <div className="flex shrink-0 flex-wrap items-end gap-2">
                     <HeaderField
                       label="Testing Start"
                       value={activeReport.date_of_testing_start}
                       onChange={(v) => updateActiveReport({ date_of_testing_start: v })}
                       type="date"
+                      compact
                     />
                     <HeaderField
                       label="Testing Completion"
                       value={activeReport.date_of_testing_completion}
                       onChange={(v) => updateActiveReport({ date_of_testing_completion: v })}
                       type="date"
+                      compact
                     />
                   </div>
+                ) : null}
+              </div>
 
+              {activeReport && (
+                <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
                   <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-3">
                     <input
                       type="search"
@@ -669,14 +728,6 @@ export function FactoryTestReportModal({
                         className="shrink-0 rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-950/70 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         QE Assistant
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowSampleDetails(true)}
-                        disabled={!activeLinkedSample}
-                        className="shrink-0 rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 disabled:cursor-not-allowed disabled:opacity-40"
-                      >
-                        View Sample Details
                       </button>
                       <button
                         type="button"
@@ -703,7 +754,11 @@ export function FactoryTestReportModal({
                       searchQuery={testRowSearch}
                       selectedKeys={selectedTestRowKeys}
                       onSelectedKeysChange={setSelectedTestRowKeys}
-                      onChange={(test_rows) => updateActiveReport({ test_rows })}
+                      onChange={(test_rows) =>
+                        updateActiveReport({
+                          test_rows: orderFtrTestRowsClauseWise(test_rows),
+                        })
+                      }
                     />
                   </div>
                 </div>

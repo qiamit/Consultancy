@@ -231,12 +231,12 @@ function extractDocument(
       return { key: "self_evaluation_form", document };
     }
     case "osl_sample_requirements": {
-      const document = parseOslSampleRequirements(parsed.oslSampleRequirements);
+      const document = parseOslSampleRequirements(parsed.oslSampleRequirements, "osl");
       if (!oslSampleRequirementsHasContent(document)) return null;
       return { key: "osl_sample_requirements", document };
     }
     case "pi_sample_requirements": {
-      const document = parseOslSampleRequirements(parsed.piSampleRequirements);
+      const document = parseOslSampleRequirements(parsed.piSampleRequirements, "it");
       if (!oslSampleRequirementsHasContent(document)) return null;
       return { key: "pi_sample_requirements", document };
     }

@@ -367,7 +367,7 @@ export function ApplicationDetailsForm({
       {onSave ? (
         <div className="flex flex-wrap items-center justify-end gap-2 border-t border-zinc-200 pt-4 dark:border-zinc-700">
           <p className="mr-auto text-xs text-zinc-500 dark:text-zinc-400">
-            Changes also auto-save while you type.
+            Click Save to store your changes.
           </p>
           {savedFlash ? (
             <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
