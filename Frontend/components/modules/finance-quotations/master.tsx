@@ -38,6 +38,10 @@ import {
 import { FinanceQuotationForm } from "./form";
 import { FinanceQuotationsHeaderBar } from "./header-bar";
 import { printFinanceQuotationsList } from "./print-finance-quotation-list";
+import {
+  createQuotationPdfBlob,
+  downloadQuotationPdf,
+} from "./quotation-pdf";
 import { filterQuotationsBySearch, PAGE_SIZE_OPTIONS } from "./search-utils";
 import { FinanceQuotationsTable } from "./table";
 
@@ -297,34 +301,96 @@ export function FinanceQuotationsMaster({
     [router],
   );
 
-  const downloadRow = useCallback((r: FinanceQuotationRow) => {
-    const blob = new Blob([JSON.stringify(r, null, 2)], {
-      type: "application/json;charset=utf-8;",
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${(r.quotation_number || "quotation").trim()}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-  }, []);
+  const downloadRow = useCallback(
+    async (r: FinanceQuotationRow) => {
+      try {
+        const formValues = rowToForm(r, defaultBankDetails);
+        const client =
+          (r.client_id ? clientById.get(r.client_id) : null) ?? null;
+        const quotationNumber =
+          (r.quotation_number || "").trim() || "quotation";
+        await downloadQuotationPdf({
+          form: formValues,
+          quotationNumber,
+          client,
+          productById,
+          printSettings,
+          sealSignImageUrl,
+          letterheadUpperImageUrl,
+          letterheadLowerImageUrl,
+        });
+      } catch (err) {
+        window.alert(
+          err instanceof Error
+            ? err.message
+            : "Unable to download quotation PDF.",
+        );
+      }
+    },
+    [
+      clientById,
+      defaultBankDetails,
+      letterheadLowerImageUrl,
+      letterheadUpperImageUrl,
+      printSettings,
+      productById,
+      sealSignImageUrl,
+    ],
+  );
 
   const shareRow = useCallback(
     async (r: FinanceQuotationRow) => {
-      const url = `${window.location.origin}${QUOTATION_LIST_PATH}?id=${encodeURIComponent(r.id)}`;
-      const text = `Quotation ${r.quotation_number || r.id}`;
+      const quotationNumber =
+        (r.quotation_number || "").trim() || "quotation";
+      const shareText = `Quotation ${quotationNumber}`;
       try {
-        if (navigator.share) {
-          await navigator.share({ title: "Quotation", text, url });
+        const formValues = rowToForm(r, defaultBankDetails);
+        const client =
+          (r.client_id ? clientById.get(r.client_id) : null) ?? null;
+        const blob = await createQuotationPdfBlob({
+          form: formValues,
+          quotationNumber,
+          client,
+          productById,
+          printSettings,
+          sealSignImageUrl,
+          letterheadUpperImageUrl,
+          letterheadLowerImageUrl,
+        });
+        const file = new File([blob], `${quotationNumber}.pdf`, {
+          type: "application/pdf",
+        });
+        if (
+          navigator.share &&
+          (
+            navigator as Navigator & {
+              canShare?: (data: ShareData) => boolean;
+            }
+          ).canShare?.({ files: [file] })
+        ) {
+          await navigator.share({
+            title: "Quotation",
+            text: shareText,
+            files: [file],
+          });
           return;
         }
+        const url = `${window.location.origin}${QUOTATION_LIST_PATH}?id=${encodeURIComponent(r.id)}`;
         await navigator.clipboard.writeText(url);
         window.alert("Quotation link copied to clipboard.");
       } catch {
         window.alert("Unable to share right now.");
       }
     },
-    [],
+    [
+      clientById,
+      defaultBankDetails,
+      letterheadLowerImageUrl,
+      letterheadUpperImageUrl,
+      printSettings,
+      productById,
+      sealSignImageUrl,
+    ],
   );
   const updateRowStatus = useCallback(
     async (

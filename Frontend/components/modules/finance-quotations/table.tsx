@@ -118,7 +118,7 @@ export function FinanceQuotationsTable({
   rows: FinanceQuotationRow[];
   idParam: string | null;
   onEditRow: (r: FinanceQuotationRow) => void;
-  onDownloadRow: (r: FinanceQuotationRow) => void;
+  onDownloadRow: (r: FinanceQuotationRow) => void | Promise<void>;
   onShareRow: (r: FinanceQuotationRow) => void | Promise<void>;
   onStatusChange: (
     r: FinanceQuotationRow,

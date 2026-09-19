@@ -9,7 +9,8 @@
     "lint": "eslint Frontend Backend",
     "migrate": "node scripts/apply-migrations.cjs",
     "pdf:dev": "npm --prefix pdf-service run start",
-    "pdf:install": "npm --prefix pdf-service ci && npm --prefix pdf-service run install-browser"
+    "pdf:install": "npm --prefix pdf-service ci && npm --prefix pdf-service run install-browser",
+    "deploy:live": "bash scripts/deploy-live.sh"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.104.2",
