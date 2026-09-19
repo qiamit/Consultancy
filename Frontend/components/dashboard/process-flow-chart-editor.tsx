@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
   forwardRef,
-  type KeyboardEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
 import {
