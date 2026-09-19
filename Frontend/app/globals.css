@@ -121,7 +121,8 @@ html {
   }
 }
 
-html:has(#site-mobile-nav[open]) {
+/* Mobile nav open — set by SiteNavbar (Safari-safe vs :has(details[open])) */
+html.mobile-nav-open {
   overflow: hidden;
 }
 
