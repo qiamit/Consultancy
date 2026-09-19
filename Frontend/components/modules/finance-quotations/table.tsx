@@ -306,7 +306,7 @@ export function FinanceQuotationsTable({
                         </span>
                         <button
                           type="button"
-                          onClick={() => onDownloadRow(r)}
+                          onClick={() => void onDownloadRow(r)}
                           className="text-sm font-medium text-zinc-700 hover:underline dark:text-zinc-300"
                         >
                           Download
