@@ -86,7 +86,11 @@ export function rowToForm(
   const linesRaw = Array.isArray(linesRawUnknown)
     ? linesRawUnknown
     : linesRawUnknown
-      ? [linesRawUnknown as NonNullable<FinanceQuotationRow["finance_quotation_lines"]>[number]
+      ? [
+          linesRawUnknown as NonNullable<
+            FinanceQuotationRow["finance_quotation_lines"]
+          >[number],
+        ]
       : [];
   const sorted = [...linesRaw].sort((a, b) => a.sort_order - b.sort_order);
   let lines: QuotationLineForm[] =
