@@ -291,10 +291,10 @@ export function ModalToolbarActions({
         type="button"
         onClick={() => {
           void (async () => {
-            const saveNode = saveNodes.find(
-              (node): node is ReactElement<SaveButtonProps> =>
-                isValidElement(node) && isSaveButton(node),
-            );
+            const saveNode = saveNodes.find((node): node is ReactElement<SaveButtonProps> => {
+              if (!isValidElement(node)) return false;
+              return isSaveButton(node as ReactElement<{ children?: ReactNode }>);
+            });
             if (saveNode?.props.onClick) {
               const result = await Promise.resolve(
                 saveNode.props.onClick({
