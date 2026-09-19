@@ -259,7 +259,7 @@ export const ProcessFlowChartEditor = forwardRef<
     patchItems(updateOutlineRowLevel(outlineItems, index, delta));
   }
 
-  function handleKeyDown(event: KeyboardEvent<HTMLInputElement>, index: number, item: ProcessFlowOutlineItem) {
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement>, index: number, item: ProcessFlowOutlineItem) {
     if (event.key === "Enter") {
       event.preventDefault();
       handleEnter(index);
@@ -396,7 +396,7 @@ export const ProcessFlowChartEditor = forwardRef<
       setOutlineItems(nextItems);
     }
 
-    function onKeyDown(event: KeyboardEvent) {
+    function onKeyDown(event: globalThis.KeyboardEvent) {
       if (event.key !== "Delete" && event.key !== "Backspace") return;
       const target = event.target as HTMLElement | null;
       if (
