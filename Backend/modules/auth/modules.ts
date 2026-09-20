@@ -36,6 +36,12 @@ export const DASHBOARD_MODULES = [
     inMainNav: true,
   },
   {
+    key: "bis_sample_failure_reply",
+    label: "BIS Sample Failure Reply",
+    href: "/dashboard/bis-sample-failure-reply",
+    inMainNav: true,
+  },
+  {
     key: "our_bis_licenses",
     label: "QE BIS Licenses",
     href: "/dashboard/our-bis-licenses",

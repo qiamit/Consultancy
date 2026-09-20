@@ -1,0 +1,181 @@
+"use server";
+
+import { sendAiMessage } from "@backend/actions/ai-chat";
+import { createClient } from "@backend/db/client/server";
+import { extractDocumentText } from "@backend/modules/is-code/extract-document-text";
+import { DOCUMENTS_BUCKET } from "@backend/modules/storage/documents";
+import {
+  sampleFailureTypeLabel,
+} from "@backend/modules/bis/sample-failure-reply";
+import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
+
+const SYSTEM_PROMPT = `You are a senior BIS (Bureau of Indian Standards) consultancy expert who drafts formal sample-failure reply letters for Indian manufacturers holding ISI/BIS licences.
+
+Your reply must:
+- Be professional, factual, and suitable to submit on Manak Online / to BIS
+- Address the sample failure findings with clear root-cause understanding when evidence allows
+- Reference the IS code requirements relevant to the failed parameters
+- Propose corrective and preventive actions (CAPA) the firm will take
+- Confirm that factory test report / re-testing supports conformance where applicable
+- Mention enclosed documents: Sample Failure Letter, Sample Offer Letter, and Factory Test Report
+- Use formal Indian English letter style (no markdown headings, no bullet emoji)
+- Do not invent lab results, clause numbers, or dates that are not in the provided context
+- If evidence is incomplete, state what is known and what will be verified
+
+Return ONLY the reply letter body (including a short subject line as the first line starting with "Subject:"). No markdown fences.`;
+
+function clip(text: string, max = 12000): string {
+  const t = text.trim();
+  if (t.length <= max) return t;
+  return `${t.slice(0, max)}\n\n[…truncated…]`;
+}
+
+async function extractStoredPdfText(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  storagePath: string | null | undefined,
+  fileName: string | null | undefined,
+): Promise<string> {
+  const path = (storagePath ?? "").trim();
+  if (!path) return "";
+  try {
+    const { data, error } = await supabase.storage.from(DOCUMENTS_BUCKET).download(path);
+    if (error || !data) return "";
+    const buffer = Buffer.from(await data.arrayBuffer());
+    const name = (fileName ?? path.split("/").pop() ?? "document.pdf").trim();
+    return clip(await extractDocumentText(buffer, name), 8000);
+  } catch {
+    return "";
+  }
+}
+
+export async function draftSampleFailureReply(
+  replyId: string,
+): Promise<{ ok: true; draft: string } | { ok: false; error: string }> {
+  const id = replyId.trim();
+  if (!id) return { ok: false, error: "Missing sample failure reply id." };
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in." };
+
+  const { data, error } = await supabase
+    .from("bis_sample_failure_replies")
+    .select(
+      "id, sample_failure_type, sample_code, sample_qr_code, cm_l_digits, project_kind, notes, failure_letter_path, failure_letter_name, offer_letter_path, offer_letter_name, factory_test_report_path, factory_test_report_name, reply_draft, clients(name, company_name, address, city, state), is_codes(is_number, revision_year, is_code_title, product_manual_number, unit_of_is)",
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { ok: false, error: error?.message ?? "Sample failure record not found." };
+  }
+
+  const row = data as Record<string, unknown>;
+  const client = (Array.isArray(row.clients) ? row.clients[0] : row.clients) as {
+    name?: string | null;
+    company_name?: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+  } | null;
+  const isCode = (Array.isArray(row.is_codes) ? row.is_codes[0] : row.is_codes) as {
+    is_number?: string | null;
+    revision_year?: number | null;
+    is_code_title?: string | null;
+    product_manual_number?: string | null;
+    unit_of_is?: string | null;
+  } | null;
+
+  const firmName = client?.company_name?.trim() || client?.name?.trim() || "the firm";
+  const isLabel = [
+    isCode?.is_number,
+    isCode?.revision_year ? `:${isCode.revision_year}` : "",
+  ]
+    .join("")
+    .trim();
+  const cmL = formatCmDisplay(
+    (row.project_kind as string | null) ?? "licence",
+    (row.cm_l_digits as string | null) ?? null,
+  );
+
+  const failureLetterText = await extractStoredPdfText(
+    supabase,
+    row.failure_letter_path as string | null,
+    row.failure_letter_name as string | null,
+  );
+  const offerLetterText = await extractStoredPdfText(
+    supabase,
+    row.offer_letter_path as string | null,
+    row.offer_letter_name as string | null,
+  );
+  const factoryReportText = await extractStoredPdfText(
+    supabase,
+    row.factory_test_report_path as string | null,
+    row.factory_test_report_name as string | null,
+  );
+
+  const contextBlocks = [
+    `Firm: ${firmName}`,
+    client?.address || client?.city || client?.state
+      ? `Address: ${[client?.address, client?.city, client?.state].filter(Boolean).join(", ")}`
+      : null,
+    `CM/L Number: ${cmL}`,
+    `IS Code: ${isLabel || "—"}`,
+    `IS Title: ${isCode?.is_code_title?.trim() || "—"}`,
+    `Product Manual: ${isCode?.product_manual_number?.trim() || "—"}`,
+    `Unit of IS: ${isCode?.unit_of_is?.trim() || "—"}`,
+    `Type of Sample Failure: ${sampleFailureTypeLabel(String(row.sample_failure_type ?? ""))}`,
+    `Sample Code: ${String(row.sample_code ?? "").trim() || "—"}`,
+    `Sample QR Code: ${String(row.sample_qr_code ?? "").trim() || "—"}`,
+    row.notes ? `Internal notes: ${String(row.notes)}` : null,
+    `Failure letter file: ${String(row.failure_letter_name ?? "—")}`,
+    `Offer letter file: ${String(row.offer_letter_name ?? "not uploaded yet")}`,
+    `Factory test report file: ${String(row.factory_test_report_name ?? "not uploaded yet")}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const userPrompt = `Draft a BIS sample failure reply for Manak Online submission using the context below.
+
+CASE DETAILS
+${contextBlocks}
+
+SAMPLE FAILURE LETTER CONTENT (extract / OCR text; may be partial)
+${failureLetterText || "(No extractable text from the Sample Failure Letter yet. Draft a professional reply framework that asks to align with the attached letter findings.)"}
+
+SAMPLE OFFER LETTER CONTENT
+${offerLetterText || "(Not uploaded or not extractable.)"}
+
+FACTORY TEST REPORT CONTENT
+${factoryReportText || "(Not uploaded or not extractable.)"}
+
+IS / PRODUCT CONTEXT FROM MASTER
+Use the IS number/title/product above. Apply general BIS sample-failure reply practice for Indian licence holders (acknowledgement, understanding of failure, corrective action, assurance of conformance, request for favourable consideration). Do not invent specific lab readings.
+
+${row.reply_draft ? `EXISTING DRAFT TO IMPROVE\n${String(row.reply_draft).trim()}` : ""}
+
+Write the improved formal reply now.`;
+
+  const result = await sendAiMessage(
+    [{ role: "user", content: userPrompt }],
+    SYSTEM_PROMPT,
+    undefined,
+    4096,
+  );
+
+  if (!result.ok) return result;
+
+  const draft = result.reply.trim().replace(/^```[a-z]*\n?|\n?```$/gi, "");
+  if (!draft) {
+    return { ok: false, error: "AI returned an empty reply draft. Try again." };
+  }
+
+  await supabase
+    .from("bis_sample_failure_replies")
+    .update({ reply_draft: draft, status: "drafted" })
+    .eq("id", id);
+
+  return { ok: true, draft };
+}
