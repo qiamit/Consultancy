@@ -228,9 +228,31 @@ type IsCodeFeeDetail = {
   slab_3_rate: number | null;
 };
 
+/** Coerce PG numeric strings / numbers to a finite number (or null). */
+function toFiniteNumber(value: unknown): number | null {
+  if (value == null || value === "") return null;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeIsCodeFeeDetail(raw: IsCodeFeeDetail | null): IsCodeFeeDetail | null {
+  if (!raw) return null;
+  return {
+    ...raw,
+    mmf_large_scale: toFiniteNumber(raw.mmf_large_scale),
+    mmf_medium_scale: toFiniteNumber(raw.mmf_medium_scale),
+    mmf_small_scale: toFiniteNumber(raw.mmf_small_scale),
+    mmf_micro_scale: toFiniteNumber(raw.mmf_micro_scale),
+    slab_1_rate: toFiniteNumber(raw.slab_1_rate),
+    slab_2_rate: toFiniteNumber(raw.slab_2_rate),
+    slab_3_rate: toFiniteNumber(raw.slab_3_rate),
+  };
+}
+
 function formatInrAmount(n: number | null | undefined): string {
-  if (n == null || !Number.isFinite(Number(n))) return "—";
-  return `₹ ${Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const v = toFiniteNumber(n);
+  if (v == null) return "—";
+  return `₹ ${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function mmfAmountForScale(scale: string, isCode: IsCodeFeeDetail | null): number {
@@ -241,7 +263,7 @@ function mmfAmountForScale(scale: string, isCode: IsCodeFeeDetail | null): numbe
   else if (s.includes("small")) val = isCode.mmf_small_scale;
   else if (s.includes("medium")) val = isCode.mmf_medium_scale;
   else if (s.includes("large")) val = isCode.mmf_large_scale;
-  return val != null && Number.isFinite(val) ? val : 0;
+  return toFiniteNumber(val) ?? 0;
 }
 
 function mmfForScale(scale: string, isCode: IsCodeFeeDetail | null): string {
@@ -285,7 +307,8 @@ function getAllSlabDefs(isCode: IsCodeFeeDetail | null) {
     { label: "Slab 3", quantity: isCode.slab_3_quantity ?? "N/A", rate: isCode.slab_3_rate },
   ].map((s) => ({
     ...s,
-    rate: s.rate != null && Number.isFinite(s.rate) ? s.rate : 0,
+    // PG may return numeric as string — coerce before Number.isFinite checks.
+    rate: toFiniteNumber(s.rate) ?? 0,
     range: parseSlabRange(s.quantity),
   }));
 }
@@ -579,11 +602,12 @@ function ISInfoRow({
 }
 
 function ISFeeRow({ label, value }: { label: string; value: number | null }) {
+  const n = toFiniteNumber(value);
   return (
     <div className="flex items-center justify-between rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
       <span className="text-xs text-zinc-600 dark:text-zinc-400">{label}</span>
       <span className="text-xs font-bold text-zinc-900 dark:text-zinc-100">
-        {value != null ? `₹ ${value.toLocaleString("en-IN")}` : "—"}
+        {n != null ? `₹ ${n.toLocaleString("en-IN")}` : "—"}
       </span>
     </div>
   );
@@ -598,6 +622,7 @@ function ISSlabRow({
   quantity: string | null;
   rate: number | null;
 }) {
+  const n = toFiniteNumber(rate);
   return (
     <div className="flex items-center justify-between gap-2 rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-800/50">
       <div className="min-w-0">
@@ -605,7 +630,7 @@ function ISSlabRow({
         <span className="ml-2 text-xs text-zinc-500 dark:text-zinc-400">{quantity?.trim() || "—"}</span>
       </div>
       <span className="shrink-0 text-xs font-bold text-zinc-900 dark:text-zinc-100">
-        {rate != null ? `₹ ${rate.toLocaleString("en-IN")}` : "—"}
+        {n != null ? `₹ ${n.toLocaleString("en-IN")}` : "—"}
       </span>
     </div>
   );
@@ -663,7 +688,9 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
         .eq("id", row.is_code_id)
         .single()
         .then(({ data }) => {
-          if (!cancelled) setIsCodeDetail((data as IsCodeFeeDetail | null) ?? null);
+          if (!cancelled) {
+            setIsCodeDetail(normalizeIsCodeFeeDetail((data as IsCodeFeeDetail | null) ?? null));
+          }
         });
     } else {
       void Promise.resolve().then(() => {
@@ -680,8 +707,9 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
       if (!app) return;
       if (app.id) setApplicationId(app.id);
       // Treat 0 as unset so IS-code slab rate can auto-fill.
-      if (app.marking_fee_rate != null && Number(app.marking_fee_rate) > 0) {
-        setUnitRate(String(app.marking_fee_rate));
+      const savedRate = toFiniteNumber(app.marking_fee_rate);
+      if (savedRate != null && savedRate > 0) {
+        setUnitRate(String(savedRate));
       }
 
       const snapshot = parseRenewalFormSnapshot(app.notes);
@@ -703,8 +731,8 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
 
   // Auto-fill Unit Rate from IS Code slab_1_rate (same source as CMPF-310 / MMF calc).
   useEffect(() => {
-    const rate = isCodeDetail?.slab_1_rate;
-    if (rate == null || !Number.isFinite(Number(rate)) || Number(rate) <= 0) return;
+    const rate = toFiniteNumber(isCodeDetail?.slab_1_rate);
+    if (rate == null || rate <= 0) return;
     setUnitRate((prev) => (parseDecimal(prev) > 0 ? prev : String(rate)));
   }, [isCodeDetail]);
 

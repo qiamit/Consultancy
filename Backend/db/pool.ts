@@ -1,5 +1,13 @@
 import "server-only";
-import { Pool, type QueryResult, type QueryResultRow } from "pg";
+import { Pool, types, type QueryResult, type QueryResultRow } from "pg";
+
+// node-pg returns NUMERIC as strings by default. Money/rate fields (slab_1_rate,
+// MMF, fees) must be JS numbers so Number.isFinite / arithmetic work in the UI.
+types.setTypeParser(types.builtins.NUMERIC, (value) => {
+  if (value == null) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : value;
+});
 
 let pool: Pool | null = null;
 
