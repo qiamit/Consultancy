@@ -190,6 +190,29 @@ function rowApproxValue(r: PeriodRow, unitRate: string): number {
   return rowConforming(r) * parseDecimal(unitRate);
 }
 
+/** Production marking fee for a quantity using IS-code slab rates (no MMF floor). */
+function slabProductionFee(qty: number, isCode: IsCodeFeeDetail | null): number {
+  if (qty <= 0 || !isCode) return 0;
+  return buildSlabBreakdownRows(qty, isCode).reduce((sum, row) => sum + row.amount, 0);
+}
+
+/**
+ * Per-period marking fee using progressive slabs on cumulative conforming qty
+ * so row fees sum to the overall production fee.
+ */
+function rowMarginalMarkingFees(
+  rows: PeriodRow[],
+  isCode: IsCodeFeeDetail | null,
+): number[] {
+  let cumulative = 0;
+  return rows.map((r) => {
+    const qty = rowConforming(r);
+    const before = cumulative;
+    cumulative += qty;
+    return Math.max(0, slabProductionFee(cumulative, isCode) - slabProductionFee(before, isCode));
+  });
+}
+
 type IsCodeFeeDetail = {
   is_code_title: string | null;
   unit_of_is: string | null;
@@ -766,7 +789,12 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
   }
 
   const totalConformingQty = periodRows.reduce((sum, r) => sum + rowConforming(r), 0);
-  const { finalMmf: mmf, slabRows } = computeRenewalMmf(firmScale, totalConformingQty, isCodeDetail);
+  const { finalMmf: mmf, slabRows, productionFee } = computeRenewalMmf(
+    firmScale,
+    totalConformingQty,
+    isCodeDetail,
+  );
+  const periodMarkingFees = rowMarginalMarkingFees(periodRows, isCodeDetail);
   const lateFeeAmount = parseDecimal(lateFee);
   const previousDuesAmount = parseDecimal(previousDues);
   const renewalYearsNum = parseInt(renewalYears, 10) || 1;
@@ -881,19 +909,21 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
       renewalYears,
       productionDecimals,
       hasProductionTable: tableGenerated && periodRows.length > 0,
-      periodRows: periodRows.map((r) => ({
+      periodRows: periodRows.map((r, i) => ({
         from: r.from,
         to: r.to,
         totalProduction: parseDecimal(r.total_production),
         rejection: parseDecimal(r.rejection),
         conforming: rowConforming(r),
         approxValue: rowApproxValue(r, unitRate),
+        markingFee: periodMarkingFees[i] ?? 0,
       })),
       productionTotals: {
         totalProduction: periodRows.reduce((sum, r) => sum + parseDecimal(r.total_production), 0),
         rejection: periodRows.reduce((sum, r) => sum + parseDecimal(r.rejection), 0),
         conforming: totalConformingQty,
         approxValue: periodRows.reduce((sum, r) => sum + rowApproxValue(r, unitRate), 0),
+        markingFee: productionFee,
       },
       slabRows: slabRows.map((s) => ({
         label: s.label,
@@ -1053,15 +1083,16 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                 </details>
               </div>
               <div className="overflow-x-auto rounded-lg border border-zinc-200 dark:border-zinc-700">
-                <table className="renewal-form-table w-full min-w-[860px] table-fixed text-sm">
+                <table className="renewal-form-table w-full min-w-[980px] table-fixed text-sm">
                   <colgroup>
-                    <col className="w-[12%]" />
-                    <col className="w-[12%]" />
-                    <col className="w-[19%]" />
-                    <col className="w-[11%]" />
-                    <col className="w-[19%]" />
-                    <col className="w-[17%]" />
                     <col className="w-[10%]" />
+                    <col className="w-[10%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[9%]" />
+                    <col className="w-[15%]" />
+                    <col className="w-[13%]" />
+                    <col className="w-[14%]" />
+                    <col className="w-[14%]" />
                   </colgroup>
                   <thead className="bg-zinc-50 dark:bg-zinc-800">
                     <tr>
@@ -1083,6 +1114,9 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                       <th className="border-b border-r border-zinc-200 px-3 py-2 text-center text-xs font-semibold normal-case whitespace-normal break-words leading-snug text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
                         Approx. Production Value (₹)
                       </th>
+                      <th className="border-b border-r border-zinc-200 px-3 py-2 text-center text-xs font-semibold normal-case whitespace-normal break-words leading-snug text-zinc-600 dark:border-zinc-700 dark:text-zinc-300">
+                        Calculated Marking Fee (₹)
+                      </th>
                       <th className="border-b border-zinc-200 px-2 py-2 text-center text-xs font-semibold normal-case text-zinc-600 dark:text-zinc-300">
                         Actions
                       </th>
@@ -1092,6 +1126,7 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                     {periodRows.map((r, i) => {
                       const conforming = rowConforming(r);
                       const approxValue = rowApproxValue(r, unitRate);
+                      const markingFee = periodMarkingFees[i] ?? 0;
                       return (
                       <tr key={`${r.from}-${r.to}-${i}`} className={`hover:bg-zinc-50 dark:hover:bg-zinc-800/40 ${r.datesEditable ? "bg-sky-50/40 dark:bg-sky-950/10" : ""}`}>
                         <td className="border-r border-zinc-100 px-2 py-1.5 text-center dark:border-zinc-800">
@@ -1159,6 +1194,21 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                             />
                           </div>
                         </td>
+                        <td className="border-r border-zinc-100 px-2 py-1.5 dark:border-zinc-800">
+                          <div className="flex overflow-hidden rounded border border-emerald-200 dark:border-emerald-900">
+                            <span className="flex shrink-0 items-center border-r border-emerald-200 bg-emerald-50 px-1.5 text-xs font-medium text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                              ₹
+                            </span>
+                            <input
+                              type="text"
+                              readOnly
+                              tabIndex={-1}
+                              title="Auto-calculated from IS slab rates on conforming production"
+                              value={formatCurrencyDisplay(markingFee)}
+                              className={`${tableReadOnlyCls} rounded-none border-0 text-emerald-800 dark:text-emerald-200`}
+                            />
+                          </div>
+                        </td>
                         <td className="px-1 py-1.5 text-center">
                           <div className="flex items-center justify-center gap-1">
                             {!r.datesEditable ? (
@@ -1204,9 +1254,10 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
                         periodRows.reduce((sum, r) => sum + parseDecimal(r.rejection), 0),
                         periodRows.reduce((sum, r) => sum + rowConforming(r), 0),
                         periodRows.reduce((sum, r) => sum + rowApproxValue(r, unitRate), 0),
+                        productionFee,
                       ].map((total, fi) => (
-                        <td key={fi} className={`px-3 py-2 text-right text-xs text-zinc-700 dark:text-zinc-300 ${fi < 3 ? "border-r border-zinc-200 dark:border-zinc-700" : ""}`}>
-                          {fi === 3
+                        <td key={fi} className="border-r border-zinc-200 px-3 py-2 text-right text-xs text-zinc-700 dark:border-zinc-700 dark:text-zinc-300">
+                          {fi >= 3
                             ? `₹ ${formatCurrencyDisplay(total) || "0.00"}`
                             : formatProductionDecimalTotal(total, productionDecimals)}
                         </td>

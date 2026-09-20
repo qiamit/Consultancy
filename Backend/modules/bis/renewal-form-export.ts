@@ -8,6 +8,7 @@ export type RenewalExportPeriodRow = {
   rejection: number;
   conforming: number;
   approxValue: number;
+  markingFee: number;
 };
 
 export type RenewalExportSlabRow = {
@@ -40,6 +41,7 @@ export type RenewalExportData = {
     rejection: number;
     conforming: number;
     approxValue: number;
+    markingFee: number;
   };
   slabRows: RenewalExportSlabRow[];
   mmf: number;
@@ -114,6 +116,7 @@ function buildProductionTableHtml(data: RenewalExportData, tableClass: string): 
       <th class="col-num">Qualitative<br>Rejection</th>
       <th>Conforming<br>Production</th>
       <th class="col-money">Approx. Value<br>(₹)</th>
+      <th class="col-money">Calculated Marking Fee<br>(₹)</th>
     </tr>`;
 
   const body = data.periodRows
@@ -125,6 +128,7 @@ function buildProductionTableHtml(data: RenewalExportData, tableClass: string): 
         <td class="right">${formatQty(r.rejection, data.productionDecimals)}</td>
         <td class="right">${formatQty(r.conforming, data.productionDecimals)}</td>
         <td class="right">₹ ${formatInrPlain(r.approxValue)}</td>
+        <td class="right">₹ ${formatInrPlain(r.markingFee)}</td>
       </tr>`,
     )
     .join("");
@@ -136,6 +140,7 @@ function buildProductionTableHtml(data: RenewalExportData, tableClass: string): 
     <td class="right"><strong>${formatQty(totals.rejection, data.productionDecimals)}</strong></td>
     <td class="right"><strong>${formatQty(totals.conforming, data.productionDecimals)}</strong></td>
     <td class="right"><strong>₹ ${formatInrPlain(totals.approxValue)}</strong></td>
+    <td class="right"><strong>₹ ${formatInrPlain(totals.markingFee)}</strong></td>
   </tr>`;
 
   return `<table class="${tableClass}"><thead>${head}</thead><tbody>${body}${totalRow}</tbody></table>`;
@@ -402,6 +407,7 @@ export async function downloadRenewalExcel(data: RenewalExportData): Promise<voi
       "Qualitative Rejection",
       "Conforming to Indian Standards",
       "Approx. Production Value (₹)",
+      "Calculated Marking Fee (₹)",
     ]);
     for (const r of data.periodRows) {
       rows.push([
@@ -411,6 +417,7 @@ export async function downloadRenewalExcel(data: RenewalExportData): Promise<voi
         r.rejection,
         r.conforming,
         r.approxValue,
+        r.markingFee,
       ]);
     }
     rows.push([
@@ -420,6 +427,7 @@ export async function downloadRenewalExcel(data: RenewalExportData): Promise<voi
       data.productionTotals.rejection,
       data.productionTotals.conforming,
       data.productionTotals.approxValue,
+      data.productionTotals.markingFee,
     ]);
   } else {
     rows.push(["Production table not generated"]);
