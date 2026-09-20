@@ -667,7 +667,6 @@ function ISSlabRow({
 // ── Renewal Application Form Modal ────────────────────────────────────────────
 function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => void }) {
   const { open: sidebarOpen } = useSidebarLayout();
-  const [firmAddress, setFirmAddress] = useState("Loading…");
   const [firmScale, setFirmScale] = useState("—");
   const [isCodeDetail, setIsCodeDetail] = useState<IsCodeFeeDetail | null>(null);
   const [periodFrom, setPeriodFrom] = useState("");
@@ -684,29 +683,23 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
 
-  // Auto-fetch client details and IS code title
+  // Auto-fetch client scale and IS code title
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
     if (row.client_id) {
       supabase
         .from("clients")
-        .select("address, city, state, pin_code, company_scale")
+        .select("company_scale")
         .eq("id", row.client_id)
         .single()
         .then(({ data }) => {
           if (cancelled) return;
-          if (!data) {
-            setFirmAddress("—");
-            return;
-          }
-          const addr = [data.address, data.city, data.state, data.pin_code].filter(Boolean).join(", ");
-          setFirmAddress(addr || "—");
-          setFirmScale((data.company_scale as string | null) ?? "—");
+          setFirmScale((data?.company_scale as string | null) ?? "—");
         });
     } else {
       void Promise.resolve().then(() => {
-        if (!cancelled) setFirmAddress("—");
+        if (!cancelled) setFirmScale("—");
       });
     }
     if (row.is_code_id) {
@@ -966,7 +959,6 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
       isNumber: formatIsDisplay(row.is_number, row.is_revision_year),
       cmLNumber: formatCmLDisplay(row.project_kind, row.cm_l_digits),
       isTitle: sanitizeIsTitle(isCodeTitle) || isCodeTitle,
-      firmAddress,
       firmScale,
       mmfFee: minMmfDisplay,
       unit: unitOfProduction,
@@ -1073,12 +1065,7 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
               />
             </div>
 
-            {/* Line 3: Address */}
-            <div className="mt-3">
-              <ReadField label="Address of the Firm" value={firmAddress} />
-            </div>
-
-            {/* Line 4: Scale, MMF, Unit, Validity */}
+            {/* Line 3: Scale, MMF, Unit, Validity */}
             <div className="mt-3 grid grid-cols-4 gap-3">
               <ReadField label="Firm Scale" value={firmScale} />
               <ReadField label="MMF Fee" value={minMmfDisplay} />

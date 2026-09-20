@@ -24,7 +24,6 @@ export type RenewalExportData = {
   isNumber: string;
   cmLNumber: string;
   isTitle: string;
-  firmAddress: string;
   firmScale: string;
   mmfFee: string;
   unit: string;
@@ -89,7 +88,6 @@ function buildLicenseInfoGrid(data: RenewalExportData): string {
     ${infoField("Firm Name", data.clientName, true)}
     ${infoField("CM/L Number", data.cmLNumber)}
     ${infoField("Title of IS as per IS Number", isTitleAsPerNumber, true)}
-    ${infoField("Address of the Firm", data.firmAddress, true)}
     ${infoField("Firm Scale", data.firmScale)}
     ${infoField("MMF Fee", data.mmfFee)}
     ${infoField("Unit", data.unit)}
@@ -391,7 +389,6 @@ export async function downloadRenewalExcel(data: RenewalExportData): Promise<voi
       ? `${data.isNumber} — ${data.isTitle}`
       : data.isNumber || data.isTitle || "—",
   ]);
-  rows.push(["Address of the Firm", data.firmAddress]);
   rows.push(["Firm Scale", data.firmScale]);
   rows.push(["MMF Fee", data.mmfFee]);
   rows.push(["Unit", data.unit]);
