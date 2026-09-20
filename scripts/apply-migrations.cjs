@@ -30,7 +30,11 @@ async function main() {
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
   const client = new Client({
     connectionString: process.env.DATABASE_URL,
-    ssl: false,
+    // Inside Railway private network SSL is off; set DATABASE_SSL=true for public URLs.
+    ssl:
+      process.env.DATABASE_SSL === "true"
+        ? { rejectUnauthorized: false }
+        : false,
   });
   await client.connect();
   await client.query(`

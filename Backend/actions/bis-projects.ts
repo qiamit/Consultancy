@@ -26,6 +26,7 @@ import {
 import {
   DEFAULT_BIS_APPLICATION_STAGE,
   isBisApplicationStage,
+  normalizeBisApplicationStage,
   type BisApplicationStage,
 } from "@backend/modules/bis/application-stage";
 import { requireAdminProfile } from "@backend/modules/auth/profile";
@@ -848,17 +849,30 @@ export async function updateBisProjectNotes(
     "@backend/modules/bis/application-stage-auto"
   );
   const nextStage = resolveAutoApplicationStage(existing?.application_stage, notes);
+  const now = new Date().toISOString();
 
   const { error } = await supabase
     .from("bis_projects")
     .update({
       notes,
       application_stage: nextStage,
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     })
     .eq("id", trimmedId);
 
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    // If the stage check constraint is still on legacy labels, never block
+    // checklist saves — persist notes first, stage catches up after migrate.
+    const notesOnly = await supabase
+      .from("bis_projects")
+      .update({ notes, updated_at: now })
+      .eq("id", trimmedId);
+    if (notesOnly.error) return { ok: false, error: notesOnly.error.message };
+    return {
+      ok: true,
+      application_stage: normalizeBisApplicationStage(existing?.application_stage),
+    };
+  }
 
   // Notes are saved frequently from the application checklist modal; skip
   // revalidatePath so the dashboard and open modals are not refreshed.
