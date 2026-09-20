@@ -21,6 +21,38 @@ function loadEnvFile(filePath) {
   }
 }
 
+async function connectClient() {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL is missing");
+  }
+  const attempts = [
+    process.env.DATABASE_SSL === "true"
+      ? { rejectUnauthorized: false }
+      : false,
+    { rejectUnauthorized: false },
+    false,
+  ];
+  let lastError;
+  for (const ssl of attempts) {
+    const client = new Client({
+      connectionString: process.env.DATABASE_URL,
+      ssl,
+    });
+    try {
+      await client.connect();
+      return client;
+    } catch (e) {
+      lastError = e;
+      try {
+        await client.end();
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function main() {
   loadEnvFile(path.join(process.cwd(), ".env.local"));
   loadEnvFile(path.join(process.cwd(), "Frontend", ".env.local"));
@@ -28,15 +60,7 @@ async function main() {
 
   const dir = path.join("Backend", "db", "migrations");
   const files = fs.readdirSync(dir).filter((f) => f.endsWith(".sql")).sort();
-  const client = new Client({
-    connectionString: process.env.DATABASE_URL,
-    // Inside Railway private network SSL is off; set DATABASE_SSL=true for public URLs.
-    ssl:
-      process.env.DATABASE_SSL === "true"
-        ? { rejectUnauthorized: false }
-        : false,
-  });
-  await client.connect();
+  const client = await connectClient();
   await client.query(`
     create table if not exists public._railway_migrations (
       id text primary key,
