@@ -102,7 +102,7 @@ export default async function BisNewInclusionPage() {
       is_code_id: (r.is_code_id as string | null) ?? null,
       portal_user_id: (r.portal_user_id as string | null) ?? null,
       portal_password: (r.portal_password as string | null) ?? null,
-      application_stage: (r.application_stage as string | null) ?? "Draft",
+      application_stage: (r.application_stage as string | null) ?? "Under Preparation",
       notes: null,
       created_at: r.created_at as string | null,
       updated_at: (r.updated_at as string | null) ?? null,

@@ -876,14 +876,18 @@ function ApplicationFormModal({
   onClose,
   initialDoc = null,
   onDocChange,
+  onApplicationStageChange,
 }: {
   row: ApplicationRow;
   onClose: () => void;
   initialDoc?: string | null;
   onDocChange?: (doc: string | null) => void;
+  onApplicationStageChange?: (stage: BisApplicationStage) => void;
 }) {
   const { open: sidebarOpen } = useSidebarLayout();
   const [portalReady, setPortalReady] = useState(false);
+  const onApplicationStageChangeRef = useRef(onApplicationStageChange);
+  onApplicationStageChangeRef.current = onApplicationStageChange;
   const initialNotes = parseApplicationChecklistNotes(row.notes);
   const initialScope = parseBisProjectLicenseScopeNotes(row.notes);
   const [descOptions, setDescOptions] = useState<AppDropdownOptionRow[]>([]);
@@ -1444,6 +1448,14 @@ function ApplicationFormModal({
       if (saveGen !== notesSaveGenRef.current) return;
       if (!res.ok) {
         window.alert(`Could not save application data: ${res.error}`);
+        return;
+      }
+      if (
+        "application_stage" in res &&
+        res.application_stage &&
+        isBisApplicationStage(res.application_stage)
+      ) {
+        onApplicationStageChangeRef.current?.(res.application_stage);
       }
     });
   }, [row.id, row.source]);
@@ -3565,20 +3577,16 @@ function TargetDateCell({
 
 function applicationStageClass(stage: BisApplicationStage): string {
   switch (stage) {
-    case "Draft":
+    case "Under Preparation":
       return "border-zinc-300 bg-zinc-50 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200";
-    case "Submitted":
+    case "Test Request Done":
       return "border-sky-300 bg-sky-50 text-sky-800 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-300";
-    case "Query Done":
+    case "Report Uploaded":
       return "border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300";
-    case "Application Recorded":
+    case "Application Submitted":
       return "border-indigo-300 bg-indigo-50 text-indigo-800 dark:border-indigo-800 dark:bg-indigo-950/40 dark:text-indigo-300";
-    case "Inspection Planned":
-      return "border-violet-300 bg-violet-50 text-violet-800 dark:border-violet-800 dark:bg-violet-950/40 dark:text-violet-300";
     case "Inspection Done":
       return "border-teal-300 bg-teal-50 text-teal-800 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-300";
-    case "License Granted":
-      return "border-emerald-300 bg-emerald-50 text-emerald-800 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300";
     default:
       return "border-zinc-300 bg-zinc-50 text-zinc-700 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200";
   }
@@ -3656,7 +3664,7 @@ export function PendingApplicationsSection({
   const [search, setSearch] = useState("");
   const [stateFilter, setStateFilter] = useState("all");
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState<number>(PAGE_SIZE_OPTIONS[0]);
+  const [pageSize, setPageSize] = useState<number>(100);
   const [convertRow, setConvertRow] = useState<ApplicationRow | null>(null);
   const [addApplicationOpen, setAddApplicationOpen] = useState(false);
   const [viewRow, setViewRow] = useState<ApplicationRow | null>(null);
@@ -3678,8 +3686,12 @@ export function PendingApplicationsSection({
 
   const applyRow = useMemo(() => {
     if (!preparationId) return null;
-    return rows.find((r) => r.id === preparationId) ?? null;
-  }, [rows, preparationId]);
+    const base = rows.find((r) => r.id === preparationId) ?? null;
+    if (!base) return null;
+    const liveStage = applicationStages[base.id];
+    if (!liveStage) return base;
+    return { ...base, application_stage: liveStage };
+  }, [rows, preparationId, applicationStages]);
 
   const replaceQuery = useCallback(
     (mutate: (params: URLSearchParams) => void) => {
@@ -4392,6 +4404,9 @@ export function PendingApplicationsSection({
         initialDoc={preparationDoc}
         onDocChange={setPreparationDoc}
         onClose={closePreparation}
+        onApplicationStageChange={(stage) =>
+          setApplicationStages((prev) => ({ ...prev, [applyRow.id]: stage }))
+        }
       />
     )}
     {addApplicationOpen && !isExpired && !isInclusion && (

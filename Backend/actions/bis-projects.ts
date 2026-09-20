@@ -825,7 +825,9 @@ export async function updateBisProjectApplicationStage(
 export async function updateBisProjectNotes(
   projectId: string,
   notes: string,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+): Promise<
+  { ok: true; application_stage?: BisApplicationStage } | { ok: false; error: string }
+> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -835,16 +837,32 @@ export async function updateBisProjectNotes(
   const trimmedId = projectId?.trim();
   if (!trimmedId) return { ok: false, error: "Invalid project" };
 
+  const { data: existing, error: fetchError } = await supabase
+    .from("bis_projects")
+    .select("application_stage")
+    .eq("id", trimmedId)
+    .maybeSingle();
+  if (fetchError) return { ok: false, error: fetchError.message };
+
+  const { resolveAutoApplicationStage } = await import(
+    "@backend/modules/bis/application-stage-auto"
+  );
+  const nextStage = resolveAutoApplicationStage(existing?.application_stage, notes);
+
   const { error } = await supabase
     .from("bis_projects")
-    .update({ notes, updated_at: new Date().toISOString() })
+    .update({
+      notes,
+      application_stage: nextStage,
+      updated_at: new Date().toISOString(),
+    })
     .eq("id", trimmedId);
 
   if (error) return { ok: false, error: error.message };
 
   // Notes are saved frequently from the application checklist modal; skip
   // revalidatePath so the dashboard and open modals are not refreshed.
-  return { ok: true };
+  return { ok: true, application_stage: nextStage };
 }
 
 export async function convertApplicationToLicense(
@@ -898,7 +916,7 @@ export async function convertApplicationToLicense(
       project_kind: licenseKind,
       cm_l_digits: cmDigits,
       license_validity_date: trimmedDate,
-      application_stage: "License Granted",
+      application_stage: "Inspection Done",
       is_qe_managed: existing.is_qe_managed !== false,
       updated_at: new Date().toISOString(),
     })
@@ -1488,7 +1506,7 @@ export async function completeInclusionCase(
           ? `CM/L-${inclusionCm}`
           : String(inclusion.license_number ?? "").trim() || null,
       license_validity_date: null,
-      application_stage: "License Granted",
+      application_stage: "Inspection Done",
       status: "completed",
       updated_at: now,
     })
