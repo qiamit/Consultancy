@@ -81,11 +81,14 @@ function infoField(label: string, value: string, wide = false): string {
 }
 
 function buildLicenseInfoGrid(data: RenewalExportData): string {
+  const isTitleAsPerNumber =
+    data.isNumber && data.isTitle && data.isTitle !== "—"
+      ? `${data.isNumber} — ${data.isTitle}`
+      : data.isNumber || data.isTitle || "—";
   return `<div class="info-grid">
     ${infoField("Firm Name", data.clientName, true)}
-    ${infoField("IS Number", data.isNumber)}
     ${infoField("CM/L Number", data.cmLNumber)}
-    ${infoField("Title of IS", data.isTitle, true)}
+    ${infoField("Title of IS as per IS Number", isTitleAsPerNumber, true)}
     ${infoField("Address of the Firm", data.firmAddress, true)}
     ${infoField("Firm Scale", data.firmScale)}
     ${infoField("MMF Fee", data.mmfFee)}
@@ -381,9 +384,13 @@ export async function downloadRenewalExcel(data: RenewalExportData): Promise<voi
   rows.push(["License Information"]);
   rows.push(["Field", "Value"]);
   rows.push(["Firm Name", data.clientName]);
-  rows.push(["IS Number", data.isNumber]);
   rows.push(["CM/L Number", data.cmLNumber]);
-  rows.push(["Title of IS", data.isTitle]);
+  rows.push([
+    "Title of IS as per IS Number",
+    data.isNumber && data.isTitle && data.isTitle !== "—"
+      ? `${data.isNumber} — ${data.isTitle}`
+      : data.isNumber || data.isTitle || "—",
+  ]);
   rows.push(["Address of the Firm", data.firmAddress]);
   rows.push(["Firm Scale", data.firmScale]);
   rows.push(["MMF Fee", data.mmfFee]);

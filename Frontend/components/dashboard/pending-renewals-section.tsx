@@ -64,6 +64,34 @@ function formatIsDisplay(isNumber: string | null, revisionYear: number | null): 
   return revisionYear ? `${isNumber}: ${revisionYear}` : isNumber;
 }
 
+/** Repair common UTF-8 mojibake in IS titles (e.g. em-dash shown as ã¢â‚¬â€). */
+function sanitizeIsTitle(title: string | null | undefined): string {
+  const raw = String(title ?? "").trim();
+  if (!raw) return "";
+  return raw
+    .replace(/ã¢â‚¬â€œ/gi, "–")
+    .replace(/ã¢â‚¬â€/gi, "—")
+    .replace(/â€“/g, "–")
+    .replace(/â€”/g, "—")
+    .replace(/â€™/g, "'")
+    .replace(/â€œ|â€/g, '"');
+}
+
+/** Combined label value: "IS 2002: 2024 — Steel Plate for …" */
+function formatIsTitleAsPerNumber(
+  isNumber: string | null,
+  revisionYear: number | null,
+  title: string | null | undefined,
+): string {
+  const isLabel = formatIsDisplay(isNumber, revisionYear);
+  const cleanTitle = sanitizeIsTitle(title);
+  if (!cleanTitle || cleanTitle === "—" || cleanTitle === "Loading…") {
+    return isLabel;
+  }
+  if (isLabel === "—") return cleanTitle;
+  return `${isLabel} — ${cleanTitle}`;
+}
+
 function formatCmLDisplay(projectKind: string, cmDigits: string | null): string {
   return formatCmDisplay(projectKind, cmDigits);
 }
@@ -937,7 +965,7 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
       clientName: row.client_name,
       isNumber: formatIsDisplay(row.is_number, row.is_revision_year),
       cmLNumber: formatCmLDisplay(row.project_kind, row.cm_l_digits),
-      isTitle: isCodeTitle,
+      isTitle: sanitizeIsTitle(isCodeTitle) || isCodeTitle,
       firmAddress,
       firmScale,
       mmfFee: minMmfDisplay,
@@ -1024,18 +1052,25 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
               <span className="rounded bg-zinc-100 px-1.5 py-0.5 text-[10px] font-semibold text-zinc-400 dark:bg-zinc-800">Auto-filled</span>
             </div>
 
-            {/* Line 1: Firm Name (2/4), IS + CM/L (1/4 each) */}
+            {/* Line 1: Firm Name + CM/L */}
             <div className="grid grid-cols-4 gap-3">
-              <div className="col-span-2">
+              <div className="col-span-3">
                 <ReadField label="Firm Name" value={row.client_name} />
               </div>
-              <ReadField label="IS Number" value={formatIsDisplay(row.is_number, row.is_revision_year)} mono />
               <ReadField label="CM/L Number" value={formatCmLDisplay(row.project_kind, row.cm_l_digits)} mono />
             </div>
 
-            {/* Line 2: IS Title */}
+            {/* Line 2: IS number + title combined */}
             <div className="mt-3">
-              <ReadField label="Title of IS" value={isCodeTitle} />
+              <ReadField
+                label="Title of IS as per IS Number"
+                value={
+                  isCodeTitle === "Loading…"
+                    ? "Loading…"
+                    : formatIsTitleAsPerNumber(row.is_number, row.is_revision_year, isCodeTitle)
+                }
+                wrap
+              />
             </div>
 
             {/* Line 3: Address */}
