@@ -14,7 +14,10 @@ import {
   VerticalAlign,
   WidthType,
 } from "docx";
-import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
+import {
+  buildWorkbookBuffer,
+  downloadStyledImportTemplate,
+} from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import { rowHasContent, type Cmpf305MachineryStored } from "@backend/modules/bis/cmpf-305";
 import {
@@ -740,31 +743,30 @@ export async function downloadCmpf305Excel(data: Cmpf305LetterData): Promise<voi
   );
 }
 
-export async function downloadCmpf305ImportTemplate(): Promise<void> {
-  const rows: (string | number)[][] = [
-    ["Machinery Name", "Make", "Production Capacity / Day", "Number", "Remarks"],
-    ["Example Mixer", "ABC Make", "100 MT", "2 Nos", "Working condition"],
-    ["Weighing Scale", "FIE", "—", "1 Nos", ""],
+export async function downloadCmpf305ImportTemplate(
+  machinery: Cmpf305MachineryStored[] = [],
+): Promise<void> {
+  const headers = [
+    "Machinery Name",
+    "Make",
+    "Production Capacity / Day",
+    "Number",
+    "Remarks",
   ];
-
-  const buffer = await buildWorkbookBuffer([
-    {
-      name: "Plant Machinery",
-      rows,
-      cols: [
-        { wch: 32 },
-        { wch: 14 },
-        { wch: 24 },
-        { wch: 10 },
-        { wch: 20 },
-      ],
-    },
+  const filled = machinery.filter(rowHasContent);
+  const dataRows = filled.map((row) => [
+    row.machinery_name,
+    row.make,
+    row.production_capacity_per_day,
+    row.number,
+    row.remarks,
   ]);
 
-  triggerBlobDownload(
-    new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-    "CMPF305_Import_Template.xlsx",
-  );
+  await downloadStyledImportTemplate({
+    sheetName: "Plant Machinery",
+    headers,
+    dataRows,
+    columnWidths: [32, 14, 24, 10, 22],
+    filename: "CMPF305_Import_Template.xlsx",
+  });
 }

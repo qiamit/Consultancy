@@ -306,7 +306,7 @@ export function Cmpf306Modal({
   }
 
   function handleDownloadImportTemplate() {
-    void downloadCmpf306ImportTemplate().catch(() =>
+    void downloadCmpf306ImportTemplate(previewDocument.equipment).catch(() =>
       window.alert("Unable to download import template."),
     );
   }

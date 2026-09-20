@@ -300,7 +300,7 @@ export function Cmpf305Modal({
   }
 
   function handleDownloadImportTemplate() {
-    void downloadCmpf305ImportTemplate().catch(() =>
+    void downloadCmpf305ImportTemplate(storedFromEditor(rows)).catch(() =>
       window.alert("Unable to download import template."),
     );
   }

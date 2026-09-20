@@ -14,7 +14,10 @@ import {
   VerticalAlign,
   WidthType,
 } from "docx";
-import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
+import {
+  buildWorkbookBuffer,
+  downloadStyledImportTemplate,
+} from "@backend/shared/spreadsheet/excel";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import {
   CMPF306_SEPARATE_SHEET_LABEL,
@@ -791,57 +794,34 @@ export async function downloadCmpf306Excel(data: Cmpf306LetterData): Promise<voi
   );
 }
 
-export async function downloadCmpf306ImportTemplate(): Promise<void> {
-  const rows: (string | number)[][] = [
-    [
-      "Test Equipment Name",
-      "Make",
-      "Least Count",
-      "Range",
-      "Calibration",
-      "Clause No.",
-      "Quantity",
-    ],
-    [
-      "Universal Testing Machine with Bending Attachment",
-      "ABC Make",
-      "0.01 kN",
-      "0–100 kN",
-      "Yes",
-      "9.3",
-      "1 Nos",
-    ],
-    [
-      "Vernier Caliper",
-      "Mitutoyo",
-      "0.01 mm",
-      "0–150 mm",
-      "Yes",
-      "9.3",
-      "1 Nos",
-    ],
+export async function downloadCmpf306ImportTemplate(
+  equipment: Cmpf306EquipmentStored[] = [],
+): Promise<void> {
+  const headers = [
+    "Test Equipment Name",
+    "Make",
+    "Least Count",
+    "Range",
+    "Calibration",
+    "Clause No.",
+    "Quantity",
   ];
-
-  const buffer = await buildWorkbookBuffer([
-    {
-      name: "Test Equipment",
-      rows,
-      cols: [
-        { wch: 36 },
-        { wch: 14 },
-        { wch: 12 },
-        { wch: 12 },
-        { wch: 14 },
-        { wch: 10 },
-        { wch: 10 },
-      ],
-    },
+  const filled = equipment.filter(equipmentRowHasContent);
+  const dataRows = filled.map((row) => [
+    row.equipment_name,
+    row.make,
+    row.least_count,
+    row.range,
+    row.calibration_details,
+    row.clause_number,
+    row.quantity,
   ]);
 
-  triggerBlobDownload(
-    new Blob([buffer], {
-      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }),
-    "CMPF306_Import_Template.xlsx",
-  );
+  await downloadStyledImportTemplate({
+    sheetName: "Test Equipment",
+    headers,
+    dataRows,
+    columnWidths: [36, 14, 12, 12, 16, 12, 10],
+    filename: "CMPF306_Import_Template.xlsx",
+  });
 }

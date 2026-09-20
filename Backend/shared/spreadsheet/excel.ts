@@ -164,6 +164,73 @@ export async function buildWorkbookBuffer(
   return buffer as ArrayBuffer;
 }
 
+const IMPORT_TEMPLATE_BORDER: Partial<ExcelJS.Borders> = {
+  top: { style: "thin", color: { argb: "FF94A3B8" } },
+  left: { style: "thin", color: { argb: "FF94A3B8" } },
+  bottom: { style: "thin", color: { argb: "FF94A3B8" } },
+  right: { style: "thin", color: { argb: "FF94A3B8" } },
+};
+
+/**
+ * Styled import/export table: header row + optional data rows.
+ * When `dataRows` is empty, only column headers are written (blank sheet).
+ */
+export async function downloadStyledImportTemplate(opts: {
+  sheetName: string;
+  headers: string[];
+  dataRows: (string | number)[][];
+  columnWidths: number[];
+  filename: string;
+}): Promise<void> {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Consultancy Pro";
+  workbook.created = new Date();
+
+  const worksheet = workbook.addWorksheet(opts.sheetName.slice(0, 31), {
+    views: [{ state: "frozen", ySplit: 1, showGridLines: false }],
+  });
+
+  opts.columnWidths.forEach((width, index) => {
+    worksheet.getColumn(index + 1).width = width;
+  });
+
+  const headerRow = worksheet.getRow(1);
+  opts.headers.forEach((header, index) => {
+    const cell = headerRow.getCell(index + 1);
+    cell.value = header;
+    cell.font = { bold: true, size: 11, color: { argb: "FF0F172A" } };
+    cell.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFE2E8F0" },
+    };
+    cell.border = IMPORT_TEMPLATE_BORDER;
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+  });
+  headerRow.height = 28;
+
+  opts.dataRows.forEach((rowValues, rowIndex) => {
+    const excelRow = worksheet.getRow(rowIndex + 2);
+    opts.headers.forEach((_, colIndex) => {
+      const cell = excelRow.getCell(colIndex + 1);
+      const value = rowValues[colIndex];
+      cell.value = value === undefined || value === null ? "" : value;
+      cell.font = { size: 10, color: { argb: "FF0F172A" } };
+      cell.border = IMPORT_TEMPLATE_BORDER;
+      cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+    });
+    excelRow.height = 22;
+  });
+
+  const filterEndRow = Math.max(1, opts.dataRows.length + 1);
+  worksheet.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: filterEndRow, column: opts.headers.length },
+  };
+
+  await downloadWorkbook(workbook, opts.filename);
+}
+
 export async function downloadWorkbook(
   workbook: ExcelJS.Workbook,
   filename: string,
