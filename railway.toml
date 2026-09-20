@@ -3,9 +3,9 @@ builder = "RAILPACK"
 buildCommand = "npm ci && npm run build"
 
 [deploy]
-# Apply pending SQL migrations automatically before serving traffic.
-releaseCommand = "npm run migrate"
-startCommand = "npm run start"
+# Run migrations at boot (non-blocking for old DBs). Prefer start over
+# releaseCommand so a one-off migrate hiccup does not fail the whole deploy.
+startCommand = "npm run migrate; npm run start"
 healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

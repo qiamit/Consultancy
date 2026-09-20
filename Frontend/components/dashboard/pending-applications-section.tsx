@@ -1450,12 +1450,12 @@ function ApplicationFormModal({
         window.alert(`Could not save application data: ${res.error}`);
         return;
       }
-      if (
-        "application_stage" in res &&
-        res.application_stage &&
-        isBisApplicationStage(res.application_stage)
-      ) {
-        onApplicationStageChangeRef.current?.(res.application_stage);
+      const stage =
+        "application_stage" in res && typeof res.application_stage === "string"
+          ? res.application_stage
+          : null;
+      if (stage && isBisApplicationStage(stage)) {
+        onApplicationStageChangeRef.current?.(stage);
       }
     });
   }, [row.id, row.source]);
