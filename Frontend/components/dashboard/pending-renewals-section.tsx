@@ -26,8 +26,11 @@ import { convertLicenseToApplication } from "@backend/actions/bis-projects";
 import {
   downloadRenewalExcel,
   openRenewalPrintWindow,
+  buildRenewalPrintHtml,
+  renewalExportFilenameBase,
   type RenewalExportData,
 } from "@backend/modules/bis/renewal-form-export";
+import { downloadPrintHtmlAsPdf } from "@/lib/download-print-pdf";
 import { createClient } from "@backend/db/client/client";
 import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import { useGoPageDraft } from "@/components/modules/finance/use-finance-master-state";
@@ -1016,6 +1019,19 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
     );
   }
 
+  function handleDownloadPdf() {
+    setSaveError(null);
+    const data = buildExportData();
+    void downloadPrintHtmlAsPdf({
+      html: buildRenewalPrintHtml(data, { autoPrint: false }),
+      filename: `${renewalExportFilenameBase(data)}.pdf`,
+      settings: { paper_size: "A4", orientation: "landscape" },
+    }).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : "Unable to download PDF.";
+      setSaveError(msg);
+    });
+  }
+
   return (
     <div
       className={`fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/50 p-4 backdrop-blur-sm ${
@@ -1424,6 +1440,13 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
               className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               Take Print
+            </button>
+            <button
+              type="button"
+              onClick={handleDownloadPdf}
+              className="rounded-lg border border-violet-300 px-4 py-2 text-sm font-semibold text-violet-700 hover:bg-violet-50 dark:border-violet-700 dark:text-violet-300 dark:hover:bg-violet-950/30"
+            >
+              Download PDF
             </button>
             <button
               type="button"
