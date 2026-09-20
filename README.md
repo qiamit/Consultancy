@@ -59,6 +59,8 @@ Production app URL: https://qengineering.in (also https://consultancy-production
 ```text
 Frontend/     Next.js UI — app routes, components, public assets
 Backend/      Server domain — actions, modules, shared utils, DB migrations
+pdf-service/  Playwright Chromium PDF renderer (Railway service)
+scripts/      Ops only — migrations, admin promote, one-time Excel imports
 ```
 
 - [`Frontend/app/`](Frontend/app/) — Routes: marketing, auth, `/dashboard/*`, API routes
@@ -67,7 +69,18 @@ Backend/      Server domain — actions, modules, shared utils, DB migrations
 - [`Backend/db/`](Backend/db/) — Postgres pool, session auth, migrations
 - [`Backend/modules/`](Backend/modules/) — Domain helpers (BIS, finance, email, print, …)
 - [`Backend/shared/`](Backend/shared/) — Shared types, validation, constants
+- [`scripts/`](scripts/) — See [`scripts/README.md`](scripts/README.md) (not needed at runtime)
+
+## Production
+
+| URL | Role |
+|-----|------|
+| https://qengineering.in | Primary custom domain |
+| https://www.qengineering.in | WWW |
+| https://consultancy-production-9720.up.railway.app | Railway default host |
+
+GitHub `master` → Railway **Consultancy** auto-deploy.
 
 ## License
 
-Private — your consultancy use only unless you choose otherwise.
+Private — Consultancy Pro use only unless you choose otherwise.

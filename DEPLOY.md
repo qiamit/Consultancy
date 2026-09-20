@@ -1,4 +1,4 @@
-# Deploy checklist (Railway)
+# Deploy checklist (Railway) — Consultancy Pro
 
 ## Railway project
 
@@ -6,6 +6,7 @@
 - App service: **Consultancy** → https://consultancy-production-9720.up.railway.app
 - Postgres: **Postgres-MC1Y** → injects `DATABASE_URL`
 - Custom domain: `qengineering.in` / `www.qengineering.in`
+- Source: GitHub `qiamit/Consultancy` branch `master` (auto-deploy on push)
 
 ## App environment (Consultancy service)
 
@@ -21,6 +22,7 @@
 | `RESEND_FROM_EMAIL` | Default from, e.g. `info@qengineering.in` |
 | `RESEND_FROM_NAME` | Display name, e.g. `Q Engineering` |
 | `RESEND_FROM_DOMAIN` | Verified domain, e.g. `qengineering.in` |
+| `PDF_SERVICE_URL` | Internal pdf-service URL (Railway) when used server-side |
 
 Optional AI / Maps keys: see [`.env.example`](.env.example).
 
