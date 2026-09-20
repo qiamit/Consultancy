@@ -679,14 +679,19 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
     fetchRenewalApplication(row.id).then((app) => {
       if (!app) return;
       if (app.id) setApplicationId(app.id);
-      if (app.marking_fee_rate != null) setUnitRate(String(app.marking_fee_rate));
+      // Treat 0 as unset so IS-code slab rate can auto-fill.
+      if (app.marking_fee_rate != null && Number(app.marking_fee_rate) > 0) {
+        setUnitRate(String(app.marking_fee_rate));
+      }
 
       const snapshot = parseRenewalFormSnapshot(app.notes);
       if (!snapshot) return;
 
       if (snapshot.periodFrom) setPeriodFrom(snapshot.periodFrom);
       if (snapshot.periodTo) setPeriodTo(snapshot.periodTo);
-      if (snapshot.unitRate) setUnitRate(snapshot.unitRate);
+      if (snapshot.unitRate && parseDecimal(snapshot.unitRate) > 0) {
+        setUnitRate(snapshot.unitRate);
+      }
       if (snapshot.renewalYears) setRenewalYears(snapshot.renewalYears);
       if (snapshot.lateFee != null) setLateFee(snapshot.lateFee);
       if (snapshot.previousDues != null) setPreviousDues(snapshot.previousDues);
@@ -695,6 +700,13 @@ function RenewalFormModal({ row, onClose }: { row: RenewalRow; onClose: () => vo
       if (snapshot.tableGenerated) setTableGenerated(snapshot.tableGenerated);
     });
   }, [row.id]);
+
+  // Auto-fill Unit Rate from IS Code slab_1_rate (same source as CMPF-310 / MMF calc).
+  useEffect(() => {
+    const rate = isCodeDetail?.slab_1_rate;
+    if (rate == null || !Number.isFinite(Number(rate)) || Number(rate) <= 0) return;
+    setUnitRate((prev) => (parseDecimal(prev) > 0 ? prev : String(rate)));
+  }, [isCodeDetail]);
 
   const isCodeTitle = isCodeDetail?.is_code_title ?? (row.is_code_id ? "Loading…" : "—");
   const minMmfDisplay = mmfForScale(firmScale, isCodeDetail);
