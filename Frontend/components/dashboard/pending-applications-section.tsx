@@ -3785,7 +3785,7 @@ export function PendingApplicationsSection({
   const isExpired = variant === "expired_licenses";
   const isInclusion = variant === "inclusion";
   const grandTotal = visibleRows.length;
-  const tableColCount = isExpired ? 7 : isInclusion ? 9 : 7;
+  const tableColCount = isExpired ? 7 : isInclusion ? 8 : 7;
   const pageRowIds = paginated.map((r) => r.id);
   const allPageSelected =
     pageRowIds.length > 0 && pageRowIds.every((id) => selectedIds.has(id));
@@ -4049,7 +4049,7 @@ export function PendingApplicationsSection({
           </p>
         ) : (
           <table
-            className={`dashboard-section-table w-full text-sm ${isExpired ? "min-w-[860px]" : "min-w-[1120px]"}`}
+            className={`dashboard-section-table w-full text-sm ${isExpired ? "min-w-[860px]" : "min-w-[980px]"}`}
           >
             <thead className="border-b border-zinc-100 bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-800/60">
               <tr>
@@ -4081,9 +4081,6 @@ export function PendingApplicationsSection({
                 )}
                 {isExpired && (
                   <th className="px-4 py-2.5 text-left text-xs font-semibold text-zinc-500 dark:text-zinc-400">License Validity</th>
-                )}
-                {isInclusion && (
-                  <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Complete Inclusion</th>
                 )}
                 <th className="px-4 py-2.5 text-center text-xs font-semibold text-zinc-500 dark:text-zinc-400">Action</th>
               </tr>
@@ -4170,44 +4167,6 @@ export function PendingApplicationsSection({
                       {formatDate(r.license_validity_date)}
                     </td>
                   )}
-                  {isInclusion && (
-                    <td className="px-4 py-3 text-center">
-                      {inclusionDone ? (
-                        <span className="inline-flex items-center gap-1 rounded-lg border border-zinc-200 bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                          Completed
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          title="Merge inclusion scope into the existing license (no new CM/L, no validity change)"
-                          disabled={
-                            isCompletingInclusion && completingInclusionId === r.id
-                          }
-                          onClick={() => {
-                            setCompleteInclusionError(null);
-                            setCompletingInclusionId(r.id);
-                            startCompleteInclusion(async () => {
-                              const res = await completeInclusionCase(r.id);
-                              setCompletingInclusionId(null);
-                              if (!res.ok) {
-                                setCompleteInclusionError(res.error);
-                                return;
-                              }
-                              router.refresh();
-                            });
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg border border-teal-300 bg-teal-50 px-3 py-1.5 text-xs font-semibold text-teal-800 hover:bg-teal-100 disabled:opacity-50 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-200 dark:hover:bg-teal-950/50"
-                        >
-                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                          </svg>
-                          {isCompletingInclusion && completingInclusionId === r.id
-                            ? "Completing…"
-                            : "Complete"}
-                        </button>
-                      )}
-                    </td>
-                  )}
                   <td className="px-4 py-3 text-center">
                     {isExpired ? (
                       <button
@@ -4235,7 +4194,44 @@ export function PendingApplicationsSection({
                               <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                             </svg>
                           </button>
-                        ) : null}
+                        ) : inclusionDone ? (
+                          <span
+                            title="Inclusion completed"
+                            aria-label="Inclusion completed"
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-zinc-100 text-zinc-500 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-400"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            title="Complete Inclusion — merge scope into existing license"
+                            aria-label="Complete Inclusion"
+                            disabled={
+                              isCompletingInclusion && completingInclusionId === r.id
+                            }
+                            onClick={() => {
+                              setCompleteInclusionError(null);
+                              setCompletingInclusionId(r.id);
+                              startCompleteInclusion(async () => {
+                                const res = await completeInclusionCase(r.id);
+                                setCompletingInclusionId(null);
+                                if (!res.ok) {
+                                  setCompleteInclusionError(res.error);
+                                  return;
+                                }
+                                router.refresh();
+                              });
+                            }}
+                            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-teal-300 bg-teal-50 text-teal-800 hover:bg-teal-100 disabled:opacity-50 dark:border-teal-800 dark:bg-teal-950/30 dark:text-teal-200 dark:hover:bg-teal-950/50"
+                          >
+                            <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                            </svg>
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => openPreparation(r)}
