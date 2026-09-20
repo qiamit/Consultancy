@@ -3633,6 +3633,9 @@ function ApplicationStageCell({
           </option>
         ))}
       </select>
+      {saving ? (
+        <p className="mt-1 text-[10px] text-zinc-500 dark:text-zinc-400">Updating…</p>
+      ) : null}
       {error ? (
         <p className="mt-1 text-[10px] text-red-600 dark:text-red-400">{error}</p>
       ) : null}
