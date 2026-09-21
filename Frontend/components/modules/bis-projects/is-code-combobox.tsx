@@ -42,6 +42,7 @@ export function IsCodeCombobox({
   hideLabel = false,
   inputId: inputIdProp,
   placeholder = "Type IS Number…",
+  maxListItems = 120,
 }: {
   name: string;
   label: string;
@@ -57,6 +58,8 @@ export function IsCodeCombobox({
   /** When `hideLabel`, must match the external `<label htmlFor>`. */
   inputId?: string;
   placeholder?: string;
+  /** Max rows shown in the dropdown (default 120). */
+  maxListItems?: number;
 }) {
   const generatedInputId = useId();
   const inputId = inputIdProp ?? generatedInputId;
@@ -84,14 +87,15 @@ export function IsCodeCombobox({
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return options.slice(0, 120);
+    const limit = Math.max(1, maxListItems);
+    if (!q) return options.slice(0, limit);
     return options
       .filter((o) => {
         const hay = `${o.filterText ?? ""} ${o.label}`.toLowerCase();
         return hay.includes(q);
       })
-      .slice(0, 120);
-  }, [options, query]);
+      .slice(0, limit);
+  }, [options, query, maxListItems]);
 
   const inputValue = listOpen ? query : selectedLabel;
   const safeHighlight =

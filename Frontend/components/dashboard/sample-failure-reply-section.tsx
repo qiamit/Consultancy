@@ -195,10 +195,20 @@ function SampleFailureAddModal({
 
   const firmOptions: IsCodeComboboxOption[] = useMemo(
     () =>
-      clients.map((c) => {
-        const label = (c.company_name ?? c.name).trim() || "Unnamed firm";
-        return { id: c.id, label, filterText: `${label} ${c.name}` };
-      }),
+      clients
+        .map((c) => {
+          const company = (c.company_name ?? "").trim();
+          const name = (c.name ?? "").trim();
+          const label = company || name || "Unnamed firm";
+          return {
+            id: c.id,
+            label,
+            filterText: [company, name].filter(Boolean).join(" "),
+          };
+        })
+        .sort((a, b) =>
+          a.label.localeCompare(b.label, undefined, { sensitivity: "base" }),
+        ),
     [clients],
   );
 
@@ -229,8 +239,8 @@ function SampleFailureAddModal({
     void supabase
       .from("clients")
       .select("id, name, company_name")
-      .order("company_name", { ascending: true })
-      .limit(500)
+      .order("company_name", { ascending: true, nullsFirst: false })
+      .order("name", { ascending: true })
       .then(({ data }) => {
         if (cancelled) return;
         setClients((data ?? []) as ClientOption[]);
@@ -258,7 +268,7 @@ function SampleFailureAddModal({
       .neq("project_kind", "application")
       .not("is_code_id", "is", null)
       .order("created_at", { ascending: false })
-      .limit(100)
+      .limit(500)
       .then(({ data }) => {
         if (cancelled) return;
         const seen = new Set<string>();
@@ -389,6 +399,7 @@ function SampleFailureAddModal({
                 disabled={clientsLoading}
                 placeholder={clientsLoading ? "Loading firms…" : "Type to search firm…"}
                 listZIndexClass="z-[310]"
+                maxListItems={2000}
               />
             </div>
 
@@ -422,6 +433,7 @@ function SampleFailureAddModal({
               disabled={!clientId || isCodesLoading}
               placeholder={isCodePlaceholder}
               listZIndexClass="z-[310]"
+              maxListItems={500}
             />
           </div>
 
