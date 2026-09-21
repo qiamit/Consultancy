@@ -130,6 +130,69 @@ export async function addSampleFailureReply(
   return { ok: true, id: replyId };
 }
 
+export async function updateSampleFailureReply(
+  replyId: string,
+  input: AddSampleFailureReplyInput,
+  formData?: FormData,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const id = replyId.trim();
+  if (!id) return { ok: false, error: "Missing reply id." };
+
+  const clientId = input.client_id.trim();
+  const isCodeId = input.is_code_id.trim();
+  const sampleCode = input.sample_code.trim();
+  const sampleQr = input.sample_qr_code.trim();
+  const failureType = input.sample_failure_type;
+
+  if (!clientId) return { ok: false, error: "Firm name is required." };
+  if (!isCodeId) return { ok: false, error: "IS Code is required." };
+  if (!isSampleFailureType(failureType)) {
+    return { ok: false, error: "Select a valid type of sample failure." };
+  }
+  if (!sampleCode) return { ok: false, error: "Sample Code is required." };
+
+  const auth = await requireUser();
+  if (!auth.ok || !auth.user) return { ok: false, error: auth.error };
+  const { supabase, user } = auth;
+
+  const patch: Record<string, unknown> = {
+    client_id: clientId,
+    is_code_id: isCodeId,
+    bis_project_id: input.bis_project_id,
+    cm_l_digits: input.cm_l_digits,
+    project_kind: input.project_kind,
+    sample_failure_type: failureType,
+    sample_code: sampleCode,
+    sample_qr_code: sampleQr,
+    notes: (input.notes ?? "").trim(),
+  };
+
+  const failureFile = formData?.get("failure_letter");
+  if (failureFile instanceof File && failureFile.size > 0) {
+    const uploaded = await uploadReplyFile(
+      supabase,
+      user.id,
+      id,
+      "failure-letter",
+      failureFile,
+    );
+    if (!uploaded.ok) return uploaded;
+    patch.failure_letter_path = uploaded.path;
+    patch.failure_letter_name = uploaded.name;
+  }
+
+  const { error } = await supabase
+    .from("bis_sample_failure_replies")
+    .update(patch)
+    .eq("id", id);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath(PAGE_PATH);
+  revalidatePath("/dashboard");
+  return { ok: true };
+}
+
 export async function updateSampleFailureReplyDraft(
   replyId: string,
   replyDraft: string,

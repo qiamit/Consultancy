@@ -8,13 +8,14 @@ import { formatDisplayDate } from "@backend/shared/format-date";
 import {
   SAMPLE_FAILURE_TYPES,
   SAMPLE_FAILURE_TYPE_LABELS,
+  isSampleFailureType,
   sampleFailureTypeLabel,
   type SampleFailureType,
 } from "@backend/modules/bis/sample-failure-reply";
 import {
   addSampleFailureReply,
-  deleteSampleFailureReply,
   signSampleFailureDocumentDownload,
+  updateSampleFailureReply,
   updateSampleFailureReplyDraft,
   uploadSampleFailureReplyDocument,
   type AddSampleFailureReplyInput,
@@ -117,25 +118,43 @@ async function openSignedDoc(path: string | null) {
 
 function SampleFailureAddModal({
   onClose,
-  onAdded,
+  onSaved,
+  editRow = null,
 }: {
   onClose: () => void;
-  onAdded: () => void;
+  onSaved: () => void;
+  editRow?: SampleFailureReplyRow | null;
 }) {
+  const isEdit = Boolean(editRow);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [clientsLoading, setClientsLoading] = useState(true);
-  const [clientId, setClientId] = useState("");
-  const [isCodeId, setIsCodeId] = useState("");
+  const [clientId, setClientId] = useState(editRow?.client_id ?? "");
+  const [isCodeId, setIsCodeId] = useState(editRow?.is_code_id ?? "");
   const [isCodes, setIsCodes] = useState<IsCodeOption[]>([]);
   const [isCodesLoading, setIsCodesLoading] = useState(false);
-  const [licenseMatch, setLicenseMatch] = useState<LicenseMatch | null>(null);
-  const [failureType, setFailureType] = useState<SampleFailureType | "">("");
-  const [sampleCode, setSampleCode] = useState("");
-  const [sampleQr, setSampleQr] = useState("");
-  const [notes, setNotes] = useState("");
+  const [licenseMatch, setLicenseMatch] = useState<LicenseMatch | null>(() =>
+    editRow
+      ? {
+          id: editRow.bis_project_id ?? "",
+          cm_l_digits: editRow.cm_l_digits,
+          project_kind: editRow.project_kind ?? "licence",
+          portal_user_id: editRow.portal_user_id,
+          portal_password: editRow.portal_password,
+        }
+      : null,
+  );
+  const [failureType, setFailureType] = useState<SampleFailureType | "">(
+    isSampleFailureType(editRow?.sample_failure_type ?? "")
+      ? (editRow!.sample_failure_type as SampleFailureType)
+      : "",
+  );
+  const [sampleCode, setSampleCode] = useState(editRow?.sample_code ?? "");
+  const [sampleQr, setSampleQr] = useState(editRow?.sample_qr_code ?? "");
+  const [notes, setNotes] = useState(editRow?.notes ?? "");
   const [failureLetter, setFailureLetter] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const skipClearOnFirmLoad = useRef(isEdit);
 
   const firmOptions: IsCodeComboboxOption[] = useMemo(
     () =>
@@ -196,8 +215,13 @@ function SampleFailureAddModal({
   }, []);
 
   useEffect(() => {
-    setIsCodeId("");
-    setLicenseMatch(null);
+    const preserveSelection = skipClearOnFirmLoad.current;
+    if (preserveSelection) {
+      skipClearOnFirmLoad.current = false;
+    } else {
+      setIsCodeId("");
+      setLicenseMatch(null);
+    }
     if (!clientId) {
       setIsCodes([]);
       return;
@@ -239,8 +263,10 @@ function SampleFailureAddModal({
   }, [clientId]);
 
   useEffect(() => {
-    setLicenseMatch(null);
-    if (!clientId || !isCodeId) return;
+    if (!clientId || !isCodeId) {
+      if (!isEdit || !isCodeId) setLicenseMatch(null);
+      return;
+    }
     let cancelled = false;
     const supabase = createClient();
     void supabase
@@ -266,7 +292,7 @@ function SampleFailureAddModal({
     return () => {
       cancelled = true;
     };
-  }, [clientId, isCodeId]);
+  }, [clientId, isCodeId, isEdit]);
 
   const cmDisplay = licenseMatch
     ? formatCmDisplay(licenseMatch.project_kind, licenseMatch.cm_l_digits)
@@ -286,7 +312,11 @@ function SampleFailureAddModal({
       setError("Select type of sample failure.");
       return;
     }
-    if (!failureLetter) {
+    if (!sampleCode.trim()) {
+      setError("Sample Code is required.");
+      return;
+    }
+    if (!isEdit && !failureLetter) {
       setError("Attach Sample Failure Letter.");
       return;
     }
@@ -306,15 +336,20 @@ function SampleFailureAddModal({
     };
 
     const formData = new FormData();
-    formData.append("failure_letter", failureLetter);
+    if (failureLetter) {
+      formData.append("failure_letter", failureLetter);
+    }
 
-    const result = await addSampleFailureReply(payload, formData);
+    const result = isEdit && editRow
+      ? await updateSampleFailureReply(editRow.id, payload, formData)
+      : await addSampleFailureReply(payload, formData);
+
     if (!result.ok) {
       setError(result.error);
       setSaving(false);
       return;
     }
-    onAdded();
+    onSaved();
     onClose();
   }
 
@@ -323,7 +358,7 @@ function SampleFailureAddModal({
       <div className="my-6 w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <div className="border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
           <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
-            Add CML — Sample Failure
+            {isEdit ? "Edit CML — Sample Failure" : "Add CML — Sample Failure"}
           </h2>
         </div>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4 px-5 py-4">
@@ -427,10 +462,15 @@ function SampleFailureAddModal({
 
           <div>
             <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Sample Failure Letter
+              Sample Failure Letter{isEdit ? " (optional replace)" : ""}
             </label>
+            {isEdit && editRow?.failure_letter_name ? (
+              <p className="mb-1.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                Current: {editRow.failure_letter_name}
+              </p>
+            ) : null}
             <input
-              required
+              required={!isEdit}
               type="file"
               accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls"
               onChange={(e) => setFailureLetter(e.target.files?.[0] ?? null)}
@@ -469,11 +509,22 @@ function SampleFailureAddModal({
             <button
               type="submit"
               disabled={
-                saving || !clientId || !isCodeId || !failureType || !sampleCode || !failureLetter
+                saving ||
+                !clientId ||
+                !isCodeId ||
+                !failureType ||
+                !sampleCode.trim() ||
+                (!isEdit && !failureLetter)
               }
               className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
             >
-              {saving ? "Adding…" : "Add to Table"}
+              {saving
+                ? isEdit
+                  ? "Saving…"
+                  : "Adding…"
+                : isEdit
+                  ? "Save Changes"
+                  : "Add to Table"}
             </button>
           </div>
         </form>
@@ -732,6 +783,7 @@ function SampleFailureReplyModal({
 export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRow[] }) {
   const router = useRouter();
   const [modalOpen, setModalOpen] = useState(false);
+  const [editRow, setEditRow] = useState<SampleFailureReplyRow | null>(null);
   const [replyRow, setReplyRow] = useState<SampleFailureReplyRow | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const selectAllRef = useRef<HTMLInputElement>(null);
@@ -761,6 +813,21 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
     });
   }
 
+  function openAddModal() {
+    setEditRow(null);
+    setModalOpen(true);
+  }
+
+  function openEditModal(row: SampleFailureReplyRow) {
+    setEditRow(row);
+    setModalOpen(true);
+  }
+
+  function closeAddModal() {
+    setModalOpen(false);
+    setEditRow(null);
+  }
+
   function handleManakLogin(row: SampleFailureReplyRow) {
     const userId = (row.portal_user_id ?? "").trim();
     const password = (row.portal_password ?? "").trim();
@@ -778,17 +845,6 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
     });
   }
 
-  async function handleDelete(row: SampleFailureReplyRow) {
-    const ok = window.confirm(`Delete sample failure entry for ${row.client_name}?`);
-    if (!ok) return;
-    const result = await deleteSampleFailureReply(row.id);
-    if (!result.ok) {
-      window.alert(result.error);
-      return;
-    }
-    router.refresh();
-  }
-
   return (
     <div className="rounded-2xl border border-zinc-200/80 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-200 px-3 py-1.5 dark:border-zinc-800 sm:px-4">
@@ -802,7 +858,7 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
         </div>
         <button
           type="button"
-          onClick={() => setModalOpen(true)}
+          onClick={openAddModal}
           className="inline-flex shrink-0 items-center gap-1.5 rounded-md bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-sky-700 dark:bg-sky-700 dark:hover:bg-sky-600"
         >
           <svg
@@ -916,13 +972,13 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
                       </button>
                       <button
                         type="button"
-                        onClick={() => void handleDelete(row)}
-                        title="Delete"
-                        aria-label="Delete"
-                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 dark:border-red-900 dark:bg-zinc-800 dark:text-red-300 dark:hover:bg-red-950/50"
+                        onClick={() => openEditModal(row)}
+                        title="Edit"
+                        aria-label="Edit"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
                       >
                         <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                       </button>
                     </div>
@@ -936,8 +992,10 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
 
       {modalOpen && (
         <SampleFailureAddModal
-          onClose={() => setModalOpen(false)}
-          onAdded={() => router.refresh()}
+          key={editRow?.id ?? "new"}
+          editRow={editRow}
+          onClose={closeAddModal}
+          onSaved={() => router.refresh()}
         />
       )}
 
