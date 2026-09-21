@@ -328,7 +328,7 @@ function buildSampleInnerTable(
             new TableCell({
               width: { size: widths[i]!, type: WidthType.DXA },
               borders: ROW_BORDERS,
-              verticalAlign: col.wide ? VerticalAlign.TOP : VerticalAlign.CENTER,
+              verticalAlign: VerticalAlign.CENTER,
               children: [
                 tableCellParagraph(cellPlainText(col.key, row, rowIndex), {
                   center: Boolean(col.cellCenter || col.stackHeader),
