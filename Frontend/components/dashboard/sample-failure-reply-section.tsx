@@ -950,30 +950,39 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
                   </td>
                   <td className={tdCls}>{formatDisplayDate(row.created_at)}</td>
                   <td className={`${tdCls} sm:pr-5`}>
-                    <div className="flex flex-wrap items-center justify-center gap-1.5">
+                    <div className="inline-flex flex-nowrap items-center justify-center gap-1">
                       <button
                         type="button"
                         onClick={() => handleManakLogin(row)}
                         title="Manak Online Login"
-                        className="rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 text-[11px] font-semibold text-amber-900 hover:bg-amber-100 dark:border-amber-700 dark:bg-amber-950/30 dark:text-amber-200 dark:hover:bg-amber-950/50"
+                        aria-label="Manak Online Login"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
                       >
-                        Manak Login
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                        </svg>
                       </button>
                       <button
                         type="button"
                         onClick={() => setReplyRow(row)}
                         title="Sample Failure Reply"
-                        className="rounded-lg bg-sky-600 px-2 py-1 text-[11px] font-semibold text-white hover:bg-sky-700 dark:bg-sky-700 dark:hover:bg-sky-600"
+                        aria-label="Sample Failure Reply"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white hover:bg-sky-500 dark:bg-sky-700 dark:hover:bg-sky-600"
                       >
-                        Reply
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                        </svg>
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleDelete(row)}
                         title="Delete"
-                        className="rounded-lg border border-zinc-300 px-2 py-1 text-[11px] font-semibold text-zinc-600 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                        aria-label="Delete"
+                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-red-300 bg-white text-red-700 hover:bg-red-50 dark:border-red-900 dark:bg-zinc-800 dark:text-red-300 dark:hover:bg-red-950/50"
                       >
-                        Delete
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
                       </button>
                     </div>
                   </td>
