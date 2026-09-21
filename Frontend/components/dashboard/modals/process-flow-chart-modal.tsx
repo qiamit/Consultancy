@@ -275,6 +275,11 @@ export function ProcessFlowChartModal({
   }
 
   function patchChartSettings(patch: Partial<ProcessFlowChartSettings>) {
+    // Chart settings change the drawn image — leave Print Preview so the editor
+    // remounts and regenerates drawing_data_url before the next Save.
+    if (showPrintPreview) {
+      setShowPrintPreview(false);
+    }
     setDocument((prev) => ({
       ...prev,
       chart_settings: parseProcessFlowChartSettings({
@@ -286,6 +291,8 @@ export function ProcessFlowChartModal({
 
   async function handleSave() {
     // Await snapshot before closing — Close runs Save then unmounts.
+    // Persist synchronously (not inside startTransition) so Close cannot unmount
+    // before parent state / DB flush receives the updated chart.
     const snapshot = await canvasEditorRef.current?.captureSnapshot();
     const nextDocument: ProcessFlowChartStored = snapshot
       ? {
@@ -300,12 +307,13 @@ export function ProcessFlowChartModal({
       setDocument(nextDocument);
     }
 
+    const toSave: ProcessFlowChartStored = {
+      ...nextDocument,
+      chart_settings:
+        nextDocument.chart_settings ?? defaultProcessFlowChartDocument().chart_settings,
+    };
+    onSave(toSave);
     startSave(() => {
-      onSave({
-        ...nextDocument,
-        chart_settings:
-          nextDocument.chart_settings ?? defaultProcessFlowChartDocument().chart_settings,
-      });
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2000);
     });

@@ -378,7 +378,6 @@ import {
 import {
   documentHasContent as processFlowChartDocumentHasContent,
   parseProcessFlowChart,
-  processFlowChartFilledCount,
   type ProcessFlowChartStored,
 } from "@backend/modules/bis/process-flow-chart";
 import {
@@ -1000,7 +999,7 @@ function ApplicationFormModal({
     onDocChange?.(null);
   }, [applyDocKey, onDocChange]);
 
-  // Always prefer richer Process Flow Chart from DB when the editor opens empty/wiped.
+  // If the editor opens with an empty local chart, restore from DB (never overwrite a filled local chart).
   useEffect(() => {
     if (!showProcessFlowChart) return;
     let cancelled = false;
@@ -1017,9 +1016,8 @@ function ApplicationFormModal({
       const parsed = parseApplicationChecklistNotes(String(data.notes));
       const fromDb = parsed.processFlowChart;
       setProcessFlowChart((prev) => {
-        const dbFilled = processFlowChartFilledCount(fromDb);
-        const prevFilled = processFlowChartFilledCount(prev);
-        if (dbFilled > prevFilled) return fromDb;
+        if (processFlowChartDocumentHasContent(prev)) return prev;
+        if (processFlowChartDocumentHasContent(fromDb)) return fromDb;
         return prev;
       });
     })();
@@ -1384,21 +1382,20 @@ function ApplicationFormModal({
               newObj[key] = existingObj[key];
             }
           }
-          // Prefer richer Process Flow Chart so a blank editor snapshot cannot wipe DB.
-          if (existingObj.process_flow_chart && newObj.process_flow_chart) {
-            const existingPfc = parseProcessFlowChart(existingObj.process_flow_chart);
-            const newPfc = parseProcessFlowChart(newObj.process_flow_chart);
-            const existingFilled = processFlowChartFilledCount(existingPfc);
-            const newFilled = processFlowChartFilledCount(newPfc);
-            if (existingFilled > newFilled) {
-              newObj.process_flow_chart = existingObj.process_flow_chart;
-            }
-          } else if (
+          // Keep existing Process Flow Chart only when this save has no chart content
+          // (blank snapshot). Explicit Save with content must always win — including
+          // fewer steps / redraws — otherwise Print / PDF keep showing the old chart.
+          if (
             existingObj.process_flow_chart &&
             !newObj.process_flow_chart &&
             !explicitClear.has("process_flow_chart")
           ) {
             newObj.process_flow_chart = existingObj.process_flow_chart;
+          } else if (existingObj.process_flow_chart && newObj.process_flow_chart) {
+            const newPfc = parseProcessFlowChart(newObj.process_flow_chart);
+            if (!processFlowChartDocumentHasContent(newPfc)) {
+              newObj.process_flow_chart = existingObj.process_flow_chart;
+            }
           }
           // Prefer filled Application Details fields so a stale concurrent flush
           // cannot wipe values the user just typed / saved.
@@ -2199,19 +2196,12 @@ function ApplicationFormModal({
   }
 
   function saveProcessFlowChart(document: ProcessFlowChartStored) {
-    setProcessFlowChart((prev) => {
-      // Never let an empty/blank chart overwrite a filled one.
-      if (
-        processFlowChartDocumentHasContent(prev) &&
-        !processFlowChartDocumentHasContent(document)
-      ) {
-        return prev;
-      }
-      return document;
-    });
-    if (processFlowChartDocumentHasContent(document)) {
-      saveNotesNow({ processFlowChart: document });
+    // Explicit Save always applies when the chart has content (updates, fewer steps, redraws).
+    if (!processFlowChartDocumentHasContent(document)) {
+      return;
     }
+    setProcessFlowChart(document);
+    saveNotesNow({ processFlowChart: document });
   }
 
   function saveProcessDescription(document: ProcessDescriptionStored) {
