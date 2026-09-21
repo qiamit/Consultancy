@@ -2,6 +2,7 @@ export const SAMPLE_FAILURE_TYPES = [
   "pi_sample",
   "market_sample",
   "surveillance_sample",
+  "verification_sample",
 ] as const;
 
 export type SampleFailureType = (typeof SAMPLE_FAILURE_TYPES)[number];
@@ -10,6 +11,7 @@ export const SAMPLE_FAILURE_TYPE_LABELS: Record<SampleFailureType, string> = {
   pi_sample: "PI Sample",
   market_sample: "Market Sample",
   surveillance_sample: "Surveillance Sample",
+  verification_sample: "Verification Sample",
 };
 
 export const SAMPLE_FAILURE_STATUSES = [
