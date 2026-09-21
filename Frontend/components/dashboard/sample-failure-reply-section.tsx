@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@backend/db/client/client";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
@@ -21,6 +21,10 @@ import {
 } from "@backend/actions/sample-failure-reply";
 import { draftSampleFailureReply } from "@backend/actions/sample-failure-reply-assistant";
 import { openManakEbisAssist } from "@/components/modules/bis-projects/manak-ebis-assist";
+import {
+  IsCodeCombobox,
+  type IsCodeComboboxOption,
+} from "@/components/modules/bis-projects/is-code-combobox";
 import { oslSampleQrPayload } from "@/components/dashboard/osl-sample-code-qr";
 
 function SampleCodeCell({ sampleCode, qrCode }: { sampleCode: string; qrCode: string }) {
@@ -189,6 +193,36 @@ function SampleFailureAddModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const firmOptions: IsCodeComboboxOption[] = useMemo(
+    () =>
+      clients.map((c) => {
+        const label = (c.company_name ?? c.name).trim() || "Unnamed firm";
+        return { id: c.id, label, filterText: `${label} ${c.name}` };
+      }),
+    [clients],
+  );
+
+  const isCodeComboboxOptions: IsCodeComboboxOption[] = useMemo(
+    () =>
+      isCodes.map((ic) => {
+        const label = formatIsDisplay(ic.is_number, ic.revision_year, ic.is_code_title);
+        return {
+          id: ic.is_code_id,
+          label,
+          filterText: `${ic.is_number ?? ""} ${ic.revision_year ?? ""} ${ic.is_code_title ?? ""}`,
+        };
+      }),
+    [isCodes],
+  );
+
+  const isCodePlaceholder = !clientId
+    ? "Select firm first…"
+    : isCodesLoading
+      ? "Loading IS codes…"
+      : isCodes.length === 0
+        ? "No IS codes for this firm"
+        : "Type to search IS code…";
+
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
@@ -286,6 +320,14 @@ function SampleFailureAddModal({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!clientId) {
+      setError("Select a firm name.");
+      return;
+    }
+    if (!isCodeId) {
+      setError("Select an IS code.");
+      return;
+    }
     if (!failureType) {
       setError("Select type of sample failure.");
       return;
@@ -335,51 +377,40 @@ function SampleFailureAddModal({
         </div>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4 px-5 py-4">
           <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            <label htmlFor="sfr_firm" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
               Firm Name
             </label>
-            <select
-              required
+            <IsCodeCombobox
+              name="client_id"
+              label="Firm Name"
+              hideLabel
+              inputId="sfr_firm"
               value={clientId}
+              onChange={setClientId}
+              options={firmOptions}
               disabled={clientsLoading}
-              onChange={(e) => setClientId(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">{clientsLoading ? "Loading firms…" : "Select firm"}</option>
-              {clients.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.company_name ?? c.name}
-                </option>
-              ))}
-            </select>
+              placeholder={clientsLoading ? "Loading firms…" : "Type to search firm…"}
+              listZIndexClass="z-[310]"
+            />
           </div>
 
           <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+            <label htmlFor="sfr_is" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
               IS Code
             </label>
-            <select
-              required
+            <IsCodeCombobox
+              key={clientId || "no-firm"}
+              name="is_code_id"
+              label="IS Code"
+              hideLabel
+              inputId="sfr_is"
               value={isCodeId}
+              onChange={setIsCodeId}
+              options={isCodeComboboxOptions}
               disabled={!clientId || isCodesLoading}
-              onChange={(e) => setIsCodeId(e.target.value)}
-              className={inputCls}
-            >
-              <option value="">
-                {!clientId
-                  ? "Select firm first"
-                  : isCodesLoading
-                    ? "Loading IS codes…"
-                    : isCodes.length === 0
-                      ? "No IS codes for this firm"
-                      : "Select IS code"}
-              </option>
-              {isCodes.map((ic) => (
-                <option key={ic.is_code_id} value={ic.is_code_id}>
-                  {formatIsDisplay(ic.is_number, ic.revision_year, ic.is_code_title)}
-                </option>
-              ))}
-            </select>
+              placeholder={isCodePlaceholder}
+              listZIndexClass="z-[310]"
+            />
           </div>
 
           <div>
