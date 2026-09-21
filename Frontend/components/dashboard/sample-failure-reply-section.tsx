@@ -825,7 +825,7 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
         </p>
       ) : (
         <div className="overflow-x-auto">
-          <table className="dashboard-section-table w-full min-w-[920px] text-sm">
+          <table className="dashboard-section-table w-full min-w-[820px] text-sm">
             <thead className="border-b border-zinc-200 bg-zinc-50/80 dark:border-zinc-800 dark:bg-zinc-950/50">
               <tr>
                 <th className={`${thCls} w-11`} aria-label="Select">
@@ -842,8 +842,7 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
                   </div>
                 </th>
                 <th className={thCls}>Firm</th>
-                <th className={thCls}>IS Code</th>
-                <th className={thCls}>CM/L</th>
+                <th className={thCls}>IS / CM/L</th>
                 <th className={thCls}>Type</th>
                 <th className={thCls}>Sample Code</th>
                 <th className={thCls}>Status</th>
@@ -869,10 +868,10 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
                     {row.client_name}
                   </td>
                   <td className={tdCls}>
-                    {formatIsCodeShort(row.is_number, row.is_revision_year)}
-                  </td>
-                  <td className={`${tdCls} font-mono text-xs`}>
-                    {formatCmDisplay(row.project_kind ?? "licence", row.cm_l_digits)}
+                    <div>{formatIsCodeShort(row.is_number, row.is_revision_year)}</div>
+                    <div className="mt-0.5 font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
+                      {formatCmDisplay(row.project_kind ?? "licence", row.cm_l_digits)}
+                    </div>
                   </td>
                   <td className={tdCls}>{sampleFailureTypeLabel(row.sample_failure_type)}</td>
                   <td className={`${tdCls} font-mono text-xs`}>
