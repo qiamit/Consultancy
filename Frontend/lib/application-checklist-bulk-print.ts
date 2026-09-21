@@ -49,10 +49,12 @@ import {
   type LocationMapStored,
 } from "@backend/modules/bis/location-map";
 import {
+  combineOslAndPiSamples,
   isSampleIncludedInPrint,
   rowHasContent as oslSampleRowHasContent,
   type OslSampleRequirementStored,
 } from "@backend/modules/bis/osl-sample-requirements";
+import type { SampleOfferLetterVariant } from "@backend/modules/print/sample-offer-letter-variant";
 import {
   documentHasContent as plantLayoutHasContent,
   type PlantLayoutStored,
@@ -1212,47 +1214,35 @@ function buildSingleChecklistDocHtml(
       return buildManufacturingScopeDeclarationHtml(data, settings, printAssets);
     }
     case "osl_sample_requirements": {
+      // One Sample Requirements module → one Sample Offer Letter PDF (all In-Letter samples).
       const settings = withBulkLetterhead(defaultOslSamplePrintSettings());
-      const letterBase = {
-        ...letter,
-        inspectionDate: resolveSampleOfferLetterDate(
-          ctx.applicationStage,
-          ctx.dateOfInspection,
+      const rows = combineOslAndPiSamples(
+        ctx.oslSampleRequirements,
+        ctx.piSampleRequirements,
+      ).filter(isSampleIncludedInPrint);
+      if (!rows.some(oslSampleRowHasContent)) return "";
+      const onlyInspectionSamples = rows.every((r) => r.sample_for === "it");
+      const variant: SampleOfferLetterVariant = onlyInspectionSamples ? "pi" : "osl";
+      return buildOslSampleRequirementsHtml(
+        withDocumentSignatureImage(
+          {
+            ...letter,
+            inspectionDate: resolveSampleOfferLetterDate(
+              ctx.applicationStage,
+              ctx.dateOfInspection,
+            ),
+            applicationNumber,
+            signatoryName,
+            signatoryDesignation,
+            rows,
+          },
+          topManagement,
         ),
-        applicationNumber,
-        signatoryName,
-        signatoryDesignation,
-      };
-      const parts: { id: string; html: string }[] = [];
-      const oslRows = ctx.oslSampleRequirements.filter(isSampleIncludedInPrint);
-      if (oslRows.some(oslSampleRowHasContent)) {
-        parts.push({
-          id: "osl_sample_requirements_osl",
-          html: buildOslSampleRequirementsHtml(
-            withDocumentSignatureImage({ ...letterBase, rows: oslRows }, topManagement),
-            settings,
-            [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
-            "osl",
-            printAssets,
-          ),
-        });
-      }
-      const piRows = ctx.piSampleRequirements.filter(isSampleIncludedInPrint);
-      if (piRows.some(oslSampleRowHasContent)) {
-        parts.push({
-          id: "osl_sample_requirements_pi",
-          html: buildOslSampleRequirementsHtml(
-            withDocumentSignatureImage({ ...letterBase, rows: piRows }, topManagement),
-            settings,
-            [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
-            "pi",
-            printAssets,
-          ),
-        });
-      }
-      if (parts.length === 0) return "";
-      if (parts.length === 1) return parts[0]!.html;
-      return combineChecklistPrintHtml(parts);
+        settings,
+        [...DEFAULT_OSL_SAMPLE_TABLE_COLUMNS],
+        variant,
+        printAssets,
+      );
     }
     case "cmpf_305": {
       const settings = withBulkLetterhead(defaultCmpf305PrintSettings());
