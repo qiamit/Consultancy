@@ -869,12 +869,7 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
                     {row.client_name}
                   </td>
                   <td className={tdCls}>
-                    <div>{formatIsCodeShort(row.is_number, row.is_revision_year)}</div>
-                    {row.is_code_title ? (
-                      <div className="mx-auto mt-0.5 max-w-[12rem] truncate text-[10px] text-zinc-400">
-                        {row.is_code_title}
-                      </div>
-                    ) : null}
+                    {formatIsCodeShort(row.is_number, row.is_revision_year)}
                   </td>
                   <td className={`${tdCls} font-mono text-xs`}>
                     {formatCmDisplay(row.project_kind ?? "licence", row.cm_l_digits)}
