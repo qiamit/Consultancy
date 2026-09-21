@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { formatDisplayDate } from "@backend/shared/format-date";
+import { createClient } from "@backend/db/client/client";
+import { uploadTechnicalStaffDocument } from "@backend/modules/storage/technical-staff-documents";
+import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
 import {
   isSampleIncludedInPrint,
   parseSampleFor,
@@ -186,6 +189,29 @@ export function OslSampleRequirementsTableEditor({
 }) {
   const t = themes[theme];
   const visibleRows = useMemo(() => rows.filter(rowHasContent), [rows]);
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+
+  async function attachTestReport(row: OslSampleRequirementRow, file: File | null) {
+    if (!file) return;
+    setUploadingId(row.id);
+    try {
+      const safeName = file.name.replace(/[^\w.\-]+/g, "-").slice(0, 120) || "test-report";
+      const safeId = row.id.replace(/[^\w.\-]+/g, "-").slice(0, 80);
+      const path = `osl-sample-test-reports/${safeId}/${Date.now()}-${safeName}`;
+      const result = await uploadTechnicalStaffDocument(createClient(), path, file);
+      if ("error" in result) {
+        window.alert(`Test report upload failed: ${result.error}`);
+        return;
+      }
+      onUpdate({
+        ...row,
+        test_report_ref: result.ref,
+        test_report_name: file.name.trim() || safeName,
+      });
+    } finally {
+      setUploadingId(null);
+    }
+  }
 
   useEffect(() => {
     if (focusSampleIndex == null || focusSampleIndex < 0) return;
@@ -303,6 +329,45 @@ export function OslSampleRequirementsTableEditor({
                           <span className="inline-flex items-center rounded-full border border-zinc-600/70 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
                             {row.priority}
                           </span>
+                        ) : null}
+                        <label
+                          className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+                            row.test_report_ref?.trim()
+                              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200"
+                              : "border-zinc-600/70 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-800"
+                          } ${uploadingId === row.id ? "pointer-events-none opacity-60" : ""}`}
+                          title={
+                            row.test_report_name?.trim()
+                              ? `Attached: ${row.test_report_name}. Click to replace.`
+                              : "Attach Test Report"
+                          }
+                        >
+                          <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                          </svg>
+                          {uploadingId === row.id
+                            ? "Attaching…"
+                            : row.test_report_ref?.trim()
+                              ? "Test Report"
+                              : "Attach Test Report"}
+                          <input
+                            type="file"
+                            className="hidden"
+                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls"
+                            disabled={uploadingId === row.id}
+                            onChange={(e) => {
+                              const file = e.target.files?.[0] ?? null;
+                              e.target.value = "";
+                              void attachTestReport(row, file);
+                            }}
+                          />
+                        </label>
+                        {row.test_report_ref?.trim() ? (
+                          <StorageDocumentLink
+                            value={row.test_report_ref}
+                            label="View"
+                            className="inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/20"
+                          />
                         ) : null}
                       </div>
                       <div className="shrink-0">{rowActions(row, srNo)}</div>

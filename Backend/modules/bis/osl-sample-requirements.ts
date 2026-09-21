@@ -26,6 +26,10 @@ export type OslSampleRequirementStored = {
    * (print preview / print / Word / PDF). Default true.
    */
   include_in_print: boolean;
+  /** Attached lab / factory test report file (`doc://…` storage ref). */
+  test_report_ref?: string;
+  /** Original file name shown on the sample card. */
+  test_report_name?: string;
 };
 
 export type OslSampleRequirementRow = OslSampleRequirementStored & { id: string };
@@ -84,6 +88,8 @@ export function defaultOslSampleRequirement(
     test_required: "All Test",
     sample_for: sampleFor,
     include_in_print: true,
+    test_report_ref: "",
+    test_report_name: "",
   };
 }
 
@@ -137,6 +143,8 @@ function mapRawSample(
     test_required: String(r.test_required ?? "").trim(),
     sample_for: parseSampleFor(r.sample_for, fallbackFor),
     include_in_print: r.include_in_print !== false,
+    test_report_ref: String(r.test_report_ref ?? "").trim(),
+    test_report_name: String(r.test_report_name ?? "").trim(),
   };
 }
 

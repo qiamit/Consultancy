@@ -112,6 +112,8 @@ export function OslSampleFormModal({
       test_required: testRequired.trim(),
       sample_for: sampleFor,
       include_in_print: draft.include_in_print !== false,
+      test_report_ref: (draft.test_report_ref ?? "").trim(),
+      test_report_name: (draft.test_report_name ?? "").trim(),
     });
   }
 
