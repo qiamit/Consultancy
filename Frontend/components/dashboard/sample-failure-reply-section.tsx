@@ -428,27 +428,26 @@ function SampleFailureAddModal({
             />
           </div>
 
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Type of Sample Failure
-            </label>
-            <select
-              required
-              value={failureType}
-              onChange={(e) => setFailureType(e.target.value as SampleFailureType | "")}
-              className={inputCls}
-            >
-              <option value="">Select type</option>
-              {SAMPLE_FAILURE_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {SAMPLE_FAILURE_TYPE_LABELS[t]}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Type of Sample Failure
+              </label>
+              <select
+                required
+                value={failureType}
+                onChange={(e) => setFailureType(e.target.value as SampleFailureType | "")}
+                className={inputCls}
+              >
+                <option value="">Select type</option>
+                {SAMPLE_FAILURE_TYPES.map((t) => (
+                  <option key={t} value={t}>
+                    {SAMPLE_FAILURE_TYPE_LABELS[t]}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="min-w-0">
               <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Sample Code
               </label>
@@ -460,7 +459,7 @@ function SampleFailureAddModal({
                 placeholder="Sample code"
               />
             </div>
-            <div>
+            <div className="min-w-0">
               <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
                 Sample QR Code
               </label>
