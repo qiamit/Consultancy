@@ -25,62 +25,6 @@ import {
   IsCodeCombobox,
   type IsCodeComboboxOption,
 } from "@/components/modules/bis-projects/is-code-combobox";
-import { oslSampleQrPayload } from "@/components/dashboard/osl-sample-code-qr";
-
-function SampleCodeCell({ sampleCode, qrCode }: { sampleCode: string; qrCode: string }) {
-  const code = sampleCode.trim();
-  const payload = oslSampleQrPayload(sampleCode, qrCode);
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!payload) {
-      setDataUrl(null);
-      return;
-    }
-    let cancelled = false;
-    void import("qrcode")
-      .then((QR) =>
-        QR.toDataURL(payload, {
-          width: 88,
-          margin: 1,
-          errorCorrectionLevel: "M",
-          color: { dark: "#18181b", light: "#ffffff" },
-        }),
-      )
-      .then((url) => {
-        if (!cancelled) setDataUrl(url);
-      })
-      .catch(() => {
-        if (!cancelled) setDataUrl(null);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [payload]);
-
-  if (!code && !payload) return <span className="text-zinc-400">—</span>;
-
-  return (
-    <span className="mx-auto inline-flex max-w-full flex-col items-center gap-1">
-      {dataUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={dataUrl}
-          alt={payload ? `QR for ${payload}` : "QR code"}
-          width={44}
-          height={44}
-          className="rounded-sm border border-zinc-300 bg-white p-0.5 dark:border-zinc-600"
-        />
-      ) : null}
-      <span
-        className="block max-w-[9rem] break-all text-center font-mono text-[11px] leading-tight text-zinc-700 dark:text-zinc-200"
-        title={payload || code}
-      >
-        {code || payload}
-      </span>
-    </span>
-  );
-}
 
 export type SampleFailureReplyRow = {
   id: string;
@@ -901,7 +845,7 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
                 <th className={thCls}>IS Code</th>
                 <th className={thCls}>CM/L</th>
                 <th className={thCls}>Type</th>
-                <th className={thCls}>Sample / QR</th>
+                <th className={thCls}>Sample Code</th>
                 <th className={thCls}>Status</th>
                 <th className={thCls}>Added</th>
                 <th className={`${thCls} sm:pr-5`}>Action</th>
@@ -936,10 +880,13 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
                     {formatCmDisplay(row.project_kind ?? "licence", row.cm_l_digits)}
                   </td>
                   <td className={tdCls}>{sampleFailureTypeLabel(row.sample_failure_type)}</td>
-                  <td className={tdCls}>
-                    <div className="flex justify-center">
-                      <SampleCodeCell sampleCode={row.sample_code} qrCode={row.sample_qr_code} />
-                    </div>
+                  <td className={`${tdCls} font-mono text-xs`}>
+                    {row.sample_code.trim() || "—"}
+                    {row.sample_qr_code.trim() ? (
+                      <div className="mt-0.5 text-[10px] text-zinc-400">
+                        QR: {row.sample_qr_code.trim()}
+                      </div>
+                    ) : null}
                   </td>
                   <td className={tdCls}>
                     <span
