@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@backend/db/client/client";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
@@ -22,6 +23,7 @@ import {
 } from "@backend/actions/sample-failure-reply";
 import { draftSampleFailureReply } from "@backend/actions/sample-failure-reply-assistant";
 import { openManakEbisAssist } from "@/components/modules/bis-projects/manak-ebis-assist";
+import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
 import {
   IsCodeCombobox,
   type IsCodeComboboxOption,
@@ -533,6 +535,35 @@ function SampleFailureAddModal({
   );
 }
 
+const docTileBase =
+  "inline-flex min-h-[3.25rem] w-full items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-xs font-semibold leading-snug shadow-sm transition active:scale-[0.99]";
+
+const docTileTeal =
+  `${docTileBase} border-teal-200 bg-teal-50 text-teal-800 hover:border-teal-300 hover:bg-teal-100 dark:border-teal-800 dark:bg-teal-950/40 dark:text-teal-200 dark:hover:border-teal-600 dark:hover:bg-teal-950/60`;
+
+function SampleFailureDocIcon({ kind }: { kind: "offer" | "report" | "reply" }) {
+  const cls = "h-4 w-4 shrink-0";
+  if (kind === "offer") {
+    return (
+      <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+      </svg>
+    );
+  }
+  if (kind === "report") {
+    return (
+      <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+      </svg>
+    );
+  }
+  return (
+    <svg className={cls} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+    </svg>
+  );
+}
+
 function SampleFailureReplyModal({
   row,
   onClose,
@@ -542,6 +573,9 @@ function SampleFailureReplyModal({
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const { open: sidebarOpen } = useSidebarLayout();
+  const [portalReady, setPortalReady] = useState(false);
+  const [panel, setPanel] = useState<"offer" | "report" | "reply" | null>(null);
   const [draft, setDraft] = useState(row.reply_draft);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -549,10 +583,15 @@ function SampleFailureReplyModal({
   const [aiPending, setAiPending] = useState(false);
   const [offerName, setOfferName] = useState(row.offer_letter_name);
   const [reportName, setReportName] = useState(row.factory_test_report_name);
-  const [failureName, setFailureName] = useState(row.failure_letter_name);
   const [offerPath, setOfferPath] = useState(row.offer_letter_path);
   const [reportPath, setReportPath] = useState(row.factory_test_report_path);
-  const [failurePath, setFailurePath] = useState(row.failure_letter_path);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
+
+  const isLabel = formatIsCodeShort(row.is_number, row.is_revision_year);
+  const cmLabel = formatCmDisplay(row.project_kind ?? "licence", row.cm_l_digits);
 
   async function handleGenerateDraft() {
     setAiPending(true);
@@ -584,7 +623,7 @@ function SampleFailureReplyModal({
   }
 
   async function handleUpload(
-    kind: "failure_letter" | "offer_letter" | "factory_test_report",
+    kind: "offer_letter" | "factory_test_report",
     file: File | null,
   ) {
     if (!file) return;
@@ -597,15 +636,10 @@ function SampleFailureReplyModal({
       setError(result.error);
       return;
     }
-    if (kind === "failure_letter") {
-      setFailureName(result.name);
-      setFailurePath(result.path);
-    }
     if (kind === "offer_letter") {
       setOfferName(result.name);
       setOfferPath(result.path);
-    }
-    if (kind === "factory_test_report") {
+    } else {
       setReportName(result.name);
       setReportPath(result.path);
     }
@@ -613,170 +647,226 @@ function SampleFailureReplyModal({
     onSaved();
   }
 
-  const docsReady = Boolean(failureName && offerName && reportName);
+  if (!portalReady) return null;
 
-  return (
-    <div className="fixed inset-0 z-[60] flex items-start justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-sm">
-      <div className="my-4 w-full max-w-3xl rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-        <div className="flex items-start justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
-          <div>
-            <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
-              Sample Failure Reply
-            </h2>
-            <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-              {row.client_name} · {formatCmDisplay(row.project_kind ?? "licence", row.cm_l_digits)} ·{" "}
-              {formatIsCodeShort(row.is_number, row.is_revision_year)}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-            aria-label="Close"
-          >
-            <svg className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-              <path
-                fillRule="evenodd"
-                d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z"
-                clipRule="evenodd"
-              />
-            </svg>
-          </button>
-        </div>
+  const activeDoc =
+    panel === "offer"
+      ? {
+          title: "Sample Offer Letter",
+          name: offerName,
+          path: offerPath,
+          kind: "offer_letter" as const,
+        }
+      : panel === "report"
+        ? {
+            title: "Factory Test Report",
+            name: reportName,
+            path: reportPath,
+            kind: "factory_test_report" as const,
+          }
+        : null;
 
-        <div className="space-y-5 px-5 py-4">
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50/80 p-3 text-xs text-zinc-600 dark:border-zinc-700 dark:bg-zinc-950/40 dark:text-zinc-300">
-            <p>
-              <span className="font-semibold">Type:</span>{" "}
-              {sampleFailureTypeLabel(row.sample_failure_type)}
-            </p>
-            <p className="mt-1">
-              <span className="font-semibold">Sample:</span> {row.sample_code || "—"}
-              {row.sample_qr_code ? ` · QR ${row.sample_qr_code}` : ""}
-            </p>
-            <p className="mt-1">
-              Reply requires 3 documents: Sample Failure Letter, Sample Offer Letter, and Factory
-              Test Report.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-3">
-            {(
-              [
-                {
-                  key: "failure_letter" as const,
-                  label: "Sample Failure Letter",
-                  name: failureName,
-                  path: failurePath,
-                },
-                {
-                  key: "offer_letter" as const,
-                  label: "Sample Offer Letter",
-                  name: offerName,
-                  path: offerPath,
-                },
-                {
-                  key: "factory_test_report" as const,
-                  label: "Factory Test Report",
-                  name: reportName,
-                  path: reportPath,
-                },
-              ] as const
-            ).map((doc) => (
-              <div
-                key={doc.key}
-                className="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700"
-              >
-                <p className="text-xs font-semibold text-zinc-800 dark:text-zinc-100">{doc.label}</p>
-                <p className="mt-1 truncate text-[11px] text-zinc-500 dark:text-zinc-400">
-                  {doc.name || "Not uploaded"}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  <label className="cursor-pointer rounded-md border border-zinc-300 px-2 py-1 text-[11px] font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">
-                    Upload
-                    <input
-                      type="file"
-                      className="hidden"
-                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0] ?? null;
-                        e.target.value = "";
-                        void handleUpload(doc.key, file);
-                      }}
-                    />
-                  </label>
-                  <button
-                    type="button"
-                    disabled={!doc.path && !doc.name}
-                    onClick={() => void openSignedDoc(doc.path)}
-                    className="rounded-md border border-sky-300 px-2 py-1 text-[11px] font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-40 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-sky-950/30"
-                  >
-                    View
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div>
-            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-              <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-200">
-                Reply Draft (AI assisted)
-              </label>
-              <button
-                type="button"
-                disabled={aiPending}
-                onClick={() => void handleGenerateDraft()}
-                className="rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-700 dark:bg-violet-950/30 dark:text-violet-200 dark:hover:bg-violet-950/50"
-              >
-                {aiPending ? "Drafting with AI…" : "Generate / Improve Reply with AI"}
-              </button>
+  return createPortal(
+    <div
+      className={`fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm ${
+        sidebarOpen ? "lg:left-64" : "lg:left-0"
+      }`}
+    >
+      <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-zinc-900">
+        <div className="shrink-0 bg-gradient-to-r from-sky-600 to-indigo-600 px-3 py-3 sm:px-5 sm:py-4">
+          <div className="relative flex items-center">
+            <div className="absolute left-0 hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20 sm:flex">
+              <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
             </div>
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={14}
-              className={`${inputCls} font-mono text-[13px] leading-relaxed`}
-              placeholder="AI will draft a formal sample-failure reply using the failure letter, IS code details, and uploaded evidence…"
-            />
-            {!docsReady && (
-              <p className="mt-1.5 text-[11px] text-amber-700 dark:text-amber-300">
-                Upload all 3 required documents before submitting on Manak Online.
-              </p>
-            )}
-          </div>
-
-          {error && (
-            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-              {error}
+            <p className="w-full text-center text-xs font-semibold uppercase tracking-wider text-white/80 sm:text-base">
+              Sample Failure Reply
             </p>
-          )}
-          {message && (
-            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
-              {message}
-            </p>
-          )}
-
-          <div className="flex flex-wrap justify-end gap-2 border-t border-zinc-100 pt-4 dark:border-zinc-800">
             <button
               type="button"
               onClick={onClose}
-              className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              className="absolute right-0 shrink-0 rounded-lg p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
+              aria-label="Close"
             >
-              Close
-            </button>
-            <button
-              type="button"
-              disabled={pending}
-              onClick={handleSaveDraft}
-              className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
-            >
-              {pending ? "Saving…" : "Save Reply Draft"}
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
             </button>
           </div>
         </div>
+
+        <div className="shrink-0 border-b border-zinc-200 bg-white px-3 py-2.5 sm:px-5 dark:border-zinc-800 dark:bg-zinc-900">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+            <p className="min-w-0 text-sm font-extrabold text-zinc-900 sm:text-base dark:text-zinc-50">
+              {row.client_name}
+            </p>
+            <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 sm:justify-end">
+              {isLabel !== "—" ? (
+                <p className="text-sm font-extrabold text-zinc-900 sm:text-base dark:text-zinc-50">
+                  {isLabel}
+                </p>
+              ) : null}
+              <p className="font-mono text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                {cmLabel}
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <div className="border-b border-zinc-200 bg-zinc-50 px-3 py-3 sm:px-5 sm:py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
+            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+              <button type="button" onClick={() => setPanel("offer")} className={docTileTeal}>
+                <SampleFailureDocIcon kind="offer" />
+                <span className="min-w-0 flex-1">Sample Offer Letter</span>
+              </button>
+              <button type="button" onClick={() => setPanel("report")} className={docTileTeal}>
+                <SampleFailureDocIcon kind="report" />
+                <span className="min-w-0 flex-1">Factory Test Report</span>
+              </button>
+              <button type="button" onClick={() => setPanel("reply")} className={docTileTeal}>
+                <SampleFailureDocIcon kind="reply" />
+                <span className="min-w-0 flex-1">Sample Failure Reply</span>
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
+
+      {activeDoc && (
+        <div className="fixed inset-0 z-[210] flex items-start justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-sm">
+          <div className="my-8 w-full max-w-lg rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">{activeDoc.title}</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setPanel(null);
+                  setError(null);
+                  setMessage(null);
+                }}
+                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                aria-label="Close"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                {activeDoc.name || "Not uploaded"}
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <label className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">
+                  Upload
+                  <input
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0] ?? null;
+                      e.target.value = "";
+                      void handleUpload(activeDoc.kind, file);
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={!activeDoc.path && !activeDoc.name}
+                  onClick={() => void openSignedDoc(activeDoc.path)}
+                  className="rounded-lg border border-sky-300 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-40 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-sky-950/30"
+                >
+                  View
+                </button>
+              </div>
+              {error && (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                  {error}
+                </p>
+              )}
+              {message && (
+                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  {message}
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {panel === "reply" && (
+        <div className="fixed inset-0 z-[210] flex items-start justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-sm">
+          <div className="my-6 w-full max-w-3xl rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+            <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
+              <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">Sample Failure Reply</h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setPanel(null);
+                  setError(null);
+                  setMessage(null);
+                }}
+                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                aria-label="Close"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="space-y-3 px-5 py-4">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={aiPending}
+                  onClick={() => void handleGenerateDraft()}
+                  className="rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-700 dark:bg-violet-950/30 dark:text-violet-200 dark:hover:bg-violet-950/50"
+                >
+                  {aiPending ? "Drafting with AI…" : "Generate / Improve Reply with AI"}
+                </button>
+              </div>
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={14}
+                className={`${inputCls} font-mono text-[13px] leading-relaxed`}
+                placeholder="Draft the sample failure reply…"
+              />
+              {error && (
+                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                  {error}
+                </p>
+              )}
+              {message && (
+                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  {message}
+                </p>
+              )}
+              <div className="flex justify-end gap-2 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+                <button
+                  type="button"
+                  onClick={() => setPanel(null)}
+                  className="rounded-lg border border-zinc-200 px-4 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={pending}
+                  onClick={handleSaveDraft}
+                  className="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 dark:bg-sky-700 dark:hover:bg-sky-600"
+                >
+                  {pending ? "Saving…" : "Save Reply Draft"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>,
+    document.body,
   );
 }
 
