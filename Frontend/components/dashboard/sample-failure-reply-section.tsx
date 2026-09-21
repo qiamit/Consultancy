@@ -852,9 +852,6 @@ export function SampleFailureReplySection({ rows }: { rows: SampleFailureReplyRo
           <h2 className="text-sm font-semibold text-zinc-900 dark:text-white">
             BIS Sample Failure Reply
           </h2>
-          <p className="text-[11px] text-zinc-500 dark:text-zinc-400">
-            Track PI / Market / Surveillance sample failures and draft Manak Online replies with AI.
-          </p>
         </div>
         <button
           type="button"
