@@ -8,6 +8,7 @@ import {
   APPLICATION_WEEKDAYS,
   type ApplicationMeta,
 } from "@backend/modules/bis/application-checklist-notes";
+import { normalizeYmdDateString } from "@backend/shared/format-date";
 import {
   DROPDOWN_KEY_BIS_APPLICATION_BRANCH,
   DROPDOWN_KEY_BIS_APPLICATION_BRANCH_HEAD_DESIGNATION,
@@ -241,7 +242,9 @@ export function ApplicationDetailsForm({
             id="date_of_application"
             type="date"
             value={applicationMeta.date_of_application}
-            onChange={(e) => onUpdateMeta({ date_of_application: e.target.value })}
+            onChange={(e) =>
+              onUpdateMeta({ date_of_application: normalizeYmdDateString(e.target.value) })
+            }
             className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
           />
         </div>
@@ -352,7 +355,9 @@ export function ApplicationDetailsForm({
             id="date_of_inspection"
             type="date"
             value={applicationMeta.date_of_inspection}
-            onChange={(e) => onUpdateMeta({ date_of_inspection: e.target.value })}
+            onChange={(e) =>
+              onUpdateMeta({ date_of_inspection: normalizeYmdDateString(e.target.value) })
+            }
             className="block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm text-zinc-900 shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
           />
         </div>
