@@ -258,7 +258,7 @@ function buildOfferLetterBody(
       ${esc(bisBranchLine)}
     </div>
     <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
-      <div><strong>Date:</strong> ${esc(inspectionDate)}</div>
+      <div><strong>Date of Inspection:</strong> ${esc(inspectionDate)}</div>
       <div style="margin-top:4px;"><strong>Application No.:</strong> ${esc(applicationNo)}</div>
     </div>
   </div>

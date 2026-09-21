@@ -65,6 +65,7 @@ export function ProcessFlowChartModal({
   letterData,
   applicationNumber,
   dateOfApplication,
+  dateOfInspection,
   topManagement,
   storedDocument,
   clientId = null,
@@ -78,6 +79,7 @@ export function ProcessFlowChartModal({
   >;
   applicationNumber: string;
   dateOfApplication: string;
+  dateOfInspection: string;
   topManagement: TopManagementStored[];
   storedDocument: ProcessFlowChartStored;
   /** Current party — pre-selected in Import Chart dialog. */
@@ -208,11 +210,12 @@ export function ProcessFlowChartModal({
       ...letterData,
       applicationNumber,
       dateOfApplication,
+      dateOfInspection,
       document,
       firmRepName,
       firmRepDesignation,
     }, topManagement);
-  }, [letterData, applicationNumber, dateOfApplication, document, firmRepName, firmRepDesignation, topManagement]);
+  }, [letterData, applicationNumber, dateOfApplication, dateOfInspection, document, firmRepName, firmRepDesignation, topManagement]);
 
   const refreshPreview = useCallback(() => {
     const iframe = iframeRef.current;

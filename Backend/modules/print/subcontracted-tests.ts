@@ -140,7 +140,7 @@ function buildLetterBody(data: SubcontractedTestsLetterData): string {
       ${bisBranchLine}
     </div>
     <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
-      <div><strong>Date:</strong> ${letterDate}</div>
+      <div><strong>Date of Inspection:</strong> ${letterDate}</div>
       <div style="margin-top:4px;"><strong>Application No.:</strong> ${applicationNo}</div>
     </div>
   </div>

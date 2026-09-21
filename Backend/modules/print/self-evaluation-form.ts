@@ -72,7 +72,9 @@ export function sefPrintPageCount(_pageCount = 2): number {
 }
 
 function buildToBlockHtml(data: SelfEvaluationFormLetterData): string {
-  const letterDate = formatMetaDate(data.dateOfApplication);
+  const letterDate = formatMetaDate(
+    (data.dateOfInspection ?? "").trim() || data.dateOfApplication,
+  );
   const appNo = formatApplicationNo(data.applicationNumber);
 
   return `
@@ -84,7 +86,7 @@ function buildToBlockHtml(data: SelfEvaluationFormLetterData): string {
     ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
   </div>
   <div class="sef-date-block">
-    <div><strong>Date:</strong> ${esc(letterDate)}</div>
+    <div><strong>Date of Inspection:</strong> ${esc(letterDate)}</div>
     <div><strong>Application No.:</strong> ${esc(appNo)}</div>
   </div>
 </div>`;

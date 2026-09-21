@@ -194,7 +194,13 @@ async function buildProcessDescriptionDocx(
                 new Paragraph({
                   alignment: AlignmentType.RIGHT,
                   spacing: { after: 20 },
-                  children: [bodyRun(`Date: ${formatMetaDate(data.dateOfApplication)}`)],
+                  children: [
+                    bodyRun(
+                      `Date of Inspection: ${formatMetaDate(
+                        (data.dateOfInspection ?? "").trim() || data.dateOfApplication,
+                      )}`,
+                    ),
+                  ],
                 }),
                 new Paragraph({
                   alignment: AlignmentType.RIGHT,

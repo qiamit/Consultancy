@@ -180,7 +180,7 @@ async function buildRawMaterialDetailsDocx(
       spacing: { after: 200 },
       children: [bodyRun("Raw Material Details", true)],
     }),
-    rightAlignedParagraph(`Date: ${formatMetaDate(data.dateOfApplication)}`),
+    rightAlignedParagraph(`Date of Inspection: ${formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)}`),
     rightAlignedParagraph(`Application No.: ${formatApplicationNo(data.applicationNumber)}`),
     plainParagraph(
       `To\nThe Director & Head\nBureau of Indian Standards\n${bisBranch}`,
@@ -254,7 +254,7 @@ export async function downloadRawMaterialDetailsExcel(
   const rows: (string | number)[][] = [
     ["Raw Material Details"],
     [],
-    ["Date", formatMetaDate(data.dateOfApplication)],
+    ["Date of Inspection", formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
     [],
     [

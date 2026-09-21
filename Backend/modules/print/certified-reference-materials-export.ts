@@ -180,7 +180,7 @@ async function buildCertifiedReferenceMaterialsDocx(
       spacing: { after: 200 },
       children: [bodyRun("List of Certified Reference Material", true)],
     }),
-    rightAlignedParagraph(`Date: ${formatMetaDate(data.dateOfApplication)}`),
+    rightAlignedParagraph(`Date of Inspection: ${formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)}`),
     rightAlignedParagraph(`Application No.: ${formatApplicationNo(data.applicationNumber)}`),
     plainParagraph(
       `To\nThe Director & Head\nBureau of Indian Standards\n${bisBranch}`,
@@ -254,7 +254,7 @@ export async function downloadCertifiedReferenceMaterialsExcel(
   const rows: (string | number)[][] = [
     ["List of Certified Reference Material"],
     [],
-    ["Date", formatMetaDate(data.dateOfApplication)],
+    ["Date of Inspection", formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
     [],
     ["To", `The Director & Head, Bureau of Indian Standards, ${bisBranch}`],

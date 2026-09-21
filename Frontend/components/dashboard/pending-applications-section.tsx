@@ -2274,7 +2274,7 @@ function ApplicationFormModal({
       bisBranchName: applicationMeta.bis_branch_name,
       bisBranchState: client?.state ?? "",
       bisBranchCountry: client?.country ?? "India",
-      inspectionDate: row.target_date ?? "",
+      inspectionDate: applicationMeta.date_of_inspection || row.target_date || "",
       applicationNumber: applicationMeta.application_number,
     };
   }
@@ -3331,6 +3331,7 @@ function ApplicationFormModal({
           letterData={buildDeclarationData()}
           applicationNumber={applicationMeta.application_number}
           dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
           topManagement={topManagement}
           storedDocument={locationMap}
           clientId={row.client_id}
@@ -3365,6 +3366,7 @@ function ApplicationFormModal({
           letterData={buildDeclarationData()}
           applicationNumber={applicationMeta.application_number}
           dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
           topManagement={topManagement}
           storedDocument={plantLayout}
           clientId={row.client_id}
@@ -3385,6 +3387,7 @@ function ApplicationFormModal({
           letterData={buildDeclarationData()}
           applicationNumber={applicationMeta.application_number}
           dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
           topManagement={topManagement}
           storedDocument={processFlowChart}
           clientId={row.client_id}
@@ -3405,6 +3408,7 @@ function ApplicationFormModal({
           letterData={buildDeclarationData()}
           applicationNumber={applicationMeta.application_number}
           dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
           topManagement={topManagement}
           isCodeId={row.is_code_id}
           licenseScope={licenseScope}

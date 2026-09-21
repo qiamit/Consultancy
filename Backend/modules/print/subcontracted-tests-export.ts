@@ -182,7 +182,7 @@ async function buildSubcontractedTestsDocx(
       false,
       AlignmentType.LEFT,
     ),
-    plainParagraph(`Date: ${letterDate}`, false, AlignmentType.RIGHT),
+    plainParagraph(`Date of Inspection: ${letterDate}`, false, AlignmentType.RIGHT),
     plainParagraph(`Application No.: ${applicationNo}`, false, AlignmentType.RIGHT),
     plainParagraph(
       `Sub: Declaration regarding test parameters subcontracted to accredited laboratories${isRef ? ` for Indian Standard ${isRef}` : ""}.`,

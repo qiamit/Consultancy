@@ -2,6 +2,7 @@ import type { FactoryTestReportStored } from "@backend/modules/bis/factory-test-
 import { parseFactoryTestReports, ftrReportHasContent } from "@backend/modules/bis/factory-test-report";
 import { parseOslSampleRequirements, rowHasContent } from "@backend/modules/bis/osl-sample-requirements";
 import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
+import { normalizeYmdDateString } from "@backend/shared/format-date";
 import {
   parseTechnicalStaff,
   rowHasContent as technicalStaffRowHasContent,
@@ -234,7 +235,7 @@ export function parseApplicationMeta(raw: unknown): ApplicationMeta {
     application_procedure:
       procedure === "Normal" || procedure === "Simplified" ? procedure : base.application_procedure,
     application_number: stripApplicationNumberPrefix(String(m.application_number ?? "")),
-    date_of_application: String(m.date_of_application ?? "").trim(),
+    date_of_application: normalizeYmdDateString(String(m.date_of_application ?? "").trim()),
     bis_branch_name: String(m.bis_branch_name ?? "").trim(),
     dealing_officer_name: String(m.dealing_officer_name ?? "").trim(),
     dealing_officer_designation: String(m.dealing_officer_designation ?? "").trim(),
@@ -243,7 +244,7 @@ export function parseApplicationMeta(raw: unknown): ApplicationMeta {
     branch_head_name: String(m.branch_head_name ?? "").trim(),
     branch_head_designation: String(m.branch_head_designation ?? "").trim(),
     nature_of_inspection: String(m.nature_of_inspection ?? "").trim(),
-    date_of_inspection: String(m.date_of_inspection ?? "").trim(),
+    date_of_inspection: normalizeYmdDateString(String(m.date_of_inspection ?? "").trim()),
     marking_clause: String(m.marking_clause ?? "").trim(),
     packaging_clause: String(m.packaging_clause ?? "").trim(),
     product_manual_number: String(m.product_manual_number ?? "").trim(),

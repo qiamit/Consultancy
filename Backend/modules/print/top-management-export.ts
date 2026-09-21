@@ -458,7 +458,7 @@ function buildAddressHeaderTable(
                 alignment: AlignmentType.RIGHT,
                 spacing: { after: 60, line: 360 },
                 children: [
-                  bodyRun("Date: ", true),
+                  bodyRun("Date of Inspection: ", true),
                   bodyRun(inspectionDate, true),
                 ],
               }),
@@ -803,7 +803,7 @@ export async function downloadTopManagementExcel(
   rows.push(["Indian Standard", data.isNumber]);
   rows.push(["IS Title", data.isTitle]);
   rows.push(["BIS Branch", bisBranchLine(data)]);
-  rows.push(["Date", formatInspectionDate(data.inspectionDate)]);
+  rows.push(["Date of Inspection", formatInspectionDate(data.inspectionDate)]);
   rows.push(["Application No.", formatApplicationNo(data.applicationNumber)]);
   rows.push([]);
   rows.push(["Top Management Details"]);

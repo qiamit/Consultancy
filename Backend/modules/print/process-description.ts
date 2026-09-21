@@ -17,6 +17,7 @@ export type ProcessDescriptionLetterData = Omit<
 > & {
   applicationNumber: string;
   dateOfApplication: string;
+  dateOfInspection: string;
   document: ProcessDescriptionStored;
 };
 
@@ -55,7 +56,9 @@ function buildPageIndicatorHtml(): string {
 }
 
 function buildLetterIntroHtml(data: ProcessDescriptionLetterData): string {
-  const letterDate = formatMetaDate(data.dateOfApplication);
+  const letterDate = formatMetaDate(
+    (data.dateOfInspection ?? "").trim() || data.dateOfApplication,
+  );
   const appNo = formatApplicationNo(data.applicationNumber);
 
   return `
@@ -68,7 +71,7 @@ function buildLetterIntroHtml(data: ProcessDescriptionLetterData): string {
     ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
   </div>
   <div class="pd-date-block">
-    <div><strong>Date:</strong> ${esc(letterDate)}</div>
+    <div><strong>Date of Inspection:</strong> ${esc(letterDate)}</div>
     <div><strong>Application No.:</strong> ${esc(appNo)}</div>
   </div>
 </div>`;

@@ -562,7 +562,7 @@ async function buildOslSampleDocx(
                 new Paragraph({
                   alignment: AlignmentType.RIGHT,
                   spacing: { after: 40 },
-                  children: [bodyRun("Date: ", true), bodyRun(inspectionDate)],
+                  children: [bodyRun("Date of Inspection: ", true), bodyRun(inspectionDate)],
                 }),
                 new Paragraph({
                   alignment: AlignmentType.RIGHT,
@@ -667,7 +667,7 @@ export async function downloadOslSampleRequirementsExcel(
   rows.push(["Indian Standard", data.isNumber]);
   rows.push(["IS Title", data.isTitle]);
   rows.push(["BIS Branch", bisBranchLine(data)]);
-  rows.push(["Date", formatInspectionDate(data.inspectionDate)]);
+  rows.push(["Date of Inspection", formatInspectionDate(data.inspectionDate)]);
   rows.push(["Application No.", formatApplicationNo(data.applicationNumber)]);
   rows.push([]);
   rows.push([

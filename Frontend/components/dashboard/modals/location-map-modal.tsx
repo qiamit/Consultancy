@@ -149,6 +149,7 @@ export function LocationMapModal({
   letterData,
   applicationNumber,
   dateOfApplication,
+  dateOfInspection,
   topManagement,
   storedDocument,
   clientId = null,
@@ -162,6 +163,7 @@ export function LocationMapModal({
   >;
   applicationNumber: string;
   dateOfApplication: string;
+  dateOfInspection: string;
   topManagement: TopManagementStored[];
   storedDocument: LocationMapStored;
   clientId?: string | null;
@@ -321,6 +323,7 @@ export function LocationMapModal({
       ...letterData,
       applicationNumber,
       dateOfApplication,
+      dateOfInspection,
       document,
       embedUrl,
       directionsUrl,
@@ -331,6 +334,7 @@ export function LocationMapModal({
     letterData,
     applicationNumber,
     dateOfApplication,
+    dateOfInspection,
     document,
     embedUrl,
     directionsUrl,

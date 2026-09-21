@@ -65,7 +65,9 @@ function buildFormHeaderHtml(continued = false): string {
 
 function buildLetterIntroHtml(data: Cmpf310LetterData): string {
   const appNo = formatApplicationNo(data.applicationNumber);
-  const letterDate = formatMetaDate(data.dateOfApplication);
+  const letterDate = formatMetaDate(
+    (data.dateOfInspection ?? "").trim() || data.dateOfApplication,
+  );
 
   return `
 <div class="cmpf-to-row">
@@ -76,7 +78,7 @@ function buildLetterIntroHtml(data: Cmpf310LetterData): string {
     ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
   </div>
   <div class="cmpf-date-block">
-    <div><strong>Date:</strong> ${esc(letterDate)}</div>
+    <div><strong>Date of Inspection:</strong> ${esc(letterDate)}</div>
     <div><strong>Application No.:</strong> ${esc(appNo)}</div>
   </div>
 </div>`;

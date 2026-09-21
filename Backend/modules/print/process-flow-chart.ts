@@ -17,6 +17,7 @@ export type ProcessFlowChartLetterData = Omit<
 > & {
   applicationNumber: string;
   dateOfApplication: string;
+  dateOfInspection: string;
   document: ProcessFlowChartStored;
   firmRepName: string;
   firmRepDesignation: string;
@@ -57,7 +58,9 @@ function buildPageIndicatorHtml(): string {
 }
 
 function buildLetterIntroHtml(data: ProcessFlowChartLetterData): string {
-  const letterDate = formatMetaDate(data.dateOfApplication);
+  const letterDate = formatMetaDate(
+    (data.dateOfInspection ?? "").trim() || data.dateOfApplication,
+  );
   const appNo = formatApplicationNo(data.applicationNumber);
 
   return `
@@ -69,7 +72,7 @@ function buildLetterIntroHtml(data: ProcessFlowChartLetterData): string {
     ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
   </div>
   <div class="pfc-date-block">
-    <div><strong>Date:</strong> ${esc(letterDate)}</div>
+    <div><strong>Date of Inspection:</strong> ${esc(letterDate)}</div>
     <div><strong>Application No.:</strong> ${esc(appNo)}</div>
   </div>
 </div>`;

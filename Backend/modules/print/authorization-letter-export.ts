@@ -91,7 +91,7 @@ async function buildAuthorizationLetterDocx(
       children: [bodyRun("Authorization Letter", true)],
     }),
     plainParagraph(`Application No.: ${formatApplicationNo(data.applicationNumber)}`),
-    plainParagraph(`Date: ${formatMetaDate(data.dateOfApplication)}`),
+    plainParagraph(`Date of Inspection: ${formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)}`),
     plainParagraph("Dear Sir"),
     plainParagraph(
       `We, M/s. ${data.companyName}, hereby authorize ${authorizedName}, ${authorizedDesig} to represent our firm and to interact with BIS officials in connection with our application for grant of licence for use of BIS Standard Mark conforming to ${data.isNumber || "—"}.`,
@@ -137,7 +137,7 @@ export async function downloadAuthorizationLetterExcel(
     ["Authorization Letter"],
     [],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
-    ["Date", formatMetaDate(data.dateOfApplication)],
+    ["Date of Inspection", formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)],
     ["IS Code", data.isNumber || "—"],
     [],
     ["Authorized Person", doc.authorized_name || "—"],

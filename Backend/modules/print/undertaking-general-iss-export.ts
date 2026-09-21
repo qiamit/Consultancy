@@ -91,8 +91,8 @@ async function buildUndertakingGeneralIssDocx(
       children: [
         bodyRun("To\nThe Director & Head\nBureau of Indian Standard\n"),
         bodyRun(bisBranch),
-        bodyRun("\t\t\t\tDate: "),
-        bodyRun(formatMetaDate(data.dateOfApplication), true),
+        bodyRun("\t\t\t\tDate of Inspection: "),
+        bodyRun(formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication), true),
         bodyRun("\n\t\t\t\tApplication No.: "),
         bodyRun(formatApplicationNo(data.applicationNumber), true),
       ],
@@ -162,7 +162,7 @@ export async function downloadUndertakingGeneralIssExcel(
   const rows: (string | number)[][] = [
     ["Undertaking for General & ISS"],
     [],
-    ["Date", formatMetaDate(data.dateOfApplication)],
+    ["Date of Inspection", formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
     [],
     ["To", `The Director & Head, Bureau of Indian Standard, ${bisBranch}`],

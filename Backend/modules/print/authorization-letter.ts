@@ -154,7 +154,9 @@ function buildPageIndicatorHtml(): string {
 
 function buildLetterIntroHtml(data: AuthorizationLetterLetterData): string {
 
-  const letterDate = formatMetaDate(data.dateOfApplication);
+  const letterDate = formatMetaDate(
+    (data.dateOfInspection ?? "").trim() || data.dateOfApplication,
+  );
 
   const appNo = formatApplicationNo(data.applicationNumber);
 
@@ -180,7 +182,7 @@ function buildLetterIntroHtml(data: AuthorizationLetterLetterData): string {
 
   <div class="auth-date-block">
 
-    <div><strong>Date:</strong> ${esc(letterDate)}</div>
+    <div><strong>Date of Inspection:</strong> ${esc(letterDate)}</div>
 
     <div><strong>Application No.:</strong> ${esc(appNo)}</div>
 

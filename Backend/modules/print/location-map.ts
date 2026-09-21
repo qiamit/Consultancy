@@ -27,6 +27,7 @@ export type LocationMapLetterData = Omit<
 > & {
   applicationNumber: string;
   dateOfApplication: string;
+  dateOfInspection: string;
   document: LocationMapStored;
   embedUrl: string | null;
   directionsUrl: string | null;
@@ -81,7 +82,9 @@ function buildPageIndicatorHtml(): string {
 }
 
 function buildLetterIntroHtml(data: LocationMapLetterData): string {
-  const letterDate = formatMetaDate(data.dateOfApplication);
+  const letterDate = formatMetaDate(
+    (data.dateOfInspection ?? "").trim() || data.dateOfApplication,
+  );
   const appNo = formatApplicationNo(data.applicationNumber);
 
   return `
@@ -93,7 +96,7 @@ function buildLetterIntroHtml(data: LocationMapLetterData): string {
     ${formatBisBranchLine(data.bisBranchName, data.bisBranchState)}
   </div>
   <div class="loc-date-block">
-    <div><strong>Date:</strong> ${esc(letterDate)}</div>
+    <div><strong>Date of Inspection:</strong> ${esc(letterDate)}</div>
     <div><strong>Application No.:</strong> ${esc(appNo)}</div>
   </div>
 </div>`;

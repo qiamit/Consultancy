@@ -90,7 +90,9 @@ function buildIntroContentHtml(data: RawMaterialDetailsLetterData): string {
     data.bisBranchState,
     data.bisBranchCountry,
   );
-  const letterDate = formatMetaDate(data.dateOfApplication);
+  const letterDate = formatMetaDate(
+    (data.dateOfInspection ?? "").trim() || data.dateOfApplication,
+  );
   const appNo = formatApplicationNo(data.applicationNumber);
 
   return `
@@ -103,7 +105,7 @@ function buildIntroContentHtml(data: RawMaterialDetailsLetterData): string {
       ${bisBranchLine}
     </div>
     <div class="rmd-date-block">
-      <div><strong>Date:</strong> ${esc(letterDate)}</div>
+      <div><strong>Date of Inspection:</strong> ${esc(letterDate)}</div>
       <div><strong>Application No.:</strong> ${esc(appNo)}</div>
     </div>
   </div>

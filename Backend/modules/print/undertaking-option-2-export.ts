@@ -91,6 +91,7 @@ async function buildUndertakingOption2Docx(
       spacing: { after: 200 },
       children: [bodyRun("Undertaking for Simplified Procedure (Option 2)", true)],
     }),
+    plainParagraph(`Date of Inspection: ${formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)}`),
     plainParagraph(`Applicant Name: ${data.companyName}`),
     plainParagraph(`Application No.: ${formatApplicationNo(data.applicationNumber)}`),
     plainParagraph(`IS Code: ${data.isNumber || "—"}`),
@@ -152,6 +153,7 @@ export async function downloadUndertakingOption2Excel(
   const rows: (string | number)[][] = [
     ["Undertaking for Simplified Procedure (Option 2)"],
     [],
+    ["Date of Inspection", formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)],
     ["Applicant Name", data.companyName],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
     ["IS Code", data.isNumber || "—"],

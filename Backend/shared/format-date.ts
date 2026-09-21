@@ -25,9 +25,14 @@ export function parseToDate(input: string | Date | null | undefined): Date | nul
 
   const ymd = /^(\d{4})-(\d{2})-(\d{2})(?:[T\s].*)?$/.exec(s);
   if (ymd) {
-    const y = Number(ymd[1]);
+    let y = Number(ymd[1]);
     const m = Number(ymd[2]);
     const d = Number(ymd[3]);
+    // HTML date inputs / bad saves can store "0026-08-27" for year 2026.
+    // Pivot 2-digit-class years the same way as parseDisplayDateInput.
+    if (y >= 0 && y < 100) {
+      y += y >= 70 ? 1900 : 2000;
+    }
     const date = new Date(y, m - 1, d);
     if (date.getFullYear() === y && date.getMonth() === m - 1 && date.getDate() === d) {
       return date;
@@ -37,6 +42,18 @@ export function parseToDate(input: string | Date | null | undefined): Date | nul
 
   // Do not fall back to `new Date(s)` — it mis-parses codes like "FM/2062-…" as dates.
   return null;
+}
+
+/**
+ * Normalize a calendar date string to YYYY-MM-DD.
+ * Fixes legacy zero-padded years like "0026-08-27" → "2026-08-27".
+ */
+export function normalizeYmdDateString(
+  input: string | Date | null | undefined,
+): string {
+  const d = parseToDate(input);
+  if (!d) return typeof input === "string" ? input.trim() : "";
+  return toYmdDateString(d);
 }
 
 /** Format dates for display as dd-mmm-yy (e.g. 27-Jun-26). */

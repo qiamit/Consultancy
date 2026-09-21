@@ -148,8 +148,8 @@ async function buildCmpf307Docx(
       children: [
         bodyRun("To\nThe Director & Head\nBureau of Indian Standard\n"),
         bodyRun(bisBranch),
-        bodyRun("\t\t\t\tDate: "),
-        bodyRun(formatMetaDate(data.dateOfApplication), true),
+        bodyRun("\t\t\t\tDate of Inspection: "),
+        bodyRun(formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication), true),
         bodyRun("\n\t\t\t\tApplication No.: "),
         bodyRun(formatApplicationNo(data.applicationNumber), true),
       ],
@@ -228,7 +228,7 @@ export async function downloadCmpf307Excel(data: Cmpf307LetterData): Promise<voi
   const rows: (string | number)[][] = [
     ["Declaration of Brand Names (CMPF - 307)"],
     [],
-    ["Date", formatMetaDate(data.dateOfApplication)],
+    ["Date of Inspection", formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)],
     ["Application No.", formatApplicationNo(data.applicationNumber)],
     [],
     ["4. Brand/Trade Names Being Used"],

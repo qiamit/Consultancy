@@ -57,7 +57,7 @@ function buildFormHeaderHtml(data: Cmpf311LetterData): string {
 <div class="cmpf-form-id">CMPF - 311</div>
 <h1 class="cmpf-title">Acceptance of Scheme of Inspection &amp; Testing</h1>
 <div class="cmpf-meta-block">
-  <div><strong>Date:</strong> ${esc(letterDate)}</div>
+  <div><strong>Date of Inspection:</strong> ${esc(letterDate)}</div>
   <div><strong>Application No.:</strong> ${esc(appNo)}</div>
 </div>`;
 }

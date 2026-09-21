@@ -41,6 +41,7 @@ export function ProcessDescriptionModal({
   letterData,
   applicationNumber,
   dateOfApplication,
+  dateOfInspection,
   topManagement,
   isCodeId,
   licenseScope,
@@ -57,6 +58,7 @@ export function ProcessDescriptionModal({
   >;
   applicationNumber: string;
   dateOfApplication: string;
+  dateOfInspection: string;
   topManagement: TopManagementStored[];
   isCodeId: string | null;
   licenseScope: string;
@@ -76,6 +78,7 @@ export function ProcessDescriptionModal({
           ...letterData,
           applicationNumber,
           dateOfApplication,
+          dateOfInspection,
           document: {
             signatory_name: "",
             signatory_designation: "",
@@ -83,7 +86,7 @@ export function ProcessDescriptionModal({
           },
         }),
       }),
-    [letterData, applicationNumber, dateOfApplication, topManagement],
+    [letterData, applicationNumber, dateOfApplication, dateOfInspection, topManagement],
   );
 
   const [document, setDocument] = useState<ProcessDescriptionStored>(() =>
@@ -180,9 +183,10 @@ export function ProcessDescriptionModal({
       ...letterData,
       applicationNumber,
       dateOfApplication,
+      dateOfInspection,
       document,
     }, topManagement);
-  }, [letterData, applicationNumber, dateOfApplication, document, topManagement]);
+  }, [letterData, applicationNumber, dateOfApplication, dateOfInspection, document, topManagement]);
 
   const refreshPreview = useCallback(() => {
     const iframe = iframeRef.current;

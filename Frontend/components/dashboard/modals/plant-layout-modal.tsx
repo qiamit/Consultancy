@@ -54,6 +54,7 @@ export function PlantLayoutModal({
   letterData,
   applicationNumber,
   dateOfApplication,
+  dateOfInspection,
   topManagement,
   storedDocument,
   clientId = null,
@@ -67,6 +68,7 @@ export function PlantLayoutModal({
   >;
   applicationNumber: string;
   dateOfApplication: string;
+  dateOfInspection: string;
   topManagement: TopManagementStored[];
   storedDocument: PlantLayoutStored;
   clientId?: string | null;
@@ -170,11 +172,12 @@ export function PlantLayoutModal({
       ...letterData,
       applicationNumber,
       dateOfApplication,
+      dateOfInspection,
       document,
       firmRepName,
       firmRepDesignation,
     }, topManagement);
-  }, [letterData, applicationNumber, dateOfApplication, document, firmRepName, firmRepDesignation, topManagement]);
+  }, [letterData, applicationNumber, dateOfApplication, dateOfInspection, document, firmRepName, firmRepDesignation, topManagement]);
 
   const refreshPreview = useCallback(() => {
     const iframe = iframeRef.current;

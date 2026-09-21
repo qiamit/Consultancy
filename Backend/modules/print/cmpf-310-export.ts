@@ -138,7 +138,7 @@ async function buildCmpf310Docx(
     new Paragraph({
       alignment: AlignmentType.RIGHT,
       spacing: { after: 40 },
-      children: [bodyRun(`Date: ${formatMetaDate(data.dateOfApplication)}`)],
+      children: [bodyRun(`Date of Inspection: ${formatMetaDate((data.dateOfInspection ?? "").trim() || data.dateOfApplication)}`)],
     }),
     new Paragraph({
       alignment: AlignmentType.RIGHT,
