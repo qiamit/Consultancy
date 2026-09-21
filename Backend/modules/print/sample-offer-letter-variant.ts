@@ -1,20 +1,14 @@
 export type SampleOfferLetterVariant = "osl" | "pi";
 
+const DOCUMENT_HEADING = "Sample Offer Letter for Inspection";
+
 export function sampleOfferLetterLabels(variant: SampleOfferLetterVariant) {
-  if (variant === "pi") {
-    return {
-      modalTitle: "Sample Requirements",
-      documentHeading: "Sample Offer Letter for Inspection",
-      documentTitle: "Sample Offer Letter for Inspection",
-      iframeTitle: "PI sample print preview",
-      qeSubtitle: "Sample Offer Letter · AI Powered",
-    };
-  }
   return {
     modalTitle: "Sample Requirements",
-    documentHeading: "Sample Offer Letter for Inspection",
-    documentTitle: "Sample Offer Letter for Inspection",
-    iframeTitle: "OSL sample print preview",
+    documentHeading: DOCUMENT_HEADING,
+    documentTitle: DOCUMENT_HEADING,
+    iframeTitle:
+      variant === "pi" ? "PI sample print preview" : "OSL sample print preview",
     qeSubtitle: "Sample Offer Letter · AI Powered",
   };
 }
