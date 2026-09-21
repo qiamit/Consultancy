@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useTransition } from "react";
+import dynamic from "next/dynamic";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@backend/db/client/client";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
 import { formatDisplayDate } from "@backend/shared/format-date";
+import { formatClientAddressLine } from "@backend/shared/format-client-address";
 import {
   SAMPLE_FAILURE_TYPES,
   SAMPLE_FAILURE_TYPE_LABELS,
@@ -15,19 +17,50 @@ import {
 } from "@backend/modules/bis/sample-failure-reply";
 import {
   addSampleFailureReply,
-  signSampleFailureDocumentDownload,
   updateSampleFailureReply,
   updateSampleFailureReplyDraft,
-  uploadSampleFailureReplyDocument,
   type AddSampleFailureReplyInput,
 } from "@backend/actions/sample-failure-reply";
 import { draftSampleFailureReply } from "@backend/actions/sample-failure-reply-assistant";
+import { updateBisProjectNotes } from "@backend/actions/bis-projects";
+import {
+  buildApplicationChecklistPayload,
+  parseApplicationChecklistNotes,
+} from "@backend/modules/bis/application-checklist-notes";
+import {
+  combineOslAndPiSamples,
+  documentHasContent as oslDocumentHasContent,
+  splitOslAndPiSamples,
+  type OslSampleRequirementStored,
+} from "@backend/modules/bis/osl-sample-requirements";
+import {
+  ftrReportHasContent,
+  type FactoryTestReportStored,
+} from "@backend/modules/bis/factory-test-report";
+import type { TopManagementStored } from "@backend/modules/bis/top-management";
+import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff";
 import { openManakEbisAssist } from "@/components/modules/bis-projects/manak-ebis-assist";
 import { useSidebarLayout } from "@/components/dashboard/sidebar-layout-context";
 import {
   IsCodeCombobox,
   type IsCodeComboboxOption,
 } from "@/components/modules/bis-projects/is-code-combobox";
+
+const OslSampleRequirementsModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/osl-sample-requirements-modal").then((m) => ({
+      default: m.OslSampleRequirementsModal,
+    })),
+  { ssr: false },
+);
+
+const FactoryTestReportModal = dynamic(
+  () =>
+    import("@/components/dashboard/modals/factory-test-report-modal").then((m) => ({
+      default: m.FactoryTestReportModal,
+    })),
+  { ssr: false },
+);
 
 export type SampleFailureReplyRow = {
   id: string;
@@ -103,19 +136,6 @@ function statusBadge(status: string) {
     closed: "bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300",
   };
   return map[status] ?? map.open;
-}
-
-async function openSignedDoc(path: string | null) {
-  if (!path) {
-    window.alert("Document not uploaded yet.");
-    return;
-  }
-  const result = await signSampleFailureDocumentDownload(path);
-  if (!result.ok) {
-    window.alert(result.error);
-    return;
-  }
-  window.open(result.url, "_blank", "noopener,noreferrer");
 }
 
 function SampleFailureAddModal({
@@ -535,6 +555,7 @@ function SampleFailureAddModal({
   );
 }
 
+
 const docTileBase =
   "inline-flex min-h-[3.25rem] w-full items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-xs font-semibold leading-snug shadow-sm transition active:scale-[0.99]";
 
@@ -564,6 +585,88 @@ function SampleFailureDocIcon({ kind }: { kind: "offer" | "report" | "reply" }) 
   );
 }
 
+type ClientLetterData = {
+  name: string;
+  company_name: string | null;
+  contact_person_name: string | null;
+  email: string | null;
+  phone: string | null;
+  phone_country_code: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  country: string | null;
+  pin_code: string | null;
+  gst_number: string | null;
+};
+
+type ChecklistBundle = ReturnType<typeof parseApplicationChecklistNotes>;
+
+const CHECKLIST_PRESERVE_KEYS = [
+  "source_license_id",
+  "license_scope",
+  "license_scope_format",
+  "license_scope_rows",
+  "osl_sample_requirements",
+  "pi_sample_requirements",
+  "top_management",
+  "technical_staff",
+  "factory_test_reports",
+  "subcontracted_tests",
+  "subcontracted_tests_document",
+  "cmpf_305_machinery",
+  "raw_material_details",
+  "certified_reference_materials",
+  "cmpf_306",
+  "cmpf_307",
+  "cmpf_310",
+  "cmpf_311",
+  "undertaking_option_2",
+  "undertaking_general_iss",
+  "authorization_letter",
+  "undertaking_long_duration_test",
+  "undertaking_minimum_marking_fee",
+  "location_map",
+  "plant_layout",
+  "process_flow_chart",
+  "process_description",
+  "updated_scheme_of_inspection",
+  "self_evaluation_form",
+  "legal_documents",
+] as const;
+
+async function saveLinkedProjectChecklist(
+  projectId: string,
+  existingNotes: string,
+  next: ChecklistBundle,
+  explicitClear: Set<string> = new Set(),
+): Promise<{ ok: true; notes: string } | { ok: false; error: string }> {
+  let existingObj: Record<string, unknown> = {};
+  try {
+    existingObj = JSON.parse(existingNotes.trim() || "{}") as Record<string, unknown>;
+  } catch {
+    existingObj = {};
+  }
+  const sourceLicenseId =
+    typeof existingObj.source_license_id === "string" ? existingObj.source_license_id : null;
+  const payload = buildApplicationChecklistPayload({
+    ...next,
+    sourceLicenseId,
+  });
+  const newObj = JSON.parse(payload) as Record<string, unknown>;
+  if (existingObj && typeof existingObj === "object" && existingObj.type === "application_checklist") {
+    for (const key of CHECKLIST_PRESERVE_KEYS) {
+      if (!(key in newObj) && key in existingObj && !explicitClear.has(key)) {
+        newObj[key] = existingObj[key];
+      }
+    }
+  }
+  const notes = JSON.stringify(newObj);
+  const result = await updateBisProjectNotes(projectId, notes);
+  if (!result.ok) return result;
+  return { ok: true, notes };
+}
+
 function SampleFailureReplyModal({
   row,
   onClose,
@@ -581,19 +684,170 @@ function SampleFailureReplyModal({
   const [message, setMessage] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [aiPending, setAiPending] = useState(false);
-  const [offerName, setOfferName] = useState(row.offer_letter_name);
-  const [reportName, setReportName] = useState(row.factory_test_report_name);
-  const [offerPath, setOfferPath] = useState(row.offer_letter_path);
-  const [reportPath, setReportPath] = useState(row.factory_test_report_path);
+  const [loadingDocs, setLoadingDocs] = useState(true);
+  const [rawNotes, setRawNotes] = useState("");
+  const [client, setClient] = useState<ClientLetterData | null>(null);
+  const [oslSampleRequirements, setOslSampleRequirements] = useState<OslSampleRequirementStored[]>([]);
+  const [piSampleRequirements, setPiSampleRequirements] = useState<OslSampleRequirementStored[]>([]);
+  const [factoryTestReports, setFactoryTestReports] = useState<FactoryTestReportStored[]>([]);
+  const [topManagement, setTopManagement] = useState<TopManagementStored[]>([]);
+  const [technicalStaff, setTechnicalStaff] = useState<TechnicalStaffStored[]>([]);
+  const [applicationMeta, setApplicationMeta] = useState(() => ({
+    application_number: "",
+    date_of_application: "",
+    date_of_inspection: "",
+    bis_branch_name: "",
+    inspection_officer_name: "",
+    inspection_officer_designation: "",
+  }));
+  const checklistRef = useRef<ChecklistBundle | null>(null);
 
   useEffect(() => {
     setPortalReady(true);
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const projectId = (row.bis_project_id ?? "").trim();
+    const clientId = (row.client_id ?? "").trim();
+    setLoadingDocs(true);
+    const supabase = createClient();
+
+    void (async () => {
+      const [clientRes, projectRes] = await Promise.all([
+        clientId
+          ? supabase
+              .from("clients")
+              .select(
+                "name, company_name, contact_person_name, email, phone, phone_country_code, address, city, state, country, pin_code, gst_number",
+              )
+              .eq("id", clientId)
+              .maybeSingle()
+          : Promise.resolve({ data: null }),
+        projectId
+          ? supabase.from("bis_projects").select("notes").eq("id", projectId).maybeSingle()
+          : Promise.resolve({ data: null }),
+      ]);
+      if (cancelled) return;
+
+      if (clientRes.data) {
+        setClient(clientRes.data as ClientLetterData);
+      }
+
+      const notes = String((projectRes.data as { notes?: string | null } | null)?.notes ?? "");
+      const parsed = parseApplicationChecklistNotes(notes);
+      checklistRef.current = parsed;
+      setRawNotes(notes);
+      setOslSampleRequirements(parsed.oslSampleRequirements);
+      setPiSampleRequirements(parsed.piSampleRequirements);
+      setFactoryTestReports(parsed.factoryTestReports);
+      setTopManagement(parsed.topManagement);
+      setTechnicalStaff(parsed.technicalStaff);
+      setApplicationMeta({
+        application_number: parsed.meta.application_number ?? "",
+        date_of_application: parsed.meta.date_of_application ?? "",
+        date_of_inspection: parsed.meta.date_of_inspection ?? "",
+        bis_branch_name: parsed.meta.bis_branch_name ?? "",
+        inspection_officer_name: parsed.meta.inspection_officer_name ?? "",
+        inspection_officer_designation: parsed.meta.inspection_officer_designation ?? "",
+      });
+      setLoadingDocs(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [row.bis_project_id, row.client_id]);
+
   const isLabel = formatIsCodeShort(row.is_number, row.is_revision_year);
   const cmLabel = formatCmDisplay(row.project_kind ?? "licence", row.cm_l_digits);
+  const projectId = (row.bis_project_id ?? "").trim();
+  const offerReady = oslDocumentHasContent(
+    combineOslAndPiSamples(oslSampleRequirements, piSampleRequirements),
+  );
+  const reportReady = factoryTestReports.some(ftrReportHasContent);
+  const docsReady = offerReady && reportReady;
+
+  function buildLetterData() {
+    const address = formatClientAddressLine({
+      address: client?.address,
+      city: client?.city,
+      pin_code: client?.pin_code,
+      state: client?.state,
+    });
+    const phoneDigits = (client?.phone ?? "").trim();
+    const phoneCode = (client?.phone_country_code ?? "").trim();
+    const mobile = phoneDigits ? [phoneCode, phoneDigits].filter(Boolean).join(" ") : "";
+    return {
+      companyName: client?.company_name ?? row.client_name,
+      address,
+      city: client?.city ?? "",
+      contactPerson: client?.contact_person_name ?? "",
+      phone: mobile,
+      email: client?.email ?? "",
+      gstNumber: client?.gst_number ?? "",
+      isNumber: isLabel !== "—" ? isLabel : "",
+      isTitle: row.is_code_title ?? "",
+      bisBranchName: applicationMeta.bis_branch_name,
+      bisBranchState: client?.state ?? "",
+      bisBranchCountry: client?.country ?? "India",
+      inspectionDate: applicationMeta.date_of_inspection || "",
+      applicationNumber: applicationMeta.application_number,
+    };
+  }
+
+  function requireProject(): boolean {
+    if (projectId) return true;
+    setError(
+      "Link a CM/L (IS code) on this sample failure entry first, then open Sample Offer Letter / Factory Test Report.",
+    );
+    setPanel(null);
+    return false;
+  }
+
+  async function persistChecklist(
+    next: ChecklistBundle,
+    explicitClear: Set<string> = new Set(),
+  ): Promise<boolean> {
+    if (!requireProject()) return false;
+    const result = await saveLinkedProjectChecklist(projectId, rawNotes, next, explicitClear);
+    if (!result.ok) {
+      setError(result.error);
+      return false;
+    }
+    checklistRef.current = next;
+    setRawNotes(result.notes);
+    setMessage("Saved to linked licence checklist.");
+    onSaved();
+    return true;
+  }
+
+  function saveOslSampleRequirements(rows: OslSampleRequirementStored[]) {
+    const { osl, pi } = splitOslAndPiSamples(rows);
+    setOslSampleRequirements(osl);
+    setPiSampleRequirements(pi);
+    const base = checklistRef.current ?? parseApplicationChecklistNotes(rawNotes);
+    const next = { ...base, oslSampleRequirements: osl, piSampleRequirements: pi };
+    const clear = new Set<string>();
+    if (osl.length === 0) clear.add("osl_sample_requirements");
+    if (pi.length === 0) clear.add("pi_sample_requirements");
+    void persistChecklist(next, clear);
+  }
+
+  function saveFactoryTestReports(rows: FactoryTestReportStored[]) {
+    setFactoryTestReports(rows);
+    const base = checklistRef.current ?? parseApplicationChecklistNotes(rawNotes);
+    const next = { ...base, factoryTestReports: rows };
+    const clear = new Set<string>();
+    if (rows.length === 0) clear.add("factory_test_reports");
+    void persistChecklist(next, clear);
+  }
 
   async function handleGenerateDraft() {
+    if (!docsReady) {
+      setError("Prepare Sample Offer Letter and Factory Test Report first, then generate the AI reply draft.");
+      return;
+    }
     setAiPending(true);
     setError(null);
     setMessage(null);
@@ -622,49 +876,14 @@ function SampleFailureReplyModal({
     });
   }
 
-  async function handleUpload(
-    kind: "offer_letter" | "factory_test_report",
-    file: File | null,
-  ) {
-    if (!file) return;
+  function openPanel(next: "offer" | "report" | "reply") {
     setError(null);
     setMessage(null);
-    const formData = new FormData();
-    formData.append("file", file);
-    const result = await uploadSampleFailureReplyDocument(row.id, kind, formData);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    if (kind === "offer_letter") {
-      setOfferName(result.name);
-      setOfferPath(result.path);
-    } else {
-      setReportName(result.name);
-      setReportPath(result.path);
-    }
-    setMessage(`${result.name} uploaded.`);
-    onSaved();
+    if ((next === "offer" || next === "report") && !requireProject()) return;
+    setPanel(next);
   }
 
   if (!portalReady) return null;
-
-  const activeDoc =
-    panel === "offer"
-      ? {
-          title: "Sample Offer Letter",
-          name: offerName,
-          path: offerPath,
-          kind: "offer_letter" as const,
-        }
-      : panel === "report"
-        ? {
-            title: "Factory Test Report",
-            name: reportName,
-            path: reportPath,
-            kind: "factory_test_report" as const,
-          }
-        : null;
 
   return createPortal(
     <div
@@ -698,9 +917,15 @@ function SampleFailureReplyModal({
 
         <div className="shrink-0 border-b border-zinc-200 bg-white px-3 py-2.5 sm:px-5 dark:border-zinc-800 dark:bg-zinc-900">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-            <p className="min-w-0 text-sm font-extrabold text-zinc-900 sm:text-base dark:text-zinc-50">
-              {row.client_name}
-            </p>
+            <div className="min-w-0">
+              <p className="min-w-0 text-sm font-extrabold text-zinc-900 sm:text-base dark:text-zinc-50">
+                {row.client_name}
+              </p>
+              <p className="mt-0.5 text-[11px] text-zinc-500 dark:text-zinc-400">
+                {sampleFailureTypeLabel(row.sample_failure_type)}
+                {row.sample_code.trim() ? ` · Sample ${row.sample_code.trim()}` : ""}
+              </p>
+            </div>
             <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1 sm:justify-end">
               {isLabel !== "—" ? (
                 <p className="text-sm font-extrabold text-zinc-900 sm:text-base dark:text-zinc-50">
@@ -716,84 +941,88 @@ function SampleFailureReplyModal({
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           <div className="border-b border-zinc-200 bg-zinc-50 px-3 py-3 sm:px-5 sm:py-4 dark:border-zinc-800 dark:bg-zinc-900/60">
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
-              <button type="button" onClick={() => setPanel("offer")} className={docTileTeal}>
-                <SampleFailureDocIcon kind="offer" />
-                <span className="min-w-0 flex-1">Sample Offer Letter</span>
-              </button>
-              <button type="button" onClick={() => setPanel("report")} className={docTileTeal}>
-                <SampleFailureDocIcon kind="report" />
-                <span className="min-w-0 flex-1">Factory Test Report</span>
-              </button>
-              <button type="button" onClick={() => setPanel("reply")} className={docTileTeal}>
-                <SampleFailureDocIcon kind="reply" />
-                <span className="min-w-0 flex-1">Sample Failure Reply</span>
-              </button>
-            </div>
+            {loadingDocs ? (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading licence documents…</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-3">
+                <button type="button" onClick={() => openPanel("offer")} className={docTileTeal}>
+                  <SampleFailureDocIcon kind="offer" />
+                  <span className="min-w-0 flex-1">
+                    Sample Offer Letter
+                    <span className="mt-0.5 block text-[10px] font-medium opacity-80">
+                      {offerReady ? "Ready" : "Create like Application"}
+                    </span>
+                  </span>
+                </button>
+                <button type="button" onClick={() => openPanel("report")} className={docTileTeal}>
+                  <SampleFailureDocIcon kind="report" />
+                  <span className="min-w-0 flex-1">
+                    Factory Test Report
+                    <span className="mt-0.5 block text-[10px] font-medium opacity-80">
+                      {reportReady ? "Ready" : "Create like Application"}
+                    </span>
+                  </span>
+                </button>
+                <button type="button" onClick={() => openPanel("reply")} className={docTileTeal}>
+                  <SampleFailureDocIcon kind="reply" />
+                  <span className="min-w-0 flex-1">
+                    Sample Failure Reply
+                    <span className="mt-0.5 block text-[10px] font-medium opacity-80">
+                      {docsReady ? "AI draft after docs" : "Complete docs first"}
+                    </span>
+                  </span>
+                </button>
+              </div>
+            )}
+            {error && !panel ? (
+              <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
+                {error}
+              </p>
+            ) : null}
           </div>
         </div>
       </div>
 
-      {activeDoc && (
-        <div className="fixed inset-0 z-[210] flex items-start justify-center overflow-y-auto bg-black/45 p-4 backdrop-blur-sm">
-          <div className="my-8 w-full max-w-lg rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
-            <div className="flex items-center justify-between gap-3 border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
-              <h3 className="text-sm font-semibold text-zinc-900 dark:text-white">{activeDoc.title}</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setPanel(null);
-                  setError(null);
-                  setMessage(null);
-                }}
-                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-                aria-label="Close"
-              >
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
-            </div>
-            <div className="space-y-3 px-5 py-4">
-              <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-                {activeDoc.name || "Not uploaded"}
-              </p>
-              <div className="flex flex-wrap gap-2">
-                <label className="cursor-pointer rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-semibold text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-200 dark:hover:bg-zinc-800">
-                  Upload
-                  <input
-                    type="file"
-                    className="hidden"
-                    accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0] ?? null;
-                      e.target.value = "";
-                      void handleUpload(activeDoc.kind, file);
-                    }}
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={!activeDoc.path && !activeDoc.name}
-                  onClick={() => void openSignedDoc(activeDoc.path)}
-                  className="rounded-lg border border-sky-300 px-3 py-1.5 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-40 dark:border-sky-700 dark:text-sky-300 dark:hover:bg-sky-950/30"
-                >
-                  View
-                </button>
-              </div>
-              {error && (
-                <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">
-                  {error}
-                </p>
-              )}
-              {message && (
-                <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700 dark:border-emerald-900 dark:bg-emerald-950/40 dark:text-emerald-300">
-                  {message}
-                </p>
-              )}
-            </div>
-          </div>
-        </div>
+      {panel === "offer" && (
+        <OslSampleRequirementsModal
+          variant="osl"
+          letterData={buildLetterData()}
+          topManagement={topManagement}
+          isCodeNumber={row.is_number}
+          isCodeId={row.is_code_id}
+          revisionYear={row.is_revision_year}
+          rows={combineOslAndPiSamples(oslSampleRequirements, piSampleRequirements)}
+          clientId={row.client_id}
+          excludeImportSource={
+            projectId ? { id: projectId, source: "bis_projects" } : null
+          }
+          onSave={saveOslSampleRequirements}
+          onClose={() => setPanel(null)}
+        />
+      )}
+
+      {panel === "report" && (
+        <FactoryTestReportModal
+          letterData={buildLetterData()}
+          oslSamples={oslSampleRequirements}
+          piSamples={piSampleRequirements}
+          applicationNumber={applicationMeta.application_number}
+          dateOfApplication={applicationMeta.date_of_application}
+          dateOfInspection={applicationMeta.date_of_inspection}
+          licenceNumber={cmLabel !== "—" ? cmLabel : ""}
+          inspectionOfficerName={applicationMeta.inspection_officer_name}
+          inspectionOfficerDesignation={applicationMeta.inspection_officer_designation}
+          technicalStaff={technicalStaff}
+          isCodeId={row.is_code_id}
+          isNumber={row.is_number}
+          revisionYear={row.is_revision_year}
+          rows={factoryTestReports}
+          onSave={saveFactoryTestReports}
+          onClose={() => setPanel(null)}
+          onEditSample={() => {
+            setPanel("offer");
+          }}
+        />
       )}
 
       {panel === "reply" && (
@@ -817,10 +1046,15 @@ function SampleFailureReplyModal({
               </button>
             </div>
             <div className="space-y-3 px-5 py-4">
+              {!docsReady ? (
+                <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+                  Prepare Sample Offer Letter and Factory Test Report first (same as Application). Then generate the AI failure reply draft.
+                </p>
+              ) : null}
               <div className="flex flex-wrap items-center justify-end gap-2">
                 <button
                   type="button"
-                  disabled={aiPending}
+                  disabled={aiPending || !docsReady}
                   onClick={() => void handleGenerateDraft()}
                   className="rounded-lg border border-violet-300 bg-violet-50 px-3 py-1.5 text-xs font-semibold text-violet-800 hover:bg-violet-100 disabled:opacity-50 dark:border-violet-700 dark:bg-violet-950/30 dark:text-violet-200 dark:hover:bg-violet-950/50"
                 >
@@ -832,7 +1066,7 @@ function SampleFailureReplyModal({
                 onChange={(e) => setDraft(e.target.value)}
                 rows={14}
                 className={`${inputCls} font-mono text-[13px] leading-relaxed`}
-                placeholder="Draft the sample failure reply…"
+                placeholder="AI will draft the sample failure reply after Offer Letter and Factory Test Report are ready…"
               />
               {error && (
                 <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-300">

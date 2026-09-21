@@ -8,6 +8,17 @@ import {
   sampleFailureTypeLabel,
 } from "@backend/modules/bis/sample-failure-reply";
 import { formatCmDisplay } from "@backend/modules/bis/bis-project-license-status";
+import { parseApplicationChecklistNotes } from "@backend/modules/bis/application-checklist-notes";
+import {
+  combineOslAndPiSamples,
+  documentHasContent as oslDocumentHasContent,
+  rowHasContent as oslRowHasContent,
+  type OslSampleRequirementStored,
+} from "@backend/modules/bis/osl-sample-requirements";
+import {
+  ftrReportHasContent,
+  type FactoryTestReportStored,
+} from "@backend/modules/bis/factory-test-report";
 
 const SYSTEM_PROMPT = `You are a senior BIS (Bureau of Indian Standards) consultancy expert who drafts formal sample-failure reply letters for Indian manufacturers holding ISI/BIS licences.
 
@@ -48,6 +59,64 @@ async function extractStoredPdfText(
   }
 }
 
+function summarizeOslSamples(rows: OslSampleRequirementStored[]): string {
+  const filled = rows.filter(oslRowHasContent);
+  if (filled.length === 0) return "";
+  return filled
+    .slice(0, 12)
+    .map((row, index) => {
+      const parts = [
+        `#${index + 1}`,
+        row.sample_for ? `for=${row.sample_for}` : null,
+        row.sample_description ? `desc=${row.sample_description}` : null,
+        row.batch_number ? `batch=${row.batch_number}` : null,
+        row.date_of_manufacturing ? `dom=${row.date_of_manufacturing}` : null,
+        row.declared_value ? `declared=${row.declared_value}` : null,
+        row.sample_quantity ? `qty=${row.sample_quantity}` : null,
+        row.laboratory_name ? `lab=${row.laboratory_name}` : null,
+        row.sample_code ? `code=${row.sample_code}` : null,
+      ].filter(Boolean);
+      return parts.join(" | ");
+    })
+    .join("\n");
+}
+
+function summarizeFactoryReports(rows: FactoryTestReportStored[]): string {
+  const filled = rows.filter(ftrReportHasContent);
+  if (filled.length === 0) return "";
+  return filled
+    .slice(0, 8)
+    .map((report, index) => {
+      const tests = (report.test_rows ?? [])
+        .filter((t) => t.row_type === "test")
+        .slice(0, 20)
+        .map((t) => {
+          const clause = (t.clause_no ?? "").trim();
+          const req = (t.specified_requirements ?? "").trim();
+          const result = (t.observed_value ?? "").trim();
+          const rem = (t.remark ?? "").trim();
+          return `- ${[clause && `Cl.${clause}`, t.test_name, req, result && `observed=${result}`, rem && `remark=${rem}`]
+            .filter(Boolean)
+            .join(" · ")}`;
+        })
+        .filter(Boolean)
+        .join("\n");
+      return [
+        `Report #${index + 1}`,
+        report.batch_heat_number ? `Batch: ${report.batch_heat_number}` : null,
+        report.date_of_manufacturing ? `DOM: ${report.date_of_manufacturing}` : null,
+        report.date_of_testing_start ? `Testing start: ${report.date_of_testing_start}` : null,
+        report.date_of_testing_completion
+          ? `Testing end: ${report.date_of_testing_completion}`
+          : null,
+        tests ? `Tests:\n${tests}` : null,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .join("\n\n");
+}
+
 export async function draftSampleFailureReply(
   replyId: string,
 ): Promise<{ ok: true; draft: string } | { ok: false; error: string }> {
@@ -63,7 +132,7 @@ export async function draftSampleFailureReply(
   const { data, error } = await supabase
     .from("bis_sample_failure_replies")
     .select(
-      "id, sample_failure_type, sample_code, sample_qr_code, cm_l_digits, project_kind, notes, failure_letter_path, failure_letter_name, offer_letter_path, offer_letter_name, factory_test_report_path, factory_test_report_name, reply_draft, clients(name, company_name, address, city, state), is_codes(is_number, revision_year, is_code_title, product_manual_number, unit_of_is)",
+      "id, bis_project_id, sample_failure_type, sample_code, sample_qr_code, cm_l_digits, project_kind, notes, failure_letter_path, failure_letter_name, offer_letter_path, offer_letter_name, factory_test_report_path, factory_test_report_name, reply_draft, clients(name, company_name, address, city, state), is_codes(is_number, revision_year, is_code_title, product_manual_number, unit_of_is)",
     )
     .eq("id", id)
     .maybeSingle();
@@ -116,6 +185,30 @@ export async function draftSampleFailureReply(
     row.factory_test_report_name as string | null,
   );
 
+  let checklistOfferSummary = "";
+  let checklistFtrSummary = "";
+  const projectId = String(row.bis_project_id ?? "").trim();
+  if (projectId) {
+    const { data: project } = await supabase
+      .from("bis_projects")
+      .select("notes")
+      .eq("id", projectId)
+      .maybeSingle();
+    const parsed = parseApplicationChecklistNotes(
+      String((project as { notes?: string | null } | null)?.notes ?? ""),
+    );
+    const samples = combineOslAndPiSamples(
+      parsed.oslSampleRequirements,
+      parsed.piSampleRequirements,
+    );
+    if (oslDocumentHasContent(samples)) {
+      checklistOfferSummary = summarizeOslSamples(samples);
+    }
+    if (parsed.factoryTestReports.some(ftrReportHasContent)) {
+      checklistFtrSummary = summarizeFactoryReports(parsed.factoryTestReports);
+    }
+  }
+
   const contextBlocks = [
     `Firm: ${firmName}`,
     client?.address || client?.city || client?.state
@@ -133,6 +226,8 @@ export async function draftSampleFailureReply(
     `Failure letter file: ${String(row.failure_letter_name ?? "—")}`,
     `Offer letter file: ${String(row.offer_letter_name ?? "not uploaded yet")}`,
     `Factory test report file: ${String(row.factory_test_report_name ?? "not uploaded yet")}`,
+    checklistOfferSummary ? "Sample Offer Letter checklist: available" : "Sample Offer Letter checklist: missing",
+    checklistFtrSummary ? "Factory Test Report checklist: available" : "Factory Test Report checklist: missing",
   ]
     .filter(Boolean)
     .join("\n");
@@ -145,11 +240,17 @@ ${contextBlocks}
 SAMPLE FAILURE LETTER CONTENT (extract / OCR text; may be partial)
 ${failureLetterText || "(No extractable text from the Sample Failure Letter yet. Draft a professional reply framework that asks to align with the attached letter findings.)"}
 
-SAMPLE OFFER LETTER CONTENT
-${offerLetterText || "(Not uploaded or not extractable.)"}
+SAMPLE OFFER LETTER — GENERATED CHECKLIST SUMMARY
+${checklistOfferSummary || "(Not prepared yet in linked licence checklist.)"}
 
-FACTORY TEST REPORT CONTENT
-${factoryReportText || "(Not uploaded or not extractable.)"}
+SAMPLE OFFER LETTER — UPLOADED FILE TEXT
+${offerLetterText || "(No uploaded offer letter file.)"}
+
+FACTORY TEST REPORT — GENERATED CHECKLIST SUMMARY
+${checklistFtrSummary || "(Not prepared yet in linked licence checklist.)"}
+
+FACTORY TEST REPORT — UPLOADED FILE TEXT
+${factoryReportText || "(No uploaded factory test report file.)"}
 
 IS / PRODUCT CONTEXT FROM MASTER
 Use the IS number/title/product above. Apply general BIS sample-failure reply practice for Indian licence holders (acknowledgement, understanding of failure, corrective action, assurance of conformance, request for favourable consideration). Do not invent specific lab readings.
