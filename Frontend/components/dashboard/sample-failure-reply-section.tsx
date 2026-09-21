@@ -366,7 +366,7 @@ function SampleFailureAddModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 backdrop-blur-sm">
-      <div className="my-6 w-full max-w-lg rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="my-6 w-full max-w-2xl rounded-2xl border border-zinc-200 bg-white shadow-xl dark:border-zinc-700 dark:bg-zinc-900">
         <div className="border-b border-zinc-200 px-5 py-4 dark:border-zinc-700">
           <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
             Add CML — Sample Failure
@@ -376,22 +376,37 @@ function SampleFailureAddModal({
           </p>
         </div>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4 px-5 py-4">
-          <div>
-            <label htmlFor="sfr_firm" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              Firm Name
-            </label>
-            <IsCodeCombobox
-              name="client_id"
-              label="Firm Name"
-              hideLabel
-              inputId="sfr_firm"
-              value={clientId}
-              onChange={setClientId}
-              options={firmOptions}
-              disabled={clientsLoading}
-              placeholder={clientsLoading ? "Loading firms…" : "Type to search firm…"}
-              listZIndexClass="z-[310]"
-            />
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
+            <div className="min-w-0">
+              <label htmlFor="sfr_firm" className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                Firm Name
+              </label>
+              <IsCodeCombobox
+                name="client_id"
+                label="Firm Name"
+                hideLabel
+                inputId="sfr_firm"
+                value={clientId}
+                onChange={setClientId}
+                options={firmOptions}
+                disabled={clientsLoading}
+                placeholder={clientsLoading ? "Loading firms…" : "Type to search firm…"}
+                listZIndexClass="z-[310]"
+              />
+            </div>
+
+            <div className="min-w-0">
+              <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
+                CM/L Number
+              </label>
+              <input
+                type="text"
+                readOnly
+                value={cmDisplay}
+                className={`${inputCls} font-mono tabular-nums`}
+                aria-readonly
+              />
+            </div>
           </div>
 
           <div>
@@ -411,13 +426,6 @@ function SampleFailureAddModal({
               placeholder={isCodePlaceholder}
               listZIndexClass="z-[310]"
             />
-          </div>
-
-          <div>
-            <label className="mb-1 block text-xs font-medium text-zinc-600 dark:text-zinc-400">
-              CM/L Number
-            </label>
-            <input type="text" readOnly value={cmDisplay} className={inputCls} aria-readonly />
           </div>
 
           <div>
