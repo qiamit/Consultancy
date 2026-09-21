@@ -371,9 +371,6 @@ function SampleFailureAddModal({
           <h2 className="text-base font-semibold text-zinc-900 dark:text-white">
             Add CML — Sample Failure
           </h2>
-          <p className="mt-0.5 text-xs text-zinc-500 dark:text-zinc-400">
-            Select firm and IS code; CM/L fills from the linked licence. Attach the Sample Failure Letter.
-          </p>
         </div>
         <form onSubmit={(e) => void handleSubmit(e)} className="space-y-4 px-5 py-4">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
