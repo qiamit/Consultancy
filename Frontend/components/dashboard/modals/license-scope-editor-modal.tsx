@@ -550,7 +550,7 @@ export function LicenseScopeEditorModal({
           isReference={isFullNumber}
           isTitle={declarationData.isTitle}
           companyName={declarationData.companyName}
-          licenseScopeFormat={licenseScopeFormat}
+          licenseScopeFormat={format}
           plainScope={draftScope}
           tableRows={storedTableRows}
           onApplyUpdate={handleQeApplyUpdate}
