@@ -97,22 +97,22 @@ export function parseCmpf307(raw: unknown): Cmpf307Stored {
 
 function parseCmpf307BrandList(raw: unknown): Cmpf307BrandStored[] {
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const row = item as Record<string, unknown>;
-      return {
-        brand_name: String(row.brand_name ?? "").trim(),
-        owned_by: String(row.owned_by ?? "").trim(),
-        registered_status: String(row.registered_status ?? "").trim(),
-        registration_date: String(row.registration_date ?? "").trim(),
-        agreement_copy_ref: String(row.agreement_copy_ref ?? "").trim(),
-        agreement_copy_name: String(row.agreement_copy_name ?? "").trim(),
-        trademark_certificate_ref: String(row.trademark_certificate_ref ?? "").trim(),
-        trademark_certificate_name: String(row.trademark_certificate_name ?? "").trim(),
-      };
-    })
-    .filter((row): row is Cmpf307BrandStored => row !== null);
+  const brands: Cmpf307BrandStored[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    brands.push({
+      brand_name: String(row.brand_name ?? "").trim(),
+      owned_by: String(row.owned_by ?? "").trim(),
+      registered_status: String(row.registered_status ?? "").trim(),
+      registration_date: String(row.registration_date ?? "").trim(),
+      agreement_copy_ref: String(row.agreement_copy_ref ?? "").trim(),
+      agreement_copy_name: String(row.agreement_copy_name ?? "").trim(),
+      trademark_certificate_ref: String(row.trademark_certificate_ref ?? "").trim(),
+      trademark_certificate_name: String(row.trademark_certificate_name ?? "").trim(),
+    });
+  }
+  return brands;
 }
 
 export function editorRowsFromStored(stored: Cmpf307Stored): Cmpf307BrandRow[] {
