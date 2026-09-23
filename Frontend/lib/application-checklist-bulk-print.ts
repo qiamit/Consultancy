@@ -32,6 +32,7 @@ import {
 } from "@backend/modules/bis/cmpf-311";
 import { resolveSampleOfferLetterDate } from "@backend/modules/bis/sample-offer-letter-date";
 import {
+  ftrChecklistLabel,
   ftrReportHasContent,
   syncFactoryTestReportsFromSamples,
   type FactoryTestReportStored,
@@ -552,17 +553,12 @@ export function buildChecklistBulkListRows(
       });
       return;
     }
-    const counters = { osl: 0, pi: 0 };
     reports.forEach((report, index) => {
-      const sourceTag = report.source === "pi" ? "PI" : "OSL";
-      const counterKey = report.source === "pi" ? "pi" : "osl";
-      counters[counterKey] += 1;
-      const serial = String(counters[counterKey]).padStart(2, "0");
       rows.push({
         kind: "ftr_sample",
         id: `factory_test_report:${index}`,
         rowKey: `factory_test_report:${index}`,
-        label: `Factory Test Report ${sourceTag} - ${serial}`,
+        label: ftrChecklistLabel(report),
         hasContent: true,
         editKey: CHECKLIST_PRINT_DOC_EDIT_KEYS.factory_test_reports,
         reportIndex: index,

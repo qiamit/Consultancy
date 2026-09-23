@@ -43,13 +43,19 @@ export async function GET(request: Request) {
 
   try {
     const buf = await downloadObject(bucket, path);
-    const filename = path.split("/").pop() || "file";
+    const filenameHint = (url.searchParams.get("filename") ?? "").trim();
+    const filename = filenameHint || path.split("/").pop() || "file";
     const safeName = filename.replace(/"/g, "");
+    const contentType = contentTypeForFilename(filename);
     return new NextResponse(new Uint8Array(buf), {
       status: 200,
       headers: {
-        "Content-Type": contentTypeForFilename(filename),
-        "Content-Disposition": `${disposition}; filename="${safeName}"`,
+        "Content-Type": contentType,
+        "Content-Disposition":
+          disposition === "attachment"
+            ? `attachment; filename="${safeName}"`
+            : "inline",
+        "X-Content-Type-Options": "nosniff",
         "Content-Length": String(buf.byteLength),
         "Cache-Control": "private, max-age=60",
       },

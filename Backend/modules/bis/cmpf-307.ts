@@ -8,6 +8,12 @@ export type Cmpf307BrandStored = {
   owned_by: string;
   registered_status: string;
   registration_date: string;
+  /** Agreement copy when brand is owned by Others (`doc://…`). */
+  agreement_copy_ref?: string;
+  agreement_copy_name?: string;
+  /** Trademark certificate when brand is Registered (`doc://…`). */
+  trademark_certificate_ref?: string;
+  trademark_certificate_name?: string;
 };
 
 export type Cmpf307BrandRow = Cmpf307BrandStored & { id: string };
@@ -23,6 +29,10 @@ export function defaultCmpf307BrandEntry(): Cmpf307BrandStored {
     owned_by: "",
     registered_status: "",
     registration_date: "",
+    agreement_copy_ref: "",
+    agreement_copy_name: "",
+    trademark_certificate_ref: "",
+    trademark_certificate_name: "",
   };
 }
 
@@ -52,7 +62,9 @@ export function brandRowHasContent(row: Cmpf307BrandStored): boolean {
     row.brand_name.trim().length > 0 ||
     row.owned_by.trim().length > 0 ||
     row.registered_status.trim().length > 0 ||
-    row.registration_date.trim().length > 0
+    row.registration_date.trim().length > 0 ||
+    Boolean(row.agreement_copy_ref?.trim()) ||
+    Boolean(row.trademark_certificate_ref?.trim())
   );
 }
 
@@ -94,6 +106,10 @@ function parseCmpf307BrandList(raw: unknown): Cmpf307BrandStored[] {
         owned_by: String(row.owned_by ?? "").trim(),
         registered_status: String(row.registered_status ?? "").trim(),
         registration_date: String(row.registration_date ?? "").trim(),
+        agreement_copy_ref: String(row.agreement_copy_ref ?? "").trim(),
+        agreement_copy_name: String(row.agreement_copy_name ?? "").trim(),
+        trademark_certificate_ref: String(row.trademark_certificate_ref ?? "").trim(),
+        trademark_certificate_name: String(row.trademark_certificate_name ?? "").trim(),
       };
     })
     .filter((row): row is Cmpf307BrandStored => row !== null);
@@ -115,12 +131,27 @@ export function storedFromEditor(
   return {
     brands_without_mark_reasons: brandsWithoutMarkReasons.trim(),
     brands: rows
-      .map(({ brand_name, owned_by, registered_status, registration_date }) => ({
-        brand_name,
-        owned_by,
-        registered_status,
-        registration_date,
-      }))
+      .map(
+        ({
+          brand_name,
+          owned_by,
+          registered_status,
+          registration_date,
+          agreement_copy_ref,
+          agreement_copy_name,
+          trademark_certificate_ref,
+          trademark_certificate_name,
+        }) => ({
+          brand_name,
+          owned_by,
+          registered_status,
+          registration_date,
+          agreement_copy_ref: (agreement_copy_ref ?? "").trim(),
+          agreement_copy_name: (agreement_copy_name ?? "").trim(),
+          trademark_certificate_ref: (trademark_certificate_ref ?? "").trim(),
+          trademark_certificate_name: (trademark_certificate_name ?? "").trim(),
+        }),
+      )
       .filter(brandRowHasContent),
   };
 }

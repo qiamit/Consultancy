@@ -34,11 +34,10 @@ export function openManakEbisAssist(payload: {
     savedAt: Date.now(),
   };
 
-  window.open(
-    manakOnlineEbisLoginHref(data.userId, data.password),
-    "_blank",
-    "noopener,noreferrer",
-  );
+  const loginHref = manakOnlineEbisLoginHref(data.userId, data.password);
+  if (!/play\.google\.com|com\.bis\.app/i.test(loginHref)) {
+    window.open(loginHref, "_blank", "noopener,noreferrer");
+  }
 
   return data;
 }

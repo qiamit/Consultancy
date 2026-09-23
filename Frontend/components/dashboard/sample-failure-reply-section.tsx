@@ -996,6 +996,8 @@ function SampleFailureReplyModal({
           excludeImportSource={
             projectId ? { id: projectId, source: "bis_projects" } : null
           }
+          portalUserId={row.portal_user_id}
+          portalPassword={row.portal_password}
           onSave={saveOslSampleRequirements}
           onClose={() => setPanel(null)}
         />

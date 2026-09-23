@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>QE Manak Test Request</title>
+    <style>
+      body {
+        margin: 0;
+        width: 196px;
+        font: 12px/1.35 "Segoe UI", sans-serif;
+        color: #e4e4e7;
+        background: #09090b;
+      }
+      .wrap {
+        padding: 8px;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 6px;
+      }
+      button {
+        width: 36px;
+        height: 36px;
+        margin: 0;
+        border: 0;
+        border-radius: 10px;
+        padding: 0;
+        font-size: 18px;
+        line-height: 1;
+        cursor: pointer;
+        color: #fff;
+        background: #27272a;
+      }
+      button:hover {
+        background: #3f3f46;
+      }
+      #power.on {
+        background: #059669;
+      }
+      #power.off {
+        background: #b91c1c;
+      }
+      #openTr {
+        background: #059669;
+      }
+      #login {
+        background: #b91c1c;
+      }
+      body.off #openTr,
+      body.off #fill,
+      body.off #login {
+        opacity: 0.4;
+        pointer-events: none;
+      }
+      #status {
+        margin-top: 8px;
+        min-height: 2.2em;
+        color: #a1a1aa;
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="row">
+        <button id="power" class="on" type="button" title="Extension ON/OFF">🟢</button>
+        <button id="openTr" type="button" title="Open Test Request">📄</button>
+        <button id="fill" type="button" title="Fill from clipboard">📋</button>
+        <button id="login" type="button" title="Open eBIS login">🔑</button>
+      </div>
+      <div id="status"></div>
+    </div>
+    <script src="popup.js"></script>
+  </body>
+</html>

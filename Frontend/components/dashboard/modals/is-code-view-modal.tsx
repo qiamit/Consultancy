@@ -64,12 +64,17 @@ function fileDisplayName(f: IsCodeFileEntry): string {
   return f.file_name ?? f.storage_path.split("/").pop() ?? "File";
 }
 
-function storagePublicUrl(path: string, disposition: "inline" | "attachment"): string {
+function storagePublicUrl(
+  path: string,
+  disposition: "inline" | "attachment",
+  filename?: string,
+): string {
   const params = new URLSearchParams({
     bucket: "is_code_documents",
     path,
     disposition,
   });
+  if (filename?.trim()) params.set("filename", filename.trim());
   return `/api/storage/public?${params.toString()}`;
 }
 
@@ -111,12 +116,16 @@ export function IsCodeViewModal({
   }, [isCodeId]);
 
   function handleView(f: IsCodeFileEntry) {
-    window.open(storagePublicUrl(f.storage_path, "inline"), "_blank", "noopener,noreferrer");
+    window.open(
+      storagePublicUrl(f.storage_path, "inline", fileDisplayName(f)),
+      "_blank",
+      "noopener,noreferrer",
+    );
   }
 
   function handleDownload(f: IsCodeFileEntry) {
     const a = document.createElement("a");
-    a.href = storagePublicUrl(f.storage_path, "attachment");
+    a.href = storagePublicUrl(f.storage_path, "attachment", fileDisplayName(f));
     a.download = fileDisplayName(f);
     a.rel = "noopener";
     document.body.appendChild(a);

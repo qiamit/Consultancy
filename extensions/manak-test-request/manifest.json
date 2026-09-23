@@ -1,0 +1,75 @@
+{
+  "manifest_version": 3,
+  "name": "QE Manak Test Request",
+  "version": "1.3.11",
+  "description": "Open BIS Manak Test Request, fill sample fields, continue after captcha, then send Sample Code and Test Request PDF back to Consultancy Pro.",
+  "action": {
+    "default_title": "QE Manak Test Request",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.manakonline.in/*",
+        "https://manakonline.in/*"
+      ],
+      "js": ["page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.manakonline.in/*",
+        "https://manakonline.in/*"
+      ],
+      "js": ["field-map.js", "content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://*.up.railway.app/*",
+        "https://*.railway.app/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://play.google.com/*"
+      ],
+      "js": ["close-play-store.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "tabs",
+    "clipboardRead",
+    "clipboardWrite",
+    "scripting",
+    "downloads",
+    "declarativeNetRequest",
+    "webNavigation",
+    "debugger"
+  ],
+  "host_permissions": [
+    "https://www.manakonline.in/*",
+    "https://manakonline.in/*",
+    "https://play.google.com/*",
+    "https://apps.apple.com/*"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "block_bis_play_store",
+        "enabled": true,
+        "path": "block-rules.json"
+      }
+    ]
+  }
+}

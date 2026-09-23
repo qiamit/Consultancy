@@ -1,7 +1,7 @@
 "use client";
 
 import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
-import type { FtrSampleSource } from "@backend/modules/bis/factory-test-report";
+import { ftrSourceTag, type FtrSampleSource } from "@backend/modules/bis/factory-test-report";
 import { formatDisplayDate } from "@backend/shared/format-date";
 
 function DetailRow({ label, value }: { label: string; value: string }) {
@@ -27,7 +27,7 @@ export function FtrSampleDetailsModal({
   onEdit: () => void;
   onClose: () => void;
 }) {
-  const sourceLabel = source === "osl" ? "OSL Sample Offer Letter" : "PI Sample Offer Letter";
+  const sourceLabel = `${ftrSourceTag(source)} Sample Offer Letter`;
   const srNo = String(sampleIndex + 1).padStart(2, "0");
 
   return (

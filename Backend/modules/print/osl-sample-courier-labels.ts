@@ -1,7 +1,13 @@
 import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
-import { rowHasContent } from "@backend/modules/bis/osl-sample-requirements";
-import { formatDisplayDate } from "@backend/shared/format-date";
+import {
+  resolveGradeAndDescription,
+  rowHasContent,
+} from "@backend/modules/bis/osl-sample-requirements";
 import type { SampleOfferLetterVariant } from "@backend/modules/print/sample-offer-letter-variant";
+import {
+  buildOslSampleTestRequestPagesHtml,
+  OSL_SAMPLE_TEST_REQUEST_CSS,
+} from "@backend/modules/print/osl-sample-test-request";
 
 export type OslSampleCourierLabelRow = OslSampleRequirementStored & {
   /** Pre-rendered QR PNG data URL (client-generated). */
@@ -19,6 +25,9 @@ export type OslSampleCourierLabelsData = {
   applicationNumber: string;
   variant: SampleOfferLetterVariant;
   rows: OslSampleCourierLabelRow[];
+  bisBranchName?: string;
+  bisBranchState?: string;
+  bisBranchCountry?: string;
   /** Prefix laboratory with BLV Testing Solutions C/o */
   includeBlvCareOf?: boolean;
   /** Show courier mobile under laboratory address */
@@ -47,44 +56,44 @@ function fieldLine(label: string, value: string): string | null {
   return `${label}: ${v}`;
 }
 
-function truncateField(value: string, max: number): string {
-  const v = (value ?? "").trim();
-  if (v.length <= max) return v;
-  return `${v.slice(0, Math.max(0, max - 1))}…`;
-}
-
 /**
- * Compact plain-text payload for courier QR (scannable density).
- * Phone scan shows Sample Code, Sample QR Code, and sample details.
- * Lab address stays on the printed tag only (omitted here to keep QR readable).
+ * Phone cameras (Apple + Android) fail on dense full-detail QR at print size.
+ * Keep payload short so modules stay large enough to lock from a screen or page.
  */
+const QR_SCAN_MAX_CHARS = 160;
+
 export function buildOslSampleCourierQrText(
   row: OslSampleRequirementStored,
   meta: Pick<
     OslSampleCourierLabelsData,
-    "companyName" | "companyAddress" | "isNumber" | "isTitle" | "variant"
+    | "companyName"
+    | "companyAddress"
+    | "isNumber"
+    | "isTitle"
+    | "applicationNumber"
+    | "variant"
   > & { laboratory_address?: string },
 ): string {
-  const sampleCode = (row.sample_code ?? "").trim();
-  const sampleQrCode = (row.qr_code ?? "").trim();
-  const isLine = [meta.isNumber.trim(), meta.isTitle.trim()].filter(Boolean).join(" — ");
-
-  const lines = [
-    fieldLine("Sample Code", sampleCode),
-    fieldLine("Sample QR Code", sampleQrCode || sampleCode),
-    fieldLine("Company", truncateField(meta.companyName, 80)),
-    fieldLine("IS", truncateField(isLine, 100)),
-    fieldLine("Laboratory", truncateField(row.laboratory_name, 90)),
-    fieldLine("Description", truncateField(row.sample_description, 120)),
-    fieldLine("Batch No.", row.batch_number),
-    fieldLine("DOM", formatDisplayDate(row.date_of_manufacturing, "")),
-    fieldLine("Sample Qty", truncateField(row.sample_quantity, 60)),
-    fieldLine("Batch Qty", truncateField(row.batch_quantity, 40)),
-    fieldLine("Type", row.sample_type),
-    fieldLine("Priority", row.priority),
-    fieldLine("Declared Value", truncateField(row.declared_value, 100)),
+  const resolved = resolveGradeAndDescription(row);
+  const isLine = meta.isNumber.trim();
+  const candidates = [
+    fieldLine("QR Code", row.qr_code),
+    fieldLine("Sample Code", row.sample_code),
+    fieldLine("IS Number", isLine),
+    fieldLine("Batch Number", row.batch_number),
+    fieldLine("Applicant", (meta.companyName ?? "").trim()),
+    fieldLine("Laboratory", (row.laboratory_name ?? "").trim()),
+    fieldLine("Sample Type", row.sample_type),
+    fieldLine("Grade", resolved.grade_type_variety),
+    fieldLine("Declared Value", row.declared_value),
   ].filter((line): line is string => Boolean(line));
 
+  const lines: string[] = ["BIS Test Request"];
+  for (const line of candidates) {
+    const next = `${lines.join("\n")}\n${line}`;
+    if (next.length > QR_SCAN_MAX_CHARS) break;
+    lines.push(line);
+  }
   return lines.join("\n");
 }
 
@@ -167,14 +176,26 @@ export function buildOslSampleCourierLabelsHtml(data: OslSampleCourierLabelsData
     throw new Error("Add at least one sample before downloading courier labels.");
   }
 
-  const cards = rows.map((row, i) => buildLabelCard(row, i, data)).join("\n");
+  const testRequestPages = buildOslSampleTestRequestPagesHtml({
+    companyName: data.companyName,
+    companyAddress: data.companyAddress,
+    isNumber: data.isNumber,
+    isTitle: data.isTitle,
+    applicationNumber: data.applicationNumber,
+    bisBranchName: data.bisBranchName ?? "",
+    bisBranchState: data.bisBranchState ?? "",
+    bisBranchCountry: data.bisBranchCountry ?? "India",
+    rows,
+    includeBlvCareOf: data.includeBlvCareOf,
+    includeLabMobile: data.includeLabMobile,
+  });
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Sample Courier Labels</title>
+<title>Test Request</title>
 <style>
   @page {
     size: A4 portrait;
@@ -184,7 +205,7 @@ export function buildOslSampleCourierLabelsHtml(data: OslSampleCourierLabelsData
   html, body {
     margin: 0;
     padding: 0;
-    font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-family: "Times New Roman", Times, serif;
     color: #111827;
     background: #fff;
     -webkit-print-color-adjust: exact;
@@ -386,6 +407,8 @@ export function buildOslSampleCourierLabelsHtml(data: OslSampleCourierLabelsData
     color: #111827;
   }
 
+  ${OSL_SAMPLE_TEST_REQUEST_CSS}
+
   @media print {
     body { padding: 0; }
     .sample-label { break-inside: avoid; page-break-inside: avoid; }
@@ -393,9 +416,7 @@ export function buildOslSampleCourierLabelsHtml(data: OslSampleCourierLabelsData
 </style>
 </head>
 <body>
-  <div class="sheet">
-    ${cards}
-  </div>
+  ${testRequestPages}
 </body>
 </html>`;
 }

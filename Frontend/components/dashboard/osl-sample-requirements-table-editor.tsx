@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { createClient } from "@backend/db/client/client";
 import { uploadTechnicalStaffDocument } from "@backend/modules/storage/technical-staff-documents";
@@ -8,6 +8,7 @@ import { StorageDocumentLink } from "@/components/dashboard/storage-document-lin
 import {
   isSampleIncludedInPrint,
   parseSampleFor,
+  resolveGradeAndDescription,
   rowHasContent,
   sampleForLabel,
   type OslSampleFor,
@@ -22,16 +23,28 @@ const themes = {
       "rounded-lg p-1.5 text-zinc-500 hover:bg-amber-50 hover:text-amber-700 dark:hover:bg-amber-950/40 dark:hover:text-amber-300",
     copyBtn:
       "rounded-lg p-1.5 text-zinc-500 hover:bg-sky-50 hover:text-sky-700 dark:hover:bg-sky-950/40 dark:hover:text-sky-300",
+    manakCopyBtn:
+      "rounded-lg p-1.5 text-zinc-500 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300",
+    manakOpenBtn:
+      "rounded-lg p-1.5 text-zinc-500 hover:bg-red-50 hover:text-red-700 dark:hover:bg-red-950/40 dark:hover:text-red-300",
+    labelsBtn:
+      "rounded-lg p-1.5 text-zinc-500 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300",
     delBtn:
       "rounded-lg p-1.5 text-zinc-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/40 dark:hover:text-red-400",
     muted: "text-zinc-400 dark:text-zinc-500",
     highlight: "ring-2 ring-sky-500/80",
-    card: "rounded-2xl border border-zinc-200 bg-gradient-to-br from-white to-zinc-50 shadow-sm dark:border-zinc-700 dark:from-zinc-900 dark:to-zinc-950",
+    card: "overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-950",
     panel: "rounded-xl border border-zinc-200/80 bg-zinc-50/90 p-3 dark:border-zinc-800 dark:bg-zinc-950/60",
     cardLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
     cardValue: "mt-0.5 text-xs leading-snug text-zinc-800 dark:text-zinc-100",
     heroLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
     heroValue: "mt-1 text-sm font-semibold leading-snug text-zinc-900 dark:text-zinc-50",
+    ticketBand: "grid gap-3 border-b border-zinc-200 bg-zinc-50 px-3.5 py-3 sm:grid-cols-2 dark:border-zinc-800 dark:bg-zinc-900/70",
+    kvWrap: "divide-y divide-zinc-200/80 px-3.5 dark:divide-zinc-800",
+    kvRow: "grid gap-1 py-2.5 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:items-start sm:gap-3",
+    kvLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
+    kvValue: "text-sm leading-snug text-zinc-900 dark:text-zinc-100",
+    cardFooter: "border-t border-zinc-200 bg-zinc-50 px-3.5 py-2.5 dark:border-zinc-800 dark:bg-zinc-900/70",
     addBtn:
       "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
     metaRow: "flex gap-2 border-b border-zinc-200/70 py-1.5 last:border-b-0 dark:border-zinc-800/80",
@@ -43,16 +56,28 @@ const themes = {
       "rounded-lg p-1.5 text-zinc-400 hover:bg-amber-950/50 hover:text-amber-300",
     copyBtn:
       "rounded-lg p-1.5 text-zinc-400 hover:bg-sky-950/50 hover:text-sky-300",
+    manakCopyBtn:
+      "rounded-lg p-1.5 text-zinc-400 hover:bg-emerald-950/50 hover:text-emerald-300",
+    manakOpenBtn:
+      "rounded-lg p-1.5 text-zinc-400 hover:bg-red-950/50 hover:text-red-300",
+    labelsBtn:
+      "rounded-lg p-1.5 text-zinc-400 hover:bg-emerald-950/50 hover:text-emerald-300",
     delBtn:
       "rounded-lg p-1.5 text-zinc-400 hover:bg-red-950/50 hover:text-red-400",
     muted: "text-zinc-500",
     highlight: "ring-2 ring-sky-500/80",
-    card: "rounded-2xl border border-zinc-700/90 bg-gradient-to-br from-zinc-900 via-zinc-950 to-zinc-950 shadow-[0_8px_30px_rgba(0,0,0,0.25)]",
+    card: "overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-950 shadow-[0_8px_30px_rgba(0,0,0,0.25)]",
     panel: "rounded-xl border border-zinc-800 bg-zinc-950/80 p-3",
     cardLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
     cardValue: "mt-0.5 text-xs leading-snug text-zinc-100",
     heroLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
     heroValue: "mt-1 text-sm font-semibold leading-snug text-zinc-50",
+    ticketBand: "grid gap-3 border-b border-zinc-800 bg-zinc-900/80 px-3.5 py-3 sm:grid-cols-2",
+    kvWrap: "divide-y divide-zinc-800/90 px-3.5",
+    kvRow: "grid gap-1 py-2.5 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:items-start sm:gap-3",
+    kvLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
+    kvValue: "text-sm leading-snug text-zinc-100",
+    cardFooter: "border-t border-zinc-800 bg-zinc-900/70 px-3.5 py-2.5",
     addBtn:
       "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
     metaRow: "flex gap-2 border-b border-zinc-800/90 py-1.5 last:border-b-0",
@@ -74,31 +99,21 @@ function sampleForBadgeClass(kind: OslSampleFor): string {
   return "border-teal-500/40 bg-teal-500/15 text-teal-200";
 }
 
-function MetaItem({
+function TicketCode({
   label,
   value,
-  labelClass,
-  valueClass,
-  mono = false,
-  rowClass,
 }: {
   label: string;
   value: string;
-  labelClass: string;
-  valueClass: string;
-  mono?: boolean;
-  rowClass: string;
 }) {
   return (
-    <div className={rowClass}>
-      <dt className={`w-[38%] shrink-0 ${labelClass}`}>{label}</dt>
-      <dd
-        className={`min-w-0 flex-1 text-xs leading-snug ${valueClass} ${
-          mono ? "font-mono break-all" : "break-words"
-        }`}
-      >
+    <div className="min-w-0">
+      <p className="text-[10px] font-semibold uppercase tracking-[0.14em] text-zinc-500">
+        {label}
+      </p>
+      <p className="mt-1 break-all font-mono text-base font-semibold leading-snug text-zinc-900 dark:text-zinc-50">
         {fieldOrDash(value)}
-      </dd>
+      </p>
     </div>
   );
 }
@@ -129,6 +144,105 @@ function IconTrash() {
   );
 }
 
+function IconManakCopy() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6M8.25 4.5h7.5A2.25 2.25 0 0118 6.75v12.75A2.25 2.25 0 0115.75 21.75H8.25A2.25 2.25 0 016 19.5V6.75A2.25 2.25 0 018.25 4.5z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9 8.25h6" />
+    </svg>
+  );
+}
+
+function IconSampleLabels() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M9.568 3H5.25A2.25 2.25 0 003 5.25v4.318c0 .597.237 1.17.659 1.591l9.581 9.581c.699.699 1.78.872 2.607.33a18.095 18.095 0 005.223-5.223c.542-.827.369-1.908-.33-2.607L11.16 3.66A2.25 2.25 0 009.568 3z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M6 6h.008v.008H6V6z" />
+    </svg>
+  );
+}
+
+function IconManakOpen() {
+  return (
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5M15 3h6m0 0v6m0-6L10.5 13.5" />
+    </svg>
+  );
+}
+
+function IconClip() {
+  return (
+    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+    </svg>
+  );
+}
+
+function IconDoc() {
+  return (
+    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25A2.25 2.25 0 006 4.5v15A2.25 2.25 0 008.25 21.75h7.5A2.25 2.25 0 0018 19.5v-1.125" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12.75l1.5 1.5L21 9.75" />
+    </svg>
+  );
+}
+
+function AttachFileButton({
+  attached,
+  fileName,
+  uploading,
+  title,
+  accept = ".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls",
+  icon,
+  onPick,
+}: {
+  attached: boolean;
+  fileName?: string;
+  uploading: boolean;
+  title: string;
+  accept?: string;
+  icon: ReactNode;
+  onPick: (file: File | null) => void;
+}) {
+  const attachedName = (fileName ?? "").trim();
+  return (
+    <label
+      className={`inline-flex h-[22px] w-[22px] cursor-pointer items-center justify-center rounded-full border ${
+        attached
+          ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200"
+          : "border-zinc-600/70 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-800"
+      } ${uploading ? "pointer-events-none opacity-60" : ""}`}
+      aria-label={
+        uploading
+          ? `Attaching ${title}`
+          : attachedName
+            ? `Attached: ${attachedName}. Click to replace.`
+            : title
+      }
+      title={
+        uploading
+          ? "Attaching…"
+          : attachedName
+            ? `Attached: ${attachedName}. Click to replace.`
+            : title
+      }
+    >
+      {icon}
+      <input
+        type="file"
+        className="hidden"
+        accept={accept}
+        disabled={uploading}
+        onChange={(e) => {
+          const file = e.target.files?.[0] ?? null;
+          e.target.value = "";
+          onPick(file);
+        }}
+      />
+    </label>
+  );
+}
+
 function InLetterToggle({
   on,
   onToggle,
@@ -142,12 +256,17 @@ function InLetterToggle({
       role="switch"
       aria-checked={on}
       onClick={onToggle}
+      aria-label={
+        on
+          ? "Included in letter table. Click to exclude."
+          : "Excluded from letter table. Click to include."
+      }
       title={
         on
           ? "Included in letter table (print / Word / PDF). Click to exclude."
           : "Excluded from letter table. Click to include."
       }
-      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-1 text-[10px] font-semibold tracking-wide transition-colors ${
+      className={`inline-flex h-[22px] w-[34px] shrink-0 items-center justify-center rounded-full border transition-colors ${
         on
           ? "border-sky-500/50 bg-sky-500/20 text-sky-200"
           : "border-zinc-600/70 bg-zinc-800/50 text-zinc-500"
@@ -165,7 +284,6 @@ function InLetterToggle({
           }`}
         />
       </span>
-      In Letter
     </button>
   );
 }
@@ -174,42 +292,69 @@ export function OslSampleRequirementsTableEditor({
   rows,
   onEdit,
   onCopy,
+  onCopyForManak,
+  onOpenManak,
+  onViewSampleLabels,
+  sampleLabelsLoading = false,
+  sampleLabelsRowId = null,
   onRemove,
   onUpdate,
   theme = "light",
   focusSampleIndex = null,
+  manakCopiedRowId = null,
 }: {
   rows: OslSampleRequirementRow[];
   onEdit: (row: OslSampleRequirementRow) => void;
   onCopy: (row: OslSampleRequirementRow) => void;
+  onCopyForManak?: (row: OslSampleRequirementRow) => void;
+  onOpenManak?: (row: OslSampleRequirementRow) => void;
+  onViewSampleLabels?: (row: OslSampleRequirementRow) => void;
+  sampleLabelsLoading?: boolean;
+  sampleLabelsRowId?: string | null;
   onRemove: (row: OslSampleRequirementRow) => void;
   onUpdate: (row: OslSampleRequirementRow) => void;
   theme?: keyof typeof themes;
   focusSampleIndex?: number | null;
+  manakCopiedRowId?: string | null;
 }) {
   const t = themes[theme];
   const visibleRows = useMemo(() => rows.filter(rowHasContent), [rows]);
-  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [uploadingKey, setUploadingKey] = useState<string | null>(null);
 
-  async function attachTestReport(row: OslSampleRequirementRow, file: File | null) {
+  async function attachSampleFile(
+    row: OslSampleRequirementRow,
+    file: File | null,
+    kind: "request" | "report",
+  ) {
     if (!file) return;
-    setUploadingId(row.id);
+    const key = `${row.id}:${kind}`;
+    setUploadingKey(key);
     try {
-      const safeName = file.name.replace(/[^\w.\-]+/g, "-").slice(0, 120) || "test-report";
+      const folder = kind === "request" ? "osl-sample-test-requests" : "osl-sample-test-reports";
+      const fallback = kind === "request" ? "test-request" : "test-report";
+      const label = kind === "request" ? "Test request" : "Test report";
+      const safeName = file.name.replace(/[^\w.\-]+/g, "-").slice(0, 120) || fallback;
       const safeId = row.id.replace(/[^\w.\-]+/g, "-").slice(0, 80);
-      const path = `osl-sample-test-reports/${safeId}/${Date.now()}-${safeName}`;
+      const path = `${folder}/${safeId}/${Date.now()}-${safeName}`;
       const result = await uploadTechnicalStaffDocument(createClient(), path, file);
       if ("error" in result) {
-        window.alert(`Test report upload failed: ${result.error}`);
+        window.alert(`${label} upload failed: ${result.error}`);
         return;
       }
       onUpdate({
         ...row,
-        test_report_ref: result.ref,
-        test_report_name: file.name.trim() || safeName,
+        ...(kind === "request"
+          ? {
+              test_request_ref: result.ref,
+              test_request_name: file.name.trim() || safeName,
+            }
+          : {
+              test_report_ref: result.ref,
+              test_report_name: file.name.trim() || safeName,
+            }),
       });
     } finally {
-      setUploadingId(null);
+      setUploadingKey(null);
     }
   }
 
@@ -221,9 +366,66 @@ export function OslSampleRequirementsTableEditor({
     el?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [focusSampleIndex, visibleRows.length]);
 
-  function rowActions(row: OslSampleRequirementRow, srNo: string) {
+  function rowToolbar(
+    row: OslSampleRequirementRow,
+    srNo: string,
+    kind: OslSampleFor,
+    sampleFor: string,
+    inLetter: boolean,
+  ) {
     return (
-      <div className="inline-flex items-center gap-0.5 rounded-xl border border-zinc-700/80 bg-zinc-950/40 p-0.5">
+      <div className="inline-flex max-w-full flex-wrap items-center gap-0.5">
+        <InLetterToggle
+          on={inLetter}
+          onToggle={() =>
+            onUpdate({
+              ...row,
+              include_in_print: !inLetter,
+            })
+          }
+        />
+        <span
+          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide ${sampleForBadgeClass(kind)}`}
+        >
+          {sampleFor}
+        </span>
+        {row.priority.trim() ? (
+          <span className="inline-flex items-center rounded-full border border-zinc-600/70 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
+            {row.priority}
+          </span>
+        ) : null}
+        <AttachFileButton
+          attached={Boolean(row.test_request_ref?.trim())}
+          fileName={row.test_request_name}
+          uploading={uploadingKey === `${row.id}:request`}
+          title="Attach Test Request"
+          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+          icon={<IconDoc />}
+          onPick={(file) => void attachSampleFile(row, file, "request")}
+        />
+        {row.test_request_ref?.trim() ? (
+          <StorageDocumentLink
+            value={row.test_request_ref}
+            label="Request"
+            className="inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/20"
+          />
+        ) : null}
+        <AttachFileButton
+          attached={Boolean(row.test_report_ref?.trim())}
+          fileName={row.test_report_name}
+          uploading={uploadingKey === `${row.id}:report`}
+          title="Attach Test Report"
+          icon={<IconClip />}
+          onPick={(file) => void attachSampleFile(row, file, "report")}
+        />
+        {row.test_report_ref?.trim() ? (
+          <StorageDocumentLink
+            value={row.test_report_ref}
+            label="Report"
+            className="inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/20"
+          />
+        ) : null}
+        <span className="mx-0.5 h-4 w-px shrink-0 bg-zinc-700/80" aria-hidden />
         <button
           type="button"
           onClick={() => onEdit(row)}
@@ -237,11 +439,55 @@ export function OslSampleRequirementsTableEditor({
           type="button"
           onClick={() => onCopy(row)}
           className={t.copyBtn}
-          aria-label={`Copy sample ${srNo}`}
-          title="Copy"
+          aria-label={`Duplicate sample ${srNo}`}
+          title="Duplicate sample card"
         >
           <IconCopy />
         </button>
+        {onCopyForManak ? (
+          <button
+            type="button"
+            onClick={() => onCopyForManak(row)}
+            className={t.manakCopyBtn}
+            aria-label={`Copy sample ${srNo} for Manak Test Request`}
+            title={
+              manakCopiedRowId === row.id
+                ? "Copied for Manak Test Request"
+                : "Copy for Manak Test Request"
+            }
+          >
+            <IconManakCopy />
+          </button>
+        ) : null}
+        {onOpenManak ? (
+          <button
+            type="button"
+            onClick={() => onOpenManak(row)}
+            className={t.manakOpenBtn}
+            aria-label={`Open Manak Test Request for sample ${srNo}`}
+            title="Open Manak Test Request"
+          >
+            <IconManakOpen />
+          </button>
+        ) : null}
+        {onViewSampleLabels ? (
+          <button
+            type="button"
+            onClick={() => onViewSampleLabels(row)}
+            disabled={sampleLabelsLoading}
+            className={`${t.labelsBtn} ${
+              sampleLabelsRowId === row.id ? "text-emerald-300" : ""
+            } disabled:opacity-50`}
+            aria-label={`View sample labels for sample ${srNo}`}
+            title={
+              sampleLabelsLoading && sampleLabelsRowId === row.id
+                ? "Loading sample labels…"
+                : "View Sample Labels"
+            }
+          >
+            <IconSampleLabels />
+          </button>
+        ) : null}
         <button
           type="button"
           onClick={() => onRemove(row)}
@@ -263,13 +509,6 @@ export function OslSampleRequirementsTableEditor({
         </p>
       ) : (
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-3 sm:p-4">
-          <p className={`text-xs ${t.muted}`}>
-            {visibleRows.length} sample{visibleRows.length === 1 ? "" : "s"}
-            {" · "}
-            Toggle <span className="text-zinc-300">In Letter</span> to include or
-            exclude a sample from print / Word / PDF.
-          </p>
-
           <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
             {visibleRows.map((row, index) => {
               const srNo = String(index + 1).padStart(2, "0");
@@ -277,28 +516,35 @@ export function OslSampleRequirementsTableEditor({
               const kind = parseSampleFor(row.sample_for);
               const sampleFor = sampleForLabel(kind);
               const inLetter = isSampleIncludedInPrint(row);
-              const batchNo = row.batch_number.trim();
               const dom = row.date_of_manufacturing.trim()
                 ? formatDisplayDate(row.date_of_manufacturing)
                 : "";
-
-              const leftMeta = [
-                { label: "Batch No", value: batchNo },
-                { label: "Sample Qty", value: row.sample_quantity },
-                { label: "Sample Code", value: row.sample_code, mono: true },
-                { label: "Mode Of Disposal", value: row.mode_of_disposal },
-                { label: "Laboratory", value: row.laboratory_name },
-              ] as const;
-
-              const rightMeta = [
-                { label: "DOM", value: dom },
-                { label: "Batch Qty", value: row.batch_quantity },
-                { label: "QR Code", value: row.qr_code, mono: true },
-                { label: "Test Required", value: row.test_required },
-                { label: "Shelf Life", value: row.shelf_life },
-                { label: "Sample Type", value: row.sample_type },
-                { label: "Testing Charges", value: row.testing_charges },
-              ] as const;
+              const gradeAndDescription = resolveGradeAndDescription(row);
+              const details: { label: string; value: ReactNode }[] = [
+                { label: "Sample Quantity", value: fieldOrDash(row.sample_quantity) },
+                {
+                  label: "Grade / Type / Variety",
+                  value: fieldOrDash(gradeAndDescription.grade_type_variety),
+                },
+                {
+                  label: "Declared Value",
+                  value: (
+                    <>
+                      <span className="break-words">{fieldOrDash(row.declared_value)}</span>
+                      {row.declared_drawing_ref?.trim() ? (
+                        <StorageDocumentLink
+                          value={row.declared_drawing_ref}
+                          download={row.declared_drawing_name?.trim() || true}
+                          title={row.declared_drawing_name?.trim() || "Download drawing / PDF"}
+                          label={row.declared_drawing_name?.trim() || "Download"}
+                          className="mt-1.5 inline-flex max-w-full items-center truncate rounded-md border border-sky-600/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/20"
+                        />
+                      ) : null}
+                    </>
+                  ),
+                },
+                { label: "Laboratory", value: fieldOrDash(row.laboratory_name) },
+              ];
 
               return (
                 <article
@@ -308,115 +554,37 @@ export function OslSampleRequirementsTableEditor({
                     inLetter ? "" : "opacity-70"
                   }`}
                 >
-                  <div className="p-3.5">
-                    <div className="mb-3 flex items-center gap-2.5">
-                      <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                        <InLetterToggle
-                          on={inLetter}
-                          onToggle={() =>
-                            onUpdate({
-                              ...row,
-                              include_in_print: !inLetter,
-                            })
-                          }
-                        />
-                        <span
-                          className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide ${sampleForBadgeClass(kind)}`}
-                        >
-                          {sampleFor}
-                        </span>
-                        {row.priority.trim() ? (
-                          <span className="inline-flex items-center rounded-full border border-zinc-600/70 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
-                            {row.priority}
-                          </span>
-                        ) : null}
-                        <label
-                          className={`inline-flex cursor-pointer items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-                            row.test_report_ref?.trim()
-                              ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200"
-                              : "border-zinc-600/70 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-800"
-                          } ${uploadingId === row.id ? "pointer-events-none opacity-60" : ""}`}
-                          title={
-                            row.test_report_name?.trim()
-                              ? `Attached: ${row.test_report_name}. Click to replace.`
-                              : "Attach Test Report"
-                          }
-                        >
-                          <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                          </svg>
-                          {uploadingId === row.id
-                            ? "Attaching…"
-                            : row.test_report_ref?.trim()
-                              ? "Test Report"
-                              : "Attach Test Report"}
-                          <input
-                            type="file"
-                            className="hidden"
-                            accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.xlsx,.xls"
-                            disabled={uploadingId === row.id}
-                            onChange={(e) => {
-                              const file = e.target.files?.[0] ?? null;
-                              e.target.value = "";
-                              void attachTestReport(row, file);
-                            }}
-                          />
-                        </label>
-                        {row.test_report_ref?.trim() ? (
-                          <StorageDocumentLink
-                            value={row.test_report_ref}
-                            label="View"
-                            className="inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/20"
-                          />
-                        ) : null}
-                      </div>
-                      <div className="shrink-0">{rowActions(row, srNo)}</div>
-                    </div>
-
-                    <div className="mb-3 grid gap-2.5 sm:grid-cols-2">
-                      <div className={t.panel}>
-                        <p className={t.heroLabel}>Sample Description</p>
-                        <p className={`${t.heroValue} break-words`}>
-                          {fieldOrDash(row.sample_description)}
-                        </p>
-                      </div>
-                      <div className={t.panel}>
-                        <p className={t.heroLabel}>Declared Value</p>
-                        <p className={`${t.heroValue} break-words font-medium`}>
-                          {fieldOrDash(row.declared_value)}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="grid gap-3 sm:grid-cols-2">
-                      <dl className={t.panel}>
-                        {leftMeta.map((item) => (
-                          <MetaItem
-                            key={item.label}
-                            label={item.label}
-                            value={item.value}
-                            labelClass={t.cardLabel}
-                            valueClass={t.cardValue.replace("mt-0.5 ", "")}
-                            mono={"mono" in item ? Boolean(item.mono) : false}
-                            rowClass={t.metaRow}
-                          />
-                        ))}
-                      </dl>
-                      <dl className={t.panel}>
-                        {rightMeta.map((item) => (
-                          <MetaItem
-                            key={item.label}
-                            label={item.label}
-                            value={item.value}
-                            labelClass={t.cardLabel}
-                            valueClass={t.cardValue.replace("mt-0.5 ", "")}
-                            mono={"mono" in item ? Boolean(item.mono) : false}
-                            rowClass={t.metaRow}
-                          />
-                        ))}
-                      </dl>
-                    </div>
+                  <div className="flex flex-wrap items-center gap-2 border-b border-zinc-200 px-3.5 py-2 dark:border-zinc-800">
+                    {rowToolbar(row, srNo, kind, sampleFor, inLetter)}
                   </div>
+
+                  <div className={t.ticketBand}>
+                    <TicketCode label="Sample Code" value={row.sample_code} />
+                    <TicketCode label="QR Code" value={row.qr_code} />
+                  </div>
+
+                  <dl className={t.kvWrap}>
+                    <div className="grid gap-3 py-2.5 sm:grid-cols-2">
+                      <div>
+                        <dt className={t.kvLabel}>Batch Number</dt>
+                        <dd className={`${t.kvValue} m-0 mt-0.5 break-words`}>
+                          {fieldOrDash(row.batch_number)}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt className={t.kvLabel}>Manufactured</dt>
+                        <dd className={`${t.kvValue} m-0 mt-0.5 break-words`}>
+                          {fieldOrDash(dom)}
+                        </dd>
+                      </div>
+                    </div>
+                    {details.map((item) => (
+                      <div key={item.label} className={t.kvRow}>
+                        <dt className={t.kvLabel}>{item.label}</dt>
+                        <dd className={`${t.kvValue} m-0 break-words`}>{item.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
                 </article>
               );
             })}

@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useEditorRowsFromStored } from "@/components/modules/finance/use-finance-master-state";
 import { AiChatModal } from "@/components/dashboard/ai-chat-modal";
-import { IsCodeViewModal } from "@/components/dashboard/modals/is-code-view-modal";
 import { OslSampleFormModal } from "@/components/dashboard/modals/osl-sample-form-modal";
 import {
   OslSampleAddButton,
@@ -20,6 +19,7 @@ import { buildOslSampleCourierLabelsHtml, buildOslSampleCourierQrText } from "@b
 
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
 import { createClient } from "@backend/db/client/client";
+import { uploadTechnicalStaffDocument } from "@backend/modules/storage/technical-staff-documents";
 import {
   buildOslSampleRequirementsHtml,
   defaultOslSamplePrintSettings,
@@ -56,6 +56,14 @@ import type { ChecklistImportExclude } from "@backend/modules/bis/checklist-docu
 import { ModalToolbarActions } from "@/components/dashboard/modals/modal-toolbar-actions";
 import { DocumentModalSubtitle } from "@/components/dashboard/modals/document-modal-subtitle";
 import { ChecklistDocumentImportDialog } from "@/components/dashboard/modals/checklist-document-import-dialog";
+import { isLikelyManakSampleCode } from "@backend/modules/bis/manak-test-request-payload";
+import {
+  copyManakTestRequestPayload,
+  manakPdfFileFromResult,
+  openManakTestRequest,
+  lastManakOpenSample,
+  subscribeManakTestRequestResult,
+} from "@/components/modules/bis-projects/manak-test-request";
 
 const OSL_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
 You help with OSL (Outside Laboratory) sample requirements and sample offer letters for BIS certification:
@@ -159,6 +167,38 @@ function resolveClientAddress(
   return match ? clientCompleteAddress(match) : "";
 }
 
+type IsCodeFileEntry = { id: string; file_name: string | null; storage_path: string };
+
+/** High-contrast PNG with quiet zone — Apple + Android cameras both lock this reliably. */
+async function renderSampleQrDataUrl(
+  QR: typeof import("qrcode"),
+  payload: string,
+): Promise<string> {
+  return QR.toDataURL(payload, {
+    width: 1024,
+    margin: 4,
+    errorCorrectionLevel: "M",
+    type: "image/png",
+    color: { dark: "#000000", light: "#ffffff" },
+  });
+}
+
+function isCodeFileDisplayName(file: IsCodeFileEntry): string {
+  return file.file_name?.trim() || file.storage_path.split("/").pop() || "File";
+}
+
+function isCodeFileViewUrl(file: IsCodeFileEntry): string {
+  const name = isCodeFileDisplayName(file);
+  const params = new URLSearchParams({
+    bucket: "is_code_documents",
+    path: file.storage_path,
+    disposition: "inline",
+    filename: name,
+  });
+  const url = `/api/storage/public?${params.toString()}`;
+  return /\.pdf$/i.test(name) ? `${url}#toolbar=0&navpanes=0` : url;
+}
+
 async function fetchClientsForLabLookup(): Promise<ClientPickerRow[]> {
   const supabase = createClient();
   const { data } = await supabase
@@ -178,6 +218,8 @@ export function OslSampleRequirementsModal({
   rows: initialStored,
   clientId = null,
   excludeImportSource = null,
+  portalUserId = null,
+  portalPassword = null,
   onSave,
   onClose,
   initialFocusSampleIndex = null,
@@ -191,6 +233,8 @@ export function OslSampleRequirementsModal({
   rows: OslSampleRequirementStored[];
   clientId?: string | null;
   excludeImportSource?: ChecklistImportExclude | null;
+  portalUserId?: string | null;
+  portalPassword?: string | null;
   onSave: (rows: OslSampleRequirementStored[]) => void;
   onClose: () => void;
   initialFocusSampleIndex?: number | null;
@@ -198,9 +242,7 @@ export function OslSampleRequirementsModal({
   const labels = sampleOfferLetterLabels(variant);
   const importDocumentKey =
     variant === "pi" ? ("pi_sample_requirements" as const) : ("osl_sample_requirements" as const);
-  const [letterVariant, setLetterVariant] =
-    useState<SampleOfferLetterVariant>(variant);
-  const letterLabels = sampleOfferLetterLabels(letterVariant);
+  const letterVariant = variant;
   const [rows, setRows] = useEditorRowsFromStored(initialStored, editorRowsFromStored);
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultOslSamplePrintSettings(),
@@ -213,7 +255,8 @@ export function OslSampleRequirementsModal({
   const [showPrintPreview, setShowPrintPreview] = useState(false);
   const [showImportDialog, setShowImportDialog] = useState(false);
   const [showQeAssistant, setShowQeAssistant] = useState(false);
-  const [showIsCodeView, setShowIsCodeView] = useState(false);
+  const [isCodeFiles, setIsCodeFiles] = useState<IsCodeFileEntry[]>([]);
+  const [viewingIsFile, setViewingIsFile] = useState<IsCodeFileEntry | null>(null);
   const [sampleFormRow, setSampleFormRow] = useState<
     OslSampleRequirementRow | null | undefined
   >(undefined);
@@ -221,14 +264,18 @@ export function OslSampleRequirementsModal({
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [showCourierLabelsPreview, setShowCourierLabelsPreview] = useState(false);
+  const [courierFocusRowId, setCourierFocusRowId] = useState<string | null>(null);
   const [courierLabelsHtml, setCourierLabelsHtml] = useState("");
   const [courierLabelsLoading, setCourierLabelsLoading] = useState(false);
   const [courierLabelsDownloading, setCourierLabelsDownloading] = useState(false);
   const [courierIncludeBlv, setCourierIncludeBlv] = useState(true);
   const [courierIncludeMobile, setCourierIncludeMobile] = useState(true);
   const [saving, startSave] = useTransition();
+  const [manakCopiedRowId, setManakCopiedRowId] = useState<string | null>(null);
+  const [manakCodeFlash, setManakCodeFlash] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const courierIframeRef = useRef<HTMLIFrameElement>(null);
+  const manakPdfAttachedRef = useRef("");
 
   useEffect(() => {
     let cancelled = false;
@@ -244,6 +291,124 @@ export function OslSampleRequirementsModal({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isCodeId) {
+      setIsCodeFiles([]);
+      return;
+    }
+    let cancelled = false;
+    void createClient()
+      .from("is_code_files")
+      .select("id, file_name, storage_path")
+      .eq("is_code_id", isCodeId)
+      .then(({ data }) => {
+        if (!cancelled) setIsCodeFiles((data ?? []) as IsCodeFileEntry[]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isCodeId]);
+
+  useEffect(() => {
+    function matchManakRow(
+      prev: OslSampleRequirementRow[],
+      result: { sampleId?: string; qr_code?: string },
+    ) {
+      const lastOpen = lastManakOpenSample();
+      return (
+        prev.find((row) => result.sampleId && row.id === result.sampleId) ??
+        prev.find(
+          (row) =>
+            Boolean(result.qr_code) &&
+            row.qr_code.trim() &&
+            row.qr_code.trim() === result.qr_code,
+        ) ??
+        prev.find((row) => lastOpen.sampleId && row.id === lastOpen.sampleId) ??
+        prev.find(
+          (row) =>
+            lastOpen.qr_code &&
+            row.qr_code.trim() &&
+            row.qr_code.trim() === lastOpen.qr_code,
+        ) ??
+        null
+      );
+    }
+
+    return subscribeManakTestRequestResult((result) => {
+      setRows((prev) => {
+        const match = matchManakRow(prev, result);
+        if (!match) return prev;
+        const nextCode = isLikelyManakSampleCode(result.sample_code)
+          ? result.sample_code
+          : match.sample_code;
+        const nextQr = result.qr_code || match.qr_code;
+        if (match.sample_code.trim() === nextCode.trim() && match.qr_code.trim() === nextQr.trim()) {
+          return prev;
+        }
+        const next = prev.map((row) =>
+          row.id === match.id
+            ? {
+                ...row,
+                sample_code: nextCode,
+                qr_code: nextQr,
+              }
+            : row,
+        );
+        window.setTimeout(() => onSave(storedFromEditor(next)), 0);
+        return next;
+      });
+      if (isLikelyManakSampleCode(result.sample_code)) {
+        setManakCodeFlash(result.sample_code);
+        window.setTimeout(() => {
+          setManakCodeFlash((current) =>
+            current === result.sample_code ? null : current,
+          );
+        }, 6000);
+      }
+
+      const pdfKey = `${result.sampleId}:${result.pdfName || ""}:${(result.pdfBase64 ?? "").slice(0, 48)}`;
+      if (!result.pdfBase64 || manakPdfAttachedRef.current === pdfKey) return;
+      const file = manakPdfFileFromResult(result);
+      if (!file) return;
+      manakPdfAttachedRef.current = pdfKey;
+      void (async () => {
+        const matchId = result.sampleId || lastManakOpenSample().sampleId;
+        const safeId = (matchId || "sample").replace(/[^\w.\-]+/g, "-").slice(0, 80);
+        const safeName = file.name.replace(/[^\w.\-]+/g, "-").slice(0, 120);
+        const path = `osl-sample-test-requests/${safeId}/${Date.now()}-${safeName}`;
+        const uploaded = await uploadTechnicalStaffDocument(createClient(), path, file);
+        if ("error" in uploaded) {
+          manakPdfAttachedRef.current = "";
+          window.alert(`Test Request PDF attach failed: ${uploaded.error}`);
+          return;
+        }
+        setRows((prev) => {
+          const match = matchManakRow(prev, result) ??
+            prev.find((row) => matchId && row.id === matchId) ??
+            null;
+          if (!match) return prev;
+          const next = prev.map((row) =>
+            row.id === match.id
+              ? {
+                  ...row,
+                  test_request_ref: uploaded.ref,
+                  test_request_name: file.name,
+                }
+              : row,
+          );
+          window.setTimeout(() => onSave(storedFromEditor(next)), 0);
+          return next;
+        });
+        setManakCodeFlash("PDF attached");
+        window.setTimeout(() => {
+          setManakCodeFlash((current) =>
+            current === "PDF attached" ? null : current,
+          );
+        }, 6000);
+      })();
+    });
+  }, [onSave, setRows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -475,6 +640,46 @@ export function OslSampleRequirementsModal({
     });
   }
 
+  function manakApplicationContext() {
+    return {
+      companyName: letterData.companyName,
+      isNumber: letterData.isNumber ?? isCodeNumber ?? "",
+      isTitle: letterData.isTitle ?? "",
+      applicationNumber: letterData.applicationNumber ?? "",
+      gstNumber: letterData.gstNumber ?? "",
+      email: letterData.email ?? "",
+      address: letterData.address ?? "",
+      correspondenceAddress: letterData.address ?? "",
+      manufacturingAddress: letterData.address ?? "",
+    };
+  }
+
+  function handleCopyForManak(row: OslSampleRequirementRow) {
+    const ok = copyManakTestRequestPayload(row, manakApplicationContext());
+    if (!ok) {
+      window.alert("Unable to copy sample details for Manak Test Request.");
+      return;
+    }
+    setManakCopiedRowId(row.id);
+    window.setTimeout(() => {
+      setManakCopiedRowId((current) => (current === row.id ? null : current));
+    }, 1600);
+  }
+
+  function handleOpenManak(row: OslSampleRequirementRow) {
+    const ok = openManakTestRequest(row, manakApplicationContext(), {
+      portalUserId,
+      portalPassword,
+    });
+    if (!ok) {
+      window.alert("Unable to copy sample details for Manak Test Request.");
+    }
+    setManakCopiedRowId(row.id);
+    window.setTimeout(() => {
+      setManakCopiedRowId((current) => (current === row.id ? null : current));
+    }, 1600);
+  }
+
   function handlePrint() {
     if (showPrintPreview && iframeRef.current?.contentWindow) {
       iframeRef.current.contentWindow.focus();
@@ -533,8 +738,12 @@ export function OslSampleRequirementsModal({
   async function buildCourierLabelsDocumentHtml(opts?: {
     includeBlv?: boolean;
     includeMobile?: boolean;
+    rowId?: string | null;
   }): Promise<string | null> {
-    const stored = storedFromEditor(rows).filter(rowHasContent);
+    const sourceRows = opts?.rowId
+      ? rows.filter((row) => row.id === opts.rowId)
+      : rows;
+    const stored = storedFromEditor(sourceRows).filter(rowHasContent);
     if (stored.length === 0) return null;
 
     const includeBlv = opts?.includeBlv ?? courierIncludeBlv;
@@ -555,6 +764,7 @@ export function OslSampleRequirementsModal({
           companyAddress: letterData.address ?? "",
           isNumber: letterData.isNumber ?? isCodeNumber ?? "",
           isTitle: letterData.isTitle ?? "",
+          applicationNumber: letterData.applicationNumber ?? "",
           variant: letterVariant,
           laboratory_address,
         });
@@ -562,29 +772,10 @@ export function OslSampleRequirementsModal({
           return { ...row, qr_data_url: "", laboratory_address };
         }
         try {
-          // High-res PNG + quiet zone so print/scan stays sharp (dense detail payload).
-          const qr_data_url = await QR.toDataURL(payload, {
-            width: 1024,
-            margin: 4,
-            errorCorrectionLevel: "M",
-            type: "image/png",
-            color: { dark: "#000000", light: "#ffffff" },
-          });
+          const qr_data_url = await renderSampleQrDataUrl(QR, payload);
           return { ...row, qr_data_url, laboratory_address };
         } catch {
-          // Retry with lower ECC if payload is too dense for M.
-          try {
-            const qr_data_url = await QR.toDataURL(payload, {
-              width: 1024,
-              margin: 4,
-              errorCorrectionLevel: "L",
-              type: "image/png",
-              color: { dark: "#000000", light: "#ffffff" },
-            });
-            return { ...row, qr_data_url, laboratory_address };
-          } catch {
-            return { ...row, qr_data_url: "", laboratory_address };
-          }
+          return { ...row, qr_data_url: "", laboratory_address };
         }
       }),
     );
@@ -597,6 +788,9 @@ export function OslSampleRequirementsModal({
       applicationNumber: letterData.applicationNumber ?? "",
       variant: letterVariant,
       rows: labelRows,
+      bisBranchName: letterData.bisBranchName ?? "",
+      bisBranchState: letterData.bisBranchState ?? "",
+      bisBranchCountry: letterData.bisBranchCountry ?? "India",
       includeBlvCareOf: includeBlv,
       includeLabMobile: includeMobile,
     });
@@ -605,10 +799,14 @@ export function OslSampleRequirementsModal({
   async function refreshCourierLabelsPreview(opts?: {
     includeBlv?: boolean;
     includeMobile?: boolean;
+    rowId?: string | null;
   }) {
     setCourierLabelsLoading(true);
     try {
-      const html = await buildCourierLabelsDocumentHtml(opts);
+      const html = await buildCourierLabelsDocumentHtml({
+        ...opts,
+        rowId: opts?.rowId ?? courierFocusRowId,
+      });
       if (html) setCourierLabelsHtml(html);
     } catch (err) {
       window.alert(
@@ -626,6 +824,7 @@ export function OslSampleRequirementsModal({
       await refreshCourierLabelsPreview({
         includeBlv: next,
         includeMobile: courierIncludeMobile,
+        rowId: courierFocusRowId,
       });
     }
   }
@@ -637,26 +836,29 @@ export function OslSampleRequirementsModal({
       await refreshCourierLabelsPreview({
         includeBlv: courierIncludeBlv,
         includeMobile: next,
+        rowId: courierFocusRowId,
       });
     }
   }
 
-  async function handleViewCourierLabels() {
-    if (showCourierLabelsPreview) {
+  async function handleViewCourierLabels(row?: OslSampleRequirementRow) {
+    if (showCourierLabelsPreview && (!row || row.id === courierFocusRowId)) {
       setShowCourierLabelsPreview(false);
+      setCourierFocusRowId(null);
       return;
     }
     if (courierLabelsLoading) return;
 
     setCourierLabelsLoading(true);
     try {
-      const html = await buildCourierLabelsDocumentHtml();
+      const html = await buildCourierLabelsDocumentHtml({ rowId: row?.id ?? null });
       if (!html) {
         window.alert("Add at least one sample before viewing courier labels.");
         return;
       }
       setCourierLabelsHtml(html);
       setShowPrintPreview(false);
+      setCourierFocusRowId(row?.id ?? null);
       setShowCourierLabelsPreview(true);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "Unable to open sample labels preview.");
@@ -672,7 +874,7 @@ export function OslSampleRequirementsModal({
     try {
       const html = courierLabelsHtml.trim()
         ? courierLabelsHtml
-        : await buildCourierLabelsDocumentHtml();
+        : await buildCourierLabelsDocumentHtml({ rowId: courierFocusRowId });
       if (!html) {
         window.alert("Add at least one sample before downloading courier labels.");
         return;
@@ -724,6 +926,7 @@ export function OslSampleRequirementsModal({
     setRows(editorRowsFromStored(nextRows));
     setShowPrintPreview(false);
     setShowCourierLabelsPreview(false);
+    setCourierFocusRowId(null);
     return true;
   }
 
@@ -732,41 +935,19 @@ export function OslSampleRequirementsModal({
       <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
         <div className="flex shrink-0 flex-col gap-2 border-b border-zinc-800 bg-zinc-900 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-2 sm:px-4 sm:py-3">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-sm font-semibold text-white">{labels.modalTitle}</h2>
             <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isFullNumber} />
-            <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                Letter
-              </span>
-              <button
-                type="button"
-                onClick={() => setLetterVariant("osl")}
-                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                  letterVariant === "osl"
-                    ? "bg-teal-600 text-white"
-                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                }`}
-              >
-                OSL
-              </button>
-              <button
-                type="button"
-                onClick={() => setLetterVariant("pi")}
-                className={`rounded-md px-2 py-0.5 text-[11px] font-semibold ${
-                  letterVariant === "pi"
-                    ? "bg-teal-600 text-white"
-                    : "bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
-                }`}
-              >
-                IT
-              </button>
-              <span className="text-[11px] text-zinc-500">{letterLabels.documentHeading}</span>
-            </div>
           </div>
           <ModalToolbarActions onClose={onClose}>
           {savedFlash && (
             <span className="text-xs font-semibold text-emerald-400">Saved ✓</span>
           )}
+          {manakCodeFlash ? (
+            <span className="text-xs font-semibold text-emerald-400">
+              {manakCodeFlash === "PDF attached"
+                ? "Manak Test Request PDF attached — Save to keep"
+                : `Manak Sample Code ${manakCodeFlash} — Save to keep`}
+            </span>
+          ) : null}
           {saving && <span className="text-xs text-zinc-400">Saving…</span>}
           <span
             className="hidden text-[11px] font-medium text-zinc-400 sm:inline"
@@ -797,6 +978,7 @@ export function OslSampleRequirementsModal({
             type="button"
             onClick={() => {
               setShowCourierLabelsPreview(false);
+              setCourierFocusRowId(null);
               setShowPrintPreview((prev) => !prev);
             }}
             title={`Print Preview includes all ${inLetterCount} sample${inLetterCount === 1 ? "" : "s"} with In Letter ON`}
@@ -873,37 +1055,31 @@ export function OslSampleRequirementsModal({
               }`}
             >
               <div className="border-b border-zinc-800 px-3 py-2.5 sm:px-4 sm:py-3">
-                <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                <div className="flex flex-wrap items-center gap-2 sm:justify-between">
+                  <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-white">
+                    {labels.modalTitle}
+                  </h2>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                   <OslSampleAddButton theme="dark" onClick={openAddSampleForm} />
-                  <button
-                    type="button"
-                    onClick={() => void handleViewCourierLabels()}
-                    disabled={courierLabelsLoading}
-                    title="View printable sample tags with QR for courier attachment"
-                    className={`inline-flex shrink-0 items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 ${
-                      showCourierLabelsPreview
-                        ? "border-emerald-500 bg-emerald-600 text-white"
-                        : "border-emerald-600/50 bg-emerald-950/40 text-emerald-200 hover:bg-emerald-950/70"
-                    }`}
-                  >
-                    <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                    </svg>
-                    {courierLabelsLoading ? "Opening…" : "View Sample Labels"}
-                  </button>
-                  {isCodeId ? (
-                    <button
-                      type="button"
-                      onClick={() => setShowIsCodeView(true)}
-                      className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
-                    >
-                      <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
-                      View IS Files
-                    </button>
-                  ) : null}
+                  {isCodeFiles.map((file) => {
+                    const name = isCodeFileDisplayName(file);
+                    return (
+                      <button
+                        key={file.id}
+                        type="button"
+                        onClick={() => setViewingIsFile(file)}
+                        title={`View ${name}`}
+                        className="inline-flex max-w-[220px] shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                      >
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                        </svg>
+                        <span className="truncate">{name}</span>
+                      </button>
+                    );
+                  })}
+                  </div>
                 </div>
               </div>
 
@@ -913,9 +1089,15 @@ export function OslSampleRequirementsModal({
                   rows={rows}
                   onEdit={openEditSampleForm}
                   onCopy={handleCopySample}
+                  onCopyForManak={handleCopyForManak}
+                  onOpenManak={handleOpenManak}
+                  onViewSampleLabels={(row) => void handleViewCourierLabels(row)}
+                  sampleLabelsLoading={courierLabelsLoading}
+                  sampleLabelsRowId={courierFocusRowId}
                   onRemove={handleRemoveSample}
                   onUpdate={handleUpdateSample}
                   focusSampleIndex={initialFocusSampleIndex}
+                  manakCopiedRowId={manakCopiedRowId}
                 />
               </div>
             </div>
@@ -929,7 +1111,7 @@ export function OslSampleRequirementsModal({
             >
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-700/80 px-4 py-2">
                 <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-                  Sample Labels Preview · Courier
+                  Sample Labels Preview · Test Request
                 </p>
                 <div className="flex flex-wrap items-center gap-2">
                   <button
@@ -975,7 +1157,10 @@ export function OslSampleRequirementsModal({
                   </button>
                   <button
                     type="button"
-                    onClick={() => setShowCourierLabelsPreview(false)}
+                    onClick={() => {
+                      setShowCourierLabelsPreview(false);
+                      setCourierFocusRowId(null);
+                    }}
                     className="rounded-lg border border-zinc-500 bg-zinc-800 px-2.5 py-1 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
                   >
                     Close Preview
@@ -985,7 +1170,7 @@ export function OslSampleRequirementsModal({
               <div className="flex-1 overflow-y-auto p-3 sm:p-6">
                 <iframe
                   ref={courierIframeRef}
-                  title="Sample courier labels preview"
+                  title="Test Request preview"
                   className="mx-auto max-w-full border-0 bg-white shadow-2xl"
                   scrolling="no"
                   style={printPreviewIframeStyle(210, 297)}
@@ -1034,16 +1219,6 @@ export function OslSampleRequirementsModal({
         </div>
       </div>
 
-      {showIsCodeView && isCodeId && (
-        <IsCodeViewModal
-          isCodeId={isCodeId}
-          isNumber={isCodeNumber}
-          revisionYear={revisionYear}
-          overlayZIndexClass="z-[450]"
-          onClose={() => setShowIsCodeView(false)}
-        />
-      )}
-
       {showQeAssistant && (
         <AiChatModal
           title="QE Assistant"
@@ -1069,6 +1244,42 @@ export function OslSampleRequirementsModal({
           onClose={() => setShowImportDialog(false)}
         />
       )}
+
+      {viewingIsFile ? (
+        <div
+          className="fixed inset-0 z-[520] flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="osl-is-file-view-title"
+        >
+          <div className="flex h-[min(92vh,920px)] w-full max-w-5xl flex-col overflow-hidden rounded-xl border border-zinc-700 bg-zinc-950 shadow-2xl">
+            <div className="flex shrink-0 items-center justify-between gap-3 border-b border-zinc-800 px-4 py-2.5">
+              <h2
+                id="osl-is-file-view-title"
+                className="min-w-0 truncate text-sm font-semibold text-zinc-100"
+              >
+                {isCodeFileDisplayName(viewingIsFile)}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setViewingIsFile(null)}
+                className="rounded-lg p-1.5 text-zinc-400 hover:bg-zinc-800 hover:text-white"
+                aria-label="Close file view"
+                title="Close"
+              >
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <iframe
+              title={isCodeFileDisplayName(viewingIsFile)}
+              src={isCodeFileViewUrl(viewingIsFile)}
+              className="min-h-0 w-full flex-1 bg-zinc-900"
+            />
+          </div>
+        </div>
+      ) : null}
 
       {sampleFormRow !== undefined ? (
         <OslSampleFormModal

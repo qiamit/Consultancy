@@ -1,7 +1,38 @@
-import { rowHasContent as oslRowHasContent, type OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
+import {
+  parseSampleFor,
+  rowHasContent as oslRowHasContent,
+  type OslSampleRequirementStored,
+} from "@backend/modules/bis/osl-sample-requirements";
 import { toYmdDateString } from "@backend/shared/format-date";
 
-export type FtrSampleSource = "osl" | "pi";
+export type FtrSampleSource = "osl" | "ft" | "pi";
+
+export function parseFtrSampleSource(raw: unknown): FtrSampleSource {
+  const v = String(raw ?? "").trim().toLowerCase();
+  if (v === "pi" || v === "it") return "pi";
+  if (v === "ft") return "ft";
+  return "osl";
+}
+
+export function ftrSourceTag(source: FtrSampleSource): "OSL" | "FT" | "IT" {
+  if (source === "pi") return "IT";
+  if (source === "ft") return "FT";
+  return "OSL";
+}
+
+/** Checklist / print row title: FTR - OSL - Batch Number */
+export function ftrChecklistLabel(report: Pick<FactoryTestReportStored, "source" | "batch_heat_number">): string {
+  const batch = report.batch_heat_number.trim() || "—";
+  return `FTR - ${ftrSourceTag(parseFtrSampleSource(report.source))} - ${batch}`;
+}
+
+export function ftrSamplesForSource(
+  source: FtrSampleSource,
+  oslSamples: OslSampleRequirementStored[],
+  piSamples: OslSampleRequirementStored[],
+): OslSampleRequirementStored[] {
+  return source === "pi" ? piSamples : oslSamples;
+}
 
 export type FtrTestRowStored = {
   row_type: "section" | "test";
@@ -203,9 +234,13 @@ function sampleSourceKey(source: FtrSampleSource, index: number): string {
 }
 
 function sampleLabel(source: FtrSampleSource, index: number, sample: OslSampleRequirementStored): string {
-  const prefix = source === "osl" ? "OSL" : "PI";
+  const prefix = ftrSourceTag(source);
   const desc = sample.sample_description.trim();
   return desc ? `${prefix} — ${desc}` : `${prefix} Sample ${String(index + 1).padStart(2, "0")}`;
+}
+
+function ftrSourceFromOslSample(sample: OslSampleRequirementStored): FtrSampleSource {
+  return parseSampleFor(sample.sample_for, "osl") === "ft" ? "ft" : "osl";
 }
 
 function buildReportFromSample(
@@ -266,13 +301,16 @@ export function syncFactoryTestReportsFromSamples(input: {
 
   input.oslSamples.forEach((sample, index) => {
     if (!oslRowHasContent(sample)) return;
-    const key = sampleSourceKey("osl", index);
+    const source = ftrSourceFromOslSample(sample);
+    const existing =
+      existingByKey.get(sampleSourceKey(source, index)) ??
+      existingByKey.get(sampleSourceKey("osl", index));
     reports.push(
       buildReportFromSample(
-        "osl",
+        source,
         index,
         sample,
-        existingByKey.get(key),
+        existing,
         input.ctx,
       ),
     );
@@ -301,7 +339,7 @@ export function parseFactoryTestReports(raw: unknown): FactoryTestReportStored[]
     .map((item) => {
       if (!item || typeof item !== "object") return null;
       const r = item as Record<string, unknown>;
-      const source = r.source === "pi" ? "pi" : "osl";
+      const source = parseFtrSampleSource(r.source);
       const testRowsRaw = Array.isArray(r.test_rows) ? r.test_rows : [];
       const test_rows = testRowsRaw
         .map((row): FtrTestRowStored | null => {

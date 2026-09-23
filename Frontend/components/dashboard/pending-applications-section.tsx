@@ -2221,9 +2221,9 @@ function ApplicationFormModal({
 
   function handleEditSampleFromFtr(source: FtrSampleSource, sampleIndex: number) {
     const focus =
-      source === "osl"
-        ? sampleIndex
-        : oslSampleRequirements.length + sampleIndex;
+      source === "pi"
+        ? oslSampleRequirements.length + sampleIndex
+        : sampleIndex;
     setSampleOfferLetterFocusIndex(focus);
     setReopenFtrAfterSampleEdit(true);
     openDoc("osl-sample");
@@ -2951,6 +2951,8 @@ function ApplicationFormModal({
                 ? "bis_new_applications"
                 : "bis_projects",
           }}
+          portalUserId={row.portal_user_id}
+          portalPassword={row.portal_password}
           onSave={saveOslSampleRequirements}
           onClose={closeOslSampleRequirementsModal}
           initialFocusSampleIndex={sampleOfferLetterFocusIndex}

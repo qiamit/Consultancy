@@ -39,6 +39,8 @@ import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff"
 import { resolveQualityControlIncharge } from "@backend/modules/bis/technical-staff";
 import {
   editorReportsFromStored,
+  ftrSamplesForSource,
+  ftrSourceTag,
   mergeTestParametersIntoRows,
   orderFtrTestRowsClauseWise,
   refreshReportHeadersFromSample,
@@ -72,10 +74,8 @@ function ftrSampleDropdownLabel(
   sample: OslSampleRequirementStored | null | undefined,
 ): string {
   const kind = sample
-    ? sampleForLabel(parseSampleFor(sample.sample_for, report.source === "pi" ? "it" : "osl"))
-    : report.source === "pi"
-      ? "IT"
-      : "OSL";
+    ? sampleForLabel(parseSampleFor(sample.sample_for, report.source === "pi" ? "it" : report.source === "ft" ? "ft" : "osl"))
+    : ftrSourceTag(report.source);
   const batch =
     (sample?.batch_number ?? report.batch_heat_number).trim() || "—";
   const domRaw = (sample?.date_of_manufacturing ?? report.date_of_manufacturing).trim();
@@ -315,10 +315,9 @@ export function FactoryTestReportModal({
     if (reports.length === 0) return reports;
     const testingFallback = ftrTestingDateFallback(ftrContext.dateOfInspection);
     return reports.map((report) => {
-      const sample =
-        report.source === "osl"
-          ? oslSamples[report.source_index]
-          : piSamples[report.source_index];
+      const sample = ftrSamplesForSource(report.source, oslSamples, piSamples)[
+        report.source_index
+      ];
       const patch = refreshReportHeadersFromSample(report, sample, ftrContext);
       const next = Object.keys(patch).length > 0 ? { ...report, ...patch } : report;
       return {
@@ -342,7 +341,7 @@ export function FactoryTestReportModal({
 
   const activeLinkedSample = useMemo((): OslSampleRequirementStored | null => {
     if (!activeReport) return null;
-    const samples = activeReport.source === "osl" ? oslSamples : piSamples;
+    const samples = ftrSamplesForSource(activeReport.source, oslSamples, piSamples);
     return samples[activeReport.source_index] ?? null;
   }, [activeReport, oslSamples, piSamples]);
 
@@ -657,10 +656,11 @@ export function FactoryTestReportModal({
                         aria-label="Select FTR sample"
                       >
                         {contextualReports.map((report) => {
-                          const sample =
-                            report.source === "osl"
-                              ? oslSamples[report.source_index]
-                              : piSamples[report.source_index];
+                          const sample = ftrSamplesForSource(
+                            report.source,
+                            oslSamples,
+                            piSamples,
+                          )[report.source_index];
                           return (
                             <option key={report.id} value={report.id}>
                               {ftrSampleDropdownLabel(report, sample)}

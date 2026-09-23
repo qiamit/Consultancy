@@ -9,11 +9,15 @@ export function StorageDocumentLink({
   className,
   label = "View",
   loadingLabel = "…",
+  download,
+  title,
 }: {
   value: string;
   className: string;
   label?: ReactNode;
   loadingLabel?: ReactNode;
+  download?: string | boolean;
+  title?: string;
 }) {
   const trimmed = value.trim();
   const [href, setHref] = useState<string | null>(null);
@@ -38,7 +42,14 @@ export function StorageDocumentLink({
   }
 
   return (
-    <a href={effectiveHref} target="_blank" rel="noopener noreferrer" className={className}>
+    <a
+      href={effectiveHref}
+      target="_blank"
+      rel="noopener noreferrer"
+      download={typeof download === "string" ? download : download ? true : undefined}
+      title={title}
+      className={className}
+    >
       {label}
     </a>
   );

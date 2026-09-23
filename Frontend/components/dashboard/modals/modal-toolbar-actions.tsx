@@ -53,28 +53,26 @@ type SaveButtonProps = {
 type ModalToolbarActionsProps = {
   children: ReactNode;
   onClose: () => void;
-  /** Optional label for the compact menu trigger (wider compact screens) */
+  /** Optional label for the action menu trigger */
   menuLabel?: string;
 };
 
 /**
- * Document-modal action cluster: shows action buttons inline when they fit.
- * On overflow: pins Save (+ status) outside, collapses the rest into a menu
- * just before Close. Very narrow screens use a hamburger trigger.
- * Menu is portaled so it is not clipped under the table / overflow parents.
+ * Document-modal action cluster: Save stays on the bar.
+ * Every other action (Import, Print, downloads, settings, QE Assistant, …)
+ * lives in an Action dropdown on all tabs. Very narrow screens use a
+ * hamburger trigger. Menu is portaled so it is not clipped.
  * Close always runs Save first (when a Save button exists), then closes —
  * return `false` from Save to keep the modal open (e.g. validation failed).
  */
 export function ModalToolbarActions({
   children,
   onClose,
-  menuLabel = "Actions",
+  menuLabel = "Action",
 }: ModalToolbarActionsProps) {
   const hostRef = useRef<HTMLDivElement>(null);
-  const measureRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
-  const [compact, setCompact] = useState(false);
   const [iconOnly, setIconOnly] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; right: number } | null>(null);
@@ -97,7 +95,7 @@ export function ModalToolbarActions({
       actionNodes.push(child);
       continue;
     }
-    // Anchors (e.g. Maps link) stay with overflow menu / inline actions
+    // Anchors (e.g. Maps link) stay with the Action menu
     if (isElementType(child, "a")) {
       actionNodes.push(child);
       continue;
@@ -115,30 +113,10 @@ export function ModalToolbarActions({
 
   const recompute = useCallback(() => {
     const host = hostRef.current;
-    const measure = measureRef.current;
     const bar = host?.parentElement;
-    if (!host || !measure || !bar) return;
-
-    const barStyle = window.getComputedStyle(bar);
-    const padX =
-      (parseFloat(barStyle.paddingLeft) || 0) + (parseFloat(barStyle.paddingRight) || 0);
-    const gap = parseFloat(barStyle.columnGap || barStyle.gap) || 8;
-
-    const statusW = Array.from(host.querySelectorAll("[data-toolbar-status]")).reduce(
-      (sum, el) => sum + (el as HTMLElement).getBoundingClientRect().width,
-      0,
-    );
-    const statusGaps = statusNodes.length > 0 ? gap * Math.max(1, statusNodes.length) : 0;
-    const closeW = 36;
-    const titleMinReserve = 128;
-    const actionsNatural = measure.scrollWidth;
-    const chrome = padX + titleMinReserve + statusW + statusGaps + closeW + gap * 2;
-    const availableInline = bar.clientWidth - chrome;
-    const needsCompact = actionsNatural > availableInline - 1;
-    setCompact(needsCompact);
-    setIconOnly(needsCompact && bar.clientWidth < 420);
-    if (!needsCompact) setMenuOpen(false);
-  }, [statusNodes.length]);
+    if (!bar) return;
+    setIconOnly(bar.clientWidth < 420);
+  }, []);
 
   const updateMenuPosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -158,7 +136,6 @@ export function ModalToolbarActions({
     const ro = new ResizeObserver(() => recompute());
     ro.observe(bar);
     ro.observe(host);
-    if (measureRef.current) ro.observe(measureRef.current);
     return () => ro.disconnect();
   }, [recompute, children]);
 
@@ -221,15 +198,6 @@ export function ModalToolbarActions({
 
   return (
     <div ref={hostRef} className="flex min-w-0 shrink-0 items-center gap-2 sm:ml-auto">
-      <div
-        ref={measureRef}
-        className="pointer-events-none absolute -z-10 flex items-center gap-2 opacity-0"
-        aria-hidden
-        style={{ left: -9999, top: 0 }}
-      >
-        {cloneActionNodes(actionNodes, "measure")}
-      </div>
-
       {statusNodes.length > 0 ? (
         <div data-toolbar-status className="flex shrink-0 items-center gap-2">
           {statusNodes}
@@ -238,54 +206,49 @@ export function ModalToolbarActions({
 
       {alwaysNodes}
 
-      {!compact ? (
-        <div className="flex items-center gap-2">
-          {cloneActionNodes(actionNodes, "inline")}
+      {saveNodes.length > 0 ? (
+        <div className="flex shrink-0 items-center gap-2">
+          {cloneActionNodes(saveNodes, "pinned-save")}
         </div>
-      ) : (
-        <>
-          {saveNodes.length > 0 ? (
-            <div className="flex shrink-0 items-center gap-2">
-              {cloneActionNodes(saveNodes, "pinned-save")}
-            </div>
-          ) : null}
-          <div className="relative">
-            <button
-              ref={triggerRef}
-              type="button"
-              onClick={() => setMenuOpen((open) => !open)}
-              className={`shrink-0 rounded-lg border border-zinc-600 bg-zinc-800 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 ${
-                iconOnly ? "p-1.5" : "whitespace-nowrap px-3 py-1.5"
-              }`}
-              aria-expanded={menuOpen}
-              aria-haspopup="menu"
-              aria-label={menuLabel}
-              title={menuLabel}
-            >
-              {iconOnly ? (
-                <svg
-                  className="h-5 w-5"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  viewBox="0 0 24 24"
-                  aria-hidden
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-                </svg>
-              ) : (
-                <>
-                  {menuLabel}
-                  <span className="ml-1 inline-block text-[10px] opacity-70" aria-hidden>
-                    ▾
-                  </span>
-                </>
-              )}
-            </button>
-            {menuPanel}
-          </div>
-        </>
-      )}
+      ) : null}
+
+      {menuActionNodes.length > 0 ? (
+        <div className="relative">
+          <button
+            ref={triggerRef}
+            type="button"
+            onClick={() => setMenuOpen((open) => !open)}
+            className={`shrink-0 rounded-lg border border-zinc-600 bg-zinc-800 text-xs font-semibold text-zinc-100 hover:bg-zinc-700 ${
+              iconOnly ? "p-1.5" : "whitespace-nowrap px-3 py-1.5"
+            }`}
+            aria-expanded={menuOpen}
+            aria-haspopup="menu"
+            aria-label={menuLabel}
+            title={menuLabel}
+          >
+            {iconOnly ? (
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                viewBox="0 0 24 24"
+                aria-hidden
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            ) : (
+              <>
+                {menuLabel}
+                <span className="ml-1 inline-block text-[10px] opacity-70" aria-hidden>
+                  ▾
+                </span>
+              </>
+            )}
+          </button>
+          {menuPanel}
+        </div>
+      ) : null}
 
       <button
         type="button"

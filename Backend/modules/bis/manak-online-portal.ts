@@ -9,6 +9,13 @@ export const MANAK_ONLINE_STATUS_OF_LICENCE_HASH = "#StatusofLicences";
 export const MANAK_ONLINE_EBIS_LOGIN_URL =
   "https://www.manakonline.in/MANAK/eBISLogin";
 
+/** Applicant Home when a session exists; login form when it does not. */
+export const MANAK_ONLINE_HOME_URL = "https://www.manakonline.in/MANAK/login";
+
+/** [BIS Manakonline — Generate Test Request](https://www.manakonline.in/MANAK/testRequestGenerationForApplicant) */
+export const MANAK_ONLINE_TEST_REQUEST_URL =
+  "https://www.manakonline.in/MANAK/testRequestGenerationForApplicant";
+
 /**
  * [BIS Manakonline — Licences Under Suspension (ALL BRANCHES)](https://www.manakonline.in/MANAK/BisReportList/1018/...)
  * Requires an authenticated Manak browser session; anonymous server fetch often returns 404.

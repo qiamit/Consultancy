@@ -5,6 +5,8 @@ export type OslSampleFor = "osl" | "ft" | "it";
 
 export type OslSampleRequirementStored = {
   sample_description: string;
+  /** Grade / Type / Variety / Size / Class / Rating. */
+  grade_type_variety: string;
   declared_value: string;
   batch_number: string;
   date_of_manufacturing: string;
@@ -19,6 +21,18 @@ export type OslSampleRequirementStored = {
   mode_of_disposal: string;
   testing_charges: string;
   test_required: string;
+  /** Manak Test Request — Serial Number. */
+  serial_number: string;
+  /** Manak Test Request — Additional Information. */
+  additional_information: string;
+  /** Manak Test Request — Destination Lab type (e.g. OSL). */
+  destination_lab: string;
+  /** Manak Test Request — UTR / UPI / Cheque Number. */
+  payment_ref: string;
+  /** Manak Test Request — Date of Transaction (YYYY-MM-DD). */
+  payment_date: string;
+  /** Manak Test Request — Mode of Payment. */
+  payment_mode: string;
   /** OSL / FT / IT — used when lists share one UI. */
   sample_for: OslSampleFor;
   /**
@@ -30,6 +44,14 @@ export type OslSampleRequirementStored = {
   test_report_ref?: string;
   /** Original file name shown on the sample card. */
   test_report_name?: string;
+  /** Attached Manak Test Request PDF (`doc://…` storage ref). */
+  test_request_ref?: string;
+  /** Original Test Request file name shown on the sample card. */
+  test_request_name?: string;
+  /** Declared Value drawing / PDF (`doc://…` storage ref). */
+  declared_drawing_ref?: string;
+  /** Original Declared Value drawing / PDF file name. */
+  declared_drawing_name?: string;
 };
 
 export type OslSampleRequirementRow = OslSampleRequirementStored & { id: string };
@@ -72,6 +94,7 @@ export function defaultOslSampleRequirement(
 ): OslSampleRequirementStored {
   return {
     sample_description: "",
+    grade_type_variety: "",
     declared_value: "",
     batch_number: "",
     date_of_manufacturing: todayYmdLocal(),
@@ -86,10 +109,20 @@ export function defaultOslSampleRequirement(
     mode_of_disposal: "To be Disposed",
     testing_charges: "",
     test_required: "All Test",
+    serial_number: "",
+    additional_information: "",
+    destination_lab: "",
+    payment_ref: "654321",
+    payment_date: todayYmdLocal(),
+    payment_mode: "Cheque",
     sample_for: sampleFor,
     include_in_print: true,
     test_report_ref: "",
     test_report_name: "",
+    test_request_ref: "",
+    test_request_name: "",
+    declared_drawing_ref: "",
+    declared_drawing_name: "",
   };
 }
 
@@ -121,12 +154,33 @@ function parsePriority(raw: unknown): OslSamplePriority {
   return v === "Non Priority" ? "Non Priority" : "Priority";
 }
 
+/**
+ * Old Sample Description was converted to Grade / Type / Variety.
+ * If grade is empty, treat the stored description as grade.
+ */
+export function resolveGradeAndDescription(row: {
+  sample_description?: string | null;
+  grade_type_variety?: string | null;
+}): { sample_description: string; grade_type_variety: string } {
+  const grade = String(row.grade_type_variety ?? "").trim();
+  const description = String(row.sample_description ?? "").trim();
+  if (!grade && description) {
+    return { grade_type_variety: description, sample_description: "" };
+  }
+  return { grade_type_variety: grade, sample_description: description };
+}
+
 function mapRawSample(
   r: Record<string, unknown>,
   fallbackFor: OslSampleFor,
 ): OslSampleRequirementStored {
-  return {
+  const resolved = resolveGradeAndDescription({
     sample_description: String(r.sample_description ?? "").trim(),
+    grade_type_variety: String(r.grade_type_variety ?? "").trim(),
+  });
+  return {
+    sample_description: resolved.sample_description,
+    grade_type_variety: resolved.grade_type_variety,
     declared_value: String(r.declared_value ?? "").trim(),
     batch_number: String(r.batch_number ?? "").trim(),
     date_of_manufacturing: String(r.date_of_manufacturing ?? "").trim(),
@@ -141,10 +195,20 @@ function mapRawSample(
     mode_of_disposal: String(r.mode_of_disposal ?? "").trim(),
     testing_charges: String(r.testing_charges ?? "").trim(),
     test_required: String(r.test_required ?? "").trim(),
+    serial_number: String(r.serial_number ?? "").trim(),
+    additional_information: String(r.additional_information ?? "").trim(),
+    destination_lab: String(r.destination_lab ?? "").trim(),
+    payment_ref: String(r.payment_ref ?? "").trim(),
+    payment_date: String(r.payment_date ?? "").trim(),
+    payment_mode: String(r.payment_mode ?? "").trim(),
     sample_for: parseSampleFor(r.sample_for, fallbackFor),
     include_in_print: r.include_in_print !== false,
     test_report_ref: String(r.test_report_ref ?? "").trim(),
     test_report_name: String(r.test_report_name ?? "").trim(),
+    test_request_ref: String(r.test_request_ref ?? "").trim(),
+    test_request_name: String(r.test_request_name ?? "").trim(),
+    declared_drawing_ref: String(r.declared_drawing_ref ?? "").trim(),
+    declared_drawing_name: String(r.declared_drawing_name ?? "").trim(),
   };
 }
 
@@ -164,6 +228,7 @@ export function parseOslSampleRequirements(
 export function rowHasContent(row: OslSampleRequirementStored): boolean {
   return (
     row.sample_description.trim().length > 0 ||
+    (row.grade_type_variety ?? "").trim().length > 0 ||
     row.declared_value.trim().length > 0 ||
     row.batch_number.trim().length > 0 ||
     row.date_of_manufacturing.trim().length > 0 ||
@@ -176,7 +241,13 @@ export function rowHasContent(row: OslSampleRequirementStored): boolean {
     row.shelf_life.trim().length > 0 ||
     row.mode_of_disposal.trim().length > 0 ||
     row.testing_charges.trim().length > 0 ||
-    row.test_required.trim().length > 0
+    row.test_required.trim().length > 0 ||
+    (row.serial_number ?? "").trim().length > 0 ||
+    (row.additional_information ?? "").trim().length > 0 ||
+    (row.destination_lab ?? "").trim().length > 0 ||
+    (row.payment_ref ?? "").trim().length > 0 ||
+    (row.payment_date ?? "").trim().length > 0 ||
+    (row.payment_mode ?? "").trim().length > 0
   );
 }
 
@@ -191,6 +262,7 @@ export function editorRowsFromStored(
   return stored.map((row, index) => ({
     id: `osl-row-${index}`,
     ...row,
+    ...resolveGradeAndDescription(row),
     priority: parsePriority(row.priority),
     sample_for: parseSampleFor(row.sample_for),
     include_in_print: row.include_in_print !== false,
@@ -203,6 +275,7 @@ export function storedFromEditor(
   return rows
     .map(({ id: _id, ...rest }) => ({
       ...rest,
+      ...resolveGradeAndDescription(rest),
       priority: parsePriority(rest.priority),
       sample_for: parseSampleFor(rest.sample_for),
       include_in_print: rest.include_in_print !== false,
