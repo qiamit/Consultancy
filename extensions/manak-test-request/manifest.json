@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "QE Manak Test Request",
-  "version": "1.3.11",
+  "version": "1.3.12",
   "description": "Open BIS Manak Test Request, fill sample fields, continue after captcha, then send Sample Code and Test Request PDF back to Consultancy Pro.",
   "action": {
     "default_title": "QE Manak Test Request",
@@ -32,6 +32,9 @@
       "matches": [
         "http://localhost/*",
         "http://127.0.0.1/*",
+        "https://qengineering.in/*",
+        "https://www.qengineering.in/*",
+        "https://*.qengineering.in/*",
         "https://*.up.railway.app/*",
         "https://*.railway.app/*"
       ],
@@ -61,7 +64,14 @@
     "https://www.manakonline.in/*",
     "https://manakonline.in/*",
     "https://play.google.com/*",
-    "https://apps.apple.com/*"
+    "https://apps.apple.com/*",
+    "http://localhost/*",
+    "http://127.0.0.1/*",
+    "https://qengineering.in/*",
+    "https://www.qengineering.in/*",
+    "https://*.qengineering.in/*",
+    "https://*.up.railway.app/*",
+    "https://*.railway.app/*"
   ],
   "declarative_net_request": {
     "rule_resources": [

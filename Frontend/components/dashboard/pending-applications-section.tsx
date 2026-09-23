@@ -278,6 +278,15 @@ import {
   splitOslAndPiSamples,
   type OslSampleRequirementStored,
 } from "@backend/modules/bis/osl-sample-requirements";
+import { isLikelyManakSampleCode } from "@backend/modules/bis/manak-test-request-payload";
+import {
+  lastManakOpenSample,
+  manakPdfFileFromResult,
+  matchManakSampleRow,
+  releaseManakPdfAttachKey,
+  subscribeManakTestRequestResult,
+  takeManakPdfAttachKey,
+} from "@/components/modules/bis-projects/manak-test-request";
 import {
   rowHasContent as topManagementRowHasContent,
   resolvePrimaryTopManagementPerson,
@@ -2090,6 +2099,70 @@ function ApplicationFormModal({
     setPiSampleRequirements(pi);
     saveNotesNow({ oslSampleRequirements: osl, piSampleRequirements: pi });
   }
+
+  const oslRowsRef = useRef(oslSampleRequirements);
+  const piRowsRef = useRef(piSampleRequirements);
+  const saveOslRef = useRef(saveOslSampleRequirements);
+  oslRowsRef.current = oslSampleRequirements;
+  piRowsRef.current = piSampleRequirements;
+  saveOslRef.current = saveOslSampleRequirements;
+
+  useEffect(() => {
+    return subscribeManakTestRequestResult((result) => {
+      const combined = combineOslAndPiSamples(oslRowsRef.current, piRowsRef.current);
+      const match = matchManakSampleRow(combined, result);
+      if (!match) return;
+      const nextCode = isLikelyManakSampleCode(result.sample_code)
+        ? result.sample_code
+        : match.sample_code;
+      const nextQr = result.qr_code || match.qr_code;
+      const codeChanged =
+        match.sample_code.trim() !== nextCode.trim() ||
+        match.qr_code.trim() !== nextQr.trim();
+      if (codeChanged) {
+        saveOslRef.current(
+          combined.map((row) =>
+            row.id === match.id
+              ? { ...row, sample_code: nextCode, qr_code: nextQr }
+              : row,
+          ),
+        );
+      }
+
+      const pdfKey = `${result.sampleId}:${result.pdfName || ""}:${(result.pdfBase64 ?? "").slice(0, 48)}`;
+      if (!result.pdfBase64 || !takeManakPdfAttachKey(pdfKey)) return;
+      const file = manakPdfFileFromResult(result);
+      if (!file) return;
+      void (async () => {
+        const matchId = result.sampleId || lastManakOpenSample().sampleId || match.id;
+        const safeId = (matchId || "sample").replace(/[^\w.\-]+/g, "-").slice(0, 80);
+        const safeName = file.name.replace(/[^\w.\-]+/g, "-").slice(0, 120);
+        const path = `osl-sample-test-requests/${safeId}/${Date.now()}-${safeName}`;
+        const uploaded = await uploadTechnicalStaffDocument(createClient(), path, file);
+        if ("error" in uploaded) {
+          releaseManakPdfAttachKey(pdfKey);
+          return;
+        }
+        const latest = combineOslAndPiSamples(oslRowsRef.current, piRowsRef.current);
+        const target =
+          matchManakSampleRow(latest, result) ??
+          latest.find((row) => matchId && row.id === matchId) ??
+          null;
+        if (!target) return;
+        saveOslRef.current(
+          latest.map((row) =>
+            row.id === target.id
+              ? {
+                  ...row,
+                  test_request_ref: uploaded.ref,
+                  test_request_name: file.name,
+                }
+              : row,
+          ),
+        );
+      })();
+    });
+  }, []);
 
   function savePiSampleRequirements(rows: OslSampleRequirementStored[]) {
     // Legacy path — keep in sync with combined Sample Requirements save.

@@ -4,6 +4,15 @@ const TEST_REQUEST =
   "https://www.manakonline.in/MANAK/testRequestGenerationForApplicant";
 const RESULT_KIND = "QE_MANAK_TR_RESULT_V1";
 const PLAY_STORE = /play\.google\.com|apps\.apple\.com|com\.bis\.app|itunes\.apple\.com/i;
+const APP_TAB_URLS = [
+  "http://localhost/*",
+  "http://127.0.0.1/*",
+  "https://qengineering.in/*",
+  "https://www.qengineering.in/*",
+  "https://*.qengineering.in/*",
+  "https://*.up.railway.app/*",
+  "https://*.railway.app/*",
+];
 
 function isPlayStoreUrl(url) {
   return PLAY_STORE.test(String(url || ""));
@@ -104,6 +113,15 @@ async function printTabToPdf(tabId) {
   }
 }
 
+function notifyAppTabs(result) {
+  chrome.tabs.query({ url: APP_TAB_URLS }, (tabs) => {
+    (tabs || []).forEach((tab) => {
+      if (!tab.id) return;
+      void safeSendTab(tab.id, { type: "QE_MANAK_RESULT", result });
+    });
+  });
+}
+
 function storePdfResult(partial) {
   chrome.storage.local.get(["pendingFill", "manakResult"], (data) => {
     const pending = data && data.pendingFill;
@@ -117,7 +135,10 @@ function storePdfResult(partial) {
       pdfName: partial.pdfName || prev.pdfName || "Test_Request.pdf",
       pdfBase64: partial.pdfBase64 || prev.pdfBase64 || "",
     };
-    chrome.storage.local.set({ manakResult: result });
+    chrome.storage.local.set({ manakResult: result }, () => {
+      void chrome.runtime.lastError;
+      notifyAppTabs(result);
+    });
   });
 }
 

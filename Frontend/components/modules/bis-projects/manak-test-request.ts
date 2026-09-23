@@ -155,6 +155,55 @@ export function lastManakOpenSample(): { sampleId: string; qr_code: string } {
   }
 }
 
+type ManakMatchRow = {
+  id?: string;
+  qr_code?: string | null;
+  sample_code?: string | null;
+};
+
+export function matchManakSampleRow<T extends ManakMatchRow>(
+  rows: T[],
+  result: { sampleId?: string; qr_code?: string },
+): T | null {
+  const lastOpen = lastManakOpenSample();
+  const byId = rows.find((row) => result.sampleId && row.id === result.sampleId);
+  if (byId) return byId;
+  const byQr = rows.find(
+    (row) =>
+      Boolean(result.qr_code) &&
+      String(row.qr_code || "").trim() &&
+      String(row.qr_code || "").trim() === result.qr_code,
+  );
+  if (byQr) return byQr;
+  const byLastId = rows.find((row) => lastOpen.sampleId && row.id === lastOpen.sampleId);
+  if (byLastId) return byLastId;
+  const byLastQr = rows.find(
+    (row) =>
+      lastOpen.qr_code &&
+      String(row.qr_code || "").trim() &&
+      String(row.qr_code || "").trim() === lastOpen.qr_code,
+  );
+  if (byLastQr) return byLastQr;
+  if (rows.length === 1) return rows[0];
+  const emptyCode = rows.filter((row) => !String(row.sample_code || "").trim());
+  return emptyCode.length === 1 ? emptyCode[0] : null;
+}
+
+let lastManakPdfAttachKey = "";
+
+export function takeManakPdfAttachKey(key: string): boolean {
+  const next = key.trim();
+  if (!next || next === lastManakPdfAttachKey) return false;
+  lastManakPdfAttachKey = next;
+  return true;
+}
+
+export function releaseManakPdfAttachKey(key: string): void {
+  if (key.trim() && lastManakPdfAttachKey === key.trim()) {
+    lastManakPdfAttachKey = "";
+  }
+}
+
 function sanitizeManakResult(
   result: ManakTestRequestResult | undefined,
 ): ManakTestRequestResult | undefined {
@@ -206,6 +255,7 @@ export function subscribeManakTestRequestResult(
   window.addEventListener("qe-manak-sample-result", onCustom as EventListener);
   window.addEventListener("focus", onFocus);
   document.addEventListener("visibilitychange", onVisibility);
+  window.postMessage({ type: "QE_MANAK_PULL_RESULT" }, "*");
   void pullClipboard();
 
   return () => {

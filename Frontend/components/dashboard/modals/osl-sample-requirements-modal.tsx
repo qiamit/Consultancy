@@ -62,7 +62,10 @@ import {
   manakPdfFileFromResult,
   openManakTestRequest,
   lastManakOpenSample,
+  matchManakSampleRow,
+  releaseManakPdfAttachKey,
   subscribeManakTestRequestResult,
+  takeManakPdfAttachKey,
 } from "@/components/modules/bis-projects/manak-test-request";
 
 const OSL_QE_PROMPT = `You are QE Assistant, an AI helper for Quality Engineering Consultancy's BIS Applications Management.
@@ -311,33 +314,9 @@ export function OslSampleRequirementsModal({
   }, [isCodeId]);
 
   useEffect(() => {
-    function matchManakRow(
-      prev: OslSampleRequirementRow[],
-      result: { sampleId?: string; qr_code?: string },
-    ) {
-      const lastOpen = lastManakOpenSample();
-      return (
-        prev.find((row) => result.sampleId && row.id === result.sampleId) ??
-        prev.find(
-          (row) =>
-            Boolean(result.qr_code) &&
-            row.qr_code.trim() &&
-            row.qr_code.trim() === result.qr_code,
-        ) ??
-        prev.find((row) => lastOpen.sampleId && row.id === lastOpen.sampleId) ??
-        prev.find(
-          (row) =>
-            lastOpen.qr_code &&
-            row.qr_code.trim() &&
-            row.qr_code.trim() === lastOpen.qr_code,
-        ) ??
-        null
-      );
-    }
-
     return subscribeManakTestRequestResult((result) => {
       setRows((prev) => {
-        const match = matchManakRow(prev, result);
+        const match = matchManakSampleRow(prev, result);
         if (!match) return prev;
         const nextCode = isLikelyManakSampleCode(result.sample_code)
           ? result.sample_code
@@ -368,7 +347,7 @@ export function OslSampleRequirementsModal({
       }
 
       const pdfKey = `${result.sampleId}:${result.pdfName || ""}:${(result.pdfBase64 ?? "").slice(0, 48)}`;
-      if (!result.pdfBase64 || manakPdfAttachedRef.current === pdfKey) return;
+      if (!result.pdfBase64 || !takeManakPdfAttachKey(pdfKey)) return;
       const file = manakPdfFileFromResult(result);
       if (!file) return;
       manakPdfAttachedRef.current = pdfKey;
@@ -380,11 +359,12 @@ export function OslSampleRequirementsModal({
         const uploaded = await uploadTechnicalStaffDocument(createClient(), path, file);
         if ("error" in uploaded) {
           manakPdfAttachedRef.current = "";
+          releaseManakPdfAttachKey(pdfKey);
           window.alert(`Test Request PDF attach failed: ${uploaded.error}`);
           return;
         }
         setRows((prev) => {
-          const match = matchManakRow(prev, result) ??
+          const match = matchManakSampleRow(prev, result) ??
             prev.find((row) => matchId && row.id === matchId) ??
             null;
           if (!match) return prev;

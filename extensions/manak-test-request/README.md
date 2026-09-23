@@ -34,3 +34,6 @@ The extension never solves captcha, never fills OTP, and never clicks Pay.
 - If Manak HTML changes, update `field-map.js` selectors.
 - Reload the unpacked extension after pulling these files.
 - Keep the Consultancy Pro sample modal open so the PDF can attach.
+- Production sites (`qengineering.in`, Railway) also receive Sample Code / PDF.
+  After updating this folder, click **Reload** on `chrome://extensions`, then
+  refresh the Consultancy Pro tab.
