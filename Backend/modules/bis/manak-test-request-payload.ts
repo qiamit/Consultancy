@@ -189,8 +189,18 @@ export function parseManakTestRequestPayload(
     >;
     if (!parsed || parsed.kind !== MANAK_TEST_REQUEST_KIND) return null;
     if (!parsed.application || !parsed.sample) return null;
+    const priorityRaw = text(parsed.sample.priority);
     return buildManakTestRequestPayload(
-      { ...parsed.sample, id: parsed.sampleId },
+      {
+        ...parsed.sample,
+        id: parsed.sampleId,
+        priority:
+          priorityRaw === "Non Priority"
+            ? "Non Priority"
+            : priorityRaw === "Priority"
+              ? "Priority"
+              : undefined,
+      },
       parsed.application,
       Number(parsed.copiedAt) || 0,
     );
