@@ -161,6 +161,23 @@ function init() {
     });
   });
 
+  const bsbEmail = document.getElementById("bsbEmail");
+  const bsbPassword = document.getElementById("bsbPassword");
+  const saveBsb = document.getElementById("saveBsb");
+  if (bsbEmail && bsbPassword && saveBsb) {
+    chrome.storage.local.get(["qeBsbedgeEmail", "qeBsbedgePassword"], (data) => {
+      bsbEmail.value = data.qeBsbedgeEmail || "";
+      bsbPassword.value = data.qeBsbedgePassword || "";
+    });
+    saveBsb.addEventListener("click", async () => {
+      await chrome.storage.local.set({
+        qeBsbedgeEmail: bsbEmail.value.trim(),
+        qeBsbedgePassword: bsbPassword.value,
+      });
+      setStatus("BSB Edge login saved in this browser only.", false);
+    });
+  }
+
   fillButton.addEventListener("click", () => {
     const fieldName = fieldNameInput.value.trim();
     const value = fieldValueInput.value;

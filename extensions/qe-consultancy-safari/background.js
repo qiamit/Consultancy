@@ -18,6 +18,10 @@ const APP_TAB_URLS = [
 const hasDebugger = Boolean(chrome.debugger);
 const hasDownloads = Boolean(chrome.downloads && chrome.downloads.onChanged);
 const hasWebNavigation = Boolean(chrome.webNavigation);
+let pendingDownloadCapture = null;
+let isCodeFetchActive = false;
+const MANUALS_API = "https://standardsadmin.bis.gov.in/review-service/getProductManualStandardsList";
+const MANUALS_CDN = "https://bmqsdqljvwgm.compat.objectstorage.ap-mumbai-1.oraclecloud.com/";
 
 function isPlayStoreUrl(url) {
   return PLAY_STORE.test(String(url || ""));
@@ -78,6 +82,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const url = changeInfo.url || tab.url || tab.pendingUrl || "";
   if (isPlayStoreUrl(url)) closePlayStoreTab(tabId);
   if (!/manakonline\.in/i.test(url)) return;
+  if (/knowfees/i.test(url)) return;
   if (changeInfo.status !== "complete" && !/ebislogin/i.test(url)) return;
   const apply = (userId, password) => {
     if (userId || password) scheduleLoginFill(tabId, userId, password);
@@ -222,6 +227,7 @@ async function getActiveTab() {
 let lastOpenKey = "";
 let lastOpenAt = 0;
 let lastPortal = { userId: "", password: "" };
+let lastIsCodeAppTabId = 0;
 const fillSentAt = new Map();
 
 function rememberPortal(userId, password) {
@@ -339,6 +345,118 @@ async function findLoggedInManakTab() {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") return;
+
+  if (message.type === "QE_IS_CODE_PING") {
+    sendResponse({ ok: true, extension: "QE Consultancy" });
+    return true;
+  }
+
+  if (message.type === "QE_BSB_LOGIN_CLICK") {
+    const tabId = sender.tab && sender.tab.id;
+    if (!tabId || !chrome.scripting || !chrome.scripting.executeScript) {
+      sendResponse({ ok: false });
+      return true;
+    }
+    void chrome.scripting
+      .executeScript({
+        target: { tabId },
+        world: "MAIN",
+        func: (email, password, captcha) => {
+          if (window.__qeBsbMainClicked) return { ok: true, skipped: true };
+          const user = document.getElementById("T1_txtUser");
+          const pass = document.getElementById("T1_txtPass");
+          const cap = document.getElementById("T1_captcha");
+          const salt = document.getElementById("T1_HDSalt");
+          if (!user || !pass || !cap) return { ok: false, reason: "fields" };
+          if (!salt || !String(salt.value || "").trim()) return { ok: false, reason: "salt" };
+          user.value = String(email || "");
+          pass.value = String(password || "");
+          cap.value = String(captcha || "");
+          const btn = document.getElementById("T1_btn_submit");
+          if (!btn) return { ok: false, reason: "button" };
+          window.__qeBsbMainClicked = true;
+          btn.click();
+          return { ok: true };
+        },
+        args: [String(message.email || ""), String(message.password || ""), String(message.captcha || "")],
+      })
+      .then((results) => {
+        const out = results && results[0] && results[0].result;
+        sendResponse(out || { ok: false });
+      })
+      .catch(() => sendResponse({ ok: false }));
+    return true;
+  }
+
+  if (message.type === "QE_CAPTURE_NEXT_DOWNLOAD") {
+    const tabId = sender.tab && sender.tab.id;
+    if (pendingDownloadCapture && pendingDownloadCapture.timer) {
+      clearTimeout(pendingDownloadCapture.timer);
+    }
+    pendingDownloadCapture = {
+      tabId,
+      wantedName: String(message.name || "document.pdf"),
+      sendResponse,
+      timer: setTimeout(() => {
+        if (pendingDownloadCapture && pendingDownloadCapture.sendResponse === sendResponse) {
+          pendingDownloadCapture.sendResponse({ ok: false });
+          pendingDownloadCapture = null;
+        }
+      }, 25000),
+    };
+    return true;
+  }
+
+  if (message.type === "QE_IS_CODE_PORTAL_RESULT" && message.result) {
+    notifyIsCodeApp(lastIsCodeAppTabId, "QE_IS_CODE_FILL", {
+      payload: {
+        fields: message.result.fields || {},
+        files: message.result.files || [],
+        notes: message.result.notes || [],
+        partial: true,
+        done: false,
+      },
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message.type === "QE_CAPTCHA_AI") {
+    void (async () => {
+      notifyIsCodeApp(lastIsCodeAppTabId, "QE_IS_CODE_PROGRESS", {
+        message: "Grok / QE Assistant is reading the security image…",
+      });
+      const tabs = await chrome.tabs.query({ url: APP_TAB_URLS });
+      const ordered = [
+        ...tabs.filter((tab) => tab.id === lastIsCodeAppTabId),
+        ...tabs.filter((tab) => tab.id !== lastIsCodeAppTabId),
+      ];
+      const requestId = message.requestId || `cap-${Date.now()}`;
+      if (ordered.length === 0) {
+        notifyIsCodeApp(lastIsCodeAppTabId, "QE_IS_CODE_PROGRESS", {
+          message: "Open the Consultancy dashboard tab so Grok can read the security image.",
+        });
+        sendResponse({ text: "" });
+        return;
+      }
+      for (const tab of ordered) {
+        if (!tab.id) continue;
+        const res = await chrome.tabs
+          .sendMessage(tab.id, {
+            type: "QE_CAPTCHA_AI",
+            image: message.image || "",
+            requestId,
+          })
+          .catch(() => null);
+        if (res && res.text) {
+          sendResponse({ text: String(res.text) });
+          return;
+        }
+      }
+      sendResponse({ text: "" });
+    })();
+    return true;
+  }
 
   if (message.type === "GET_BYPASS_STATE") {
     chrome.storage.sync
@@ -483,6 +601,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "QE_IS_CODE_FETCH") {
+    const appTabId = sender && sender.tab && sender.tab.id;
+    lastIsCodeAppTabId = appTabId || lastIsCodeAppTabId;
+    const isNumber = String(message.isNumber || "").trim();
+    void runIsCodeFetch(appTabId, isNumber)
+      .then(() => sendResponse({ ok: true }))
+      .catch((error) => sendResponse({ ok: false, error: String(error) }));
+    return true;
+  }
+
   if (message.type === "QE_MANAK_PRINT_PDF") {
     const tabId = sender && sender.tab && sender.tab.id;
     const meta = message.result || {};
@@ -508,13 +636,358 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
+function notifyIsCodeApp(tabId, type, extra) {
+  if (!tabId) return;
+  void safeSendTab(tabId, { type, ...(extra || {}) });
+}
+
+function waitTabComplete(tabId, timeoutMs) {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      chrome.tabs.onUpdated.removeListener(onUpdated);
+      resolve();
+    };
+    const timer = setTimeout(finish, timeoutMs || 40000);
+    function onUpdated(id, info) {
+      if (id === tabId && info.status === "complete") {
+        clearTimeout(timer);
+        finish();
+      }
+    }
+    chrome.tabs.onUpdated.addListener(onUpdated);
+  });
+}
+
+async function injectIsFetch(tabId) {
+  if (!chrome.scripting || !chrome.scripting.executeScript) return;
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ["captcha-assist.js", "is-code-fetch.js"],
+    });
+  } catch {
+    /* page may already have the scripts */
+  }
+}
+
+async function runPortalJob(appTabId, url, site, isNumber, creds) {
+  if (site === "manuals") {
+    notifyIsCodeApp(appTabId, "QE_IS_CODE_PROGRESS", {
+      message: "Product Manual: reading the PDF in the extension (no computer download)…",
+    });
+    return fetchProductManualInBackground(isNumber);
+  }
+  notifyIsCodeApp(appTabId, "QE_IS_CODE_PROGRESS", {
+    message: `Opening ${site}…`,
+  });
+  const needsCaptcha = site === "knowfees" || site === "bsbedge";
+  const tab = await safeTabCreate({ url, active: true });
+  if (!tab || !tab.id) return { fields: {}, files: [], notes: [`Could not open ${site}.`] };
+  let res = null;
+  try {
+    await waitTabComplete(tab.id, 45000);
+    await new Promise((r) => setTimeout(r, 2200));
+    if (needsCaptcha && chrome.scripting && chrome.scripting.executeScript) {
+      try {
+        await chrome.scripting.executeScript({
+          target: { tabId: tab.id },
+          world: "MAIN",
+          func: () => {
+            window.alert = function () {};
+          },
+        });
+      } catch {
+        /* Safari / older engines */
+      }
+    }
+    for (let hop = 0; hop < 4; hop += 1) {
+      res = null;
+      for (let attempt = 0; attempt < 10 && !res; attempt += 1) {
+        if (attempt === 2 || attempt === 6) await injectIsFetch(tab.id);
+        res = await chrome.tabs.sendMessage(tab.id, {
+          type: "QE_IS_CODE_RUN",
+          site,
+          isNumber,
+          creds: creds || {},
+        }).catch(() => null);
+        if (!res) await new Promise((r) => setTimeout(r, 600));
+      }
+      const nextUrl = res && res.result && res.result.navigate;
+      if (!nextUrl) break;
+      notifyIsCodeApp(appTabId, "QE_IS_CODE_PROGRESS", {
+        message: "Opening standard details…",
+      });
+      await safeTabUpdate(tab.id, { url: nextUrl });
+      await waitTabComplete(tab.id, 45000);
+      await new Promise((r) => setTimeout(r, 2200));
+    }
+    if (res && res.result) return res.result;
+    if (res && res.error) return { fields: {}, files: [], notes: [`${site}: ${res.error}`] };
+    return { fields: {}, files: [], notes: [`${site}: no response. Reload QE Consultancy 2.2.7.`] };
+  } finally {
+    const keep = Boolean(res && res.result && res.result.keepTab) || (needsCaptcha && !(res && res.result));
+    if (!keep) void settle(chrome.tabs.remove(tab.id));
+  }
+}
+
+function parseIsDoc(isNumber) {
+  const match = String(isNumber || "").match(/(?:IS[\s/]*)?(\d{2,5})(?:\s*[:()\-]\s*(\d{4}))?/i);
+  return {
+    doc: match ? match[1] : String(isNumber || "").replace(/\D/g, ""),
+    year: match && match[2] ? match[2] : "",
+    display: match ? `IS ${match[1]}` : String(isNumber || "").trim(),
+  };
+}
+
+function parseProductManualNumber(text) {
+  const compact = String(text || "").replace(/\s+/g, " ");
+  const match = compact.match(
+    /PM\s*\/\s*IS\s*\d{2,5}(?:\s*\([^)]+\))?(?:\s*\/\s*[A-Za-z0-9.-]+){0,5}/i,
+  );
+  if (!match) return "";
+  return match[0]
+    .replace(/\s*\/\s*/g, "/")
+    .replace(/\s+/g, " ")
+    .replace(/PM\/IS/i, "PM/IS")
+    .trim();
+}
+
+async function extractPmFromPdfBytes(bytes) {
+  try {
+    const raw = new TextDecoder("latin1").decode(bytes);
+    const chunks = [raw];
+    const re = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
+    let match = re.exec(raw);
+    while (match) {
+      let payload = match[1];
+      if (payload.startsWith("\r\n")) payload = payload.slice(2);
+      else if (payload.startsWith("\n")) payload = payload.slice(1);
+      const u8 = new Uint8Array(payload.length);
+      for (let i = 0; i < payload.length; i += 1) u8[i] = payload.charCodeAt(i);
+      for (const format of ["deflate", "deflate-raw"]) {
+        try {
+          const stream = new Blob([u8]).stream().pipeThrough(new DecompressionStream(format));
+          const dec = new Uint8Array(await new Response(stream).arrayBuffer());
+          chunks.push(new TextDecoder("latin1").decode(dec));
+          break;
+        } catch {
+          /* next */
+        }
+      }
+      match = re.exec(raw);
+    }
+    const inflated = chunks.join("\n");
+    const literals = [];
+    const litRe = /\((?:\\.|[^\\)])+\)/g;
+    let lit = litRe.exec(inflated);
+    while (lit) {
+      literals.push(lit[0].slice(1, -1).replace(/\\n/g, " ").replace(/\\(.)/g, "$1"));
+      lit = litRe.exec(inflated);
+    }
+    return parseProductManualNumber(`${literals.join("")} ${inflated}`);
+  } catch {
+    return "";
+  }
+}
+
+async function fetchProductManualInBackground(isNumber) {
+  const is = parseIsDoc(isNumber);
+  try {
+    const res = await fetch(MANUALS_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      body: JSON.stringify({ searchTerm: is.doc }),
+    });
+    if (!res.ok) {
+      return { fields: { is_number: is.display }, files: [], notes: ["Product Manual: list request failed."] };
+    }
+    const json = await res.json();
+    const rows = Array.isArray(json && json.data) ? json.data : [];
+    const exact = rows.find((row) =>
+      new RegExp(`^IS\\s*${is.doc}(?:\\s*[:].*)?$`, "i").test(String(row.standardNumber || "").trim()),
+    );
+    const row = exact || rows.find((item) => new RegExp(`(?:^|\\s)IS\\s*${is.doc}(?!\\d)`, "i").test(item.standardNumber || ""));
+    if (!row || !row.filename) {
+      return { fields: { is_number: is.display }, files: [], notes: ["Product Manual: matching file not found."] };
+    }
+    const url = /^https?:/i.test(row.filename)
+      ? row.filename
+      : `${MANUALS_CDN}${String(row.filename).replace(/^\/+/, "")}`;
+    const pdfRes = await fetch(url);
+    if (!pdfRes.ok) {
+      return { fields: { is_number: is.display }, files: [], notes: ["Product Manual: file fetch failed."] };
+    }
+    const buf = await pdfRes.arrayBuffer();
+    if (buf.byteLength < 80) {
+      return { fields: { is_number: is.display }, files: [], notes: ["Product Manual: empty file."] };
+    }
+    const bytes = new Uint8Array(buf);
+    const pm = await extractPmFromPdfBytes(bytes);
+    return {
+      fields: {
+        is_number: is.display,
+        ...(pm ? { product_manual_number: pm } : {}),
+      },
+      files: [
+        {
+          name: `IS_${is.doc}_Product_Manual.pdf`,
+          mime: "application/pdf",
+          base64: arrayBufferToBase64(buf),
+        },
+      ],
+      notes: pm
+        ? [`Product Manual attached. PM Number ${pm} filled.`]
+        : ["Product Manual attached to IS Code Related Files."],
+    };
+  } catch (error) {
+    return {
+      fields: { is_number: parseIsDoc(isNumber).display },
+      files: [],
+      notes: [`Product Manual: ${String(error && error.message ? error.message : error)}`],
+    };
+  }
+}
+
+function limsUrl(isNumber) {
+  const match = String(isNumber || "").match(/(?:IS[\s/]*)?(\d{2,5})(?:\s*[:()\-]\s*(\d{4}))?/i);
+  const doc = match ? match[1] : String(isNumber || "").replace(/\D/g, "");
+  const year = match && match[2] ? match[2] : "";
+  const q = new URL("https://lims.bis.gov.in/home/search_is_number/");
+  q.searchParams.set("lab__lab_name__icontains", "");
+  q.searchParams.set("is_number__doc_no", doc);
+  q.searchParams.set("is_number__part", "");
+  q.searchParams.set("is_number__section", "");
+  q.searchParams.set("is_number__year", year);
+  q.searchParams.set("is_title", "");
+  return q.toString();
+}
+
+async function runIsCodeFetch(appTabId, isNumber) {
+  if (!isNumber) {
+    notifyIsCodeApp(appTabId, "QE_IS_CODE_FILL", {
+      payload: { notes: ["Type an IS Number first."] },
+    });
+    return;
+  }
+  const stored = await chrome.storage.local.get(["qeBsbedgeEmail", "qeBsbedgePassword"]);
+  const creds = {
+    email: String(stored.qeBsbedgeEmail || "").trim(),
+    password: String(stored.qeBsbedgePassword || ""),
+  };
+  const merged = { fields: { is_number: parseIsDoc(isNumber).display }, files: [], notes: [] };
+  const doc = parseIsDoc(isNumber).doc;
+  const jobs = [
+    [null, "manuals"],
+    [
+      `https://standards.bis.gov.in/website/know-your-standards?searchTerm=${encodeURIComponent(doc || isNumber)}`,
+      "details",
+    ],
+    [limsUrl(isNumber), "lims"],
+    ["https://www.manakonline.in/MANAK/knowfees", "knowfees"],
+    ["https://standardsbis.bsbedge.com/BIS_Login", "bsbedge"],
+  ];
+  isCodeFetchActive = true;
+  try {
+    for (const [url, site] of jobs) {
+      notifyIsCodeApp(appTabId, "QE_IS_CODE_PROGRESS", {
+        message:
+          site === "manuals"
+            ? "1/5 Product Manual: attaching the PDF and PM Number…"
+            : site === "details"
+              ? "2/5 Know Your Standards: revision year, reaffirmation, amendment, aspect, title…"
+              : site === "lims"
+                ? "3/5 LIMS: highest testing charges…"
+                : site === "knowfees"
+                  ? "4/5 Know Fees: type the captcha. Unit and marking fees follow."
+                  : "5/5 BSB Edge: login first, then search, then the standard PDF.",
+      });
+      const part = await runPortalJob(appTabId, url, site, isNumber, creds);
+      await new Promise((r) => setTimeout(r, 800));
+      Object.assign(merged.fields, part.fields || {});
+      merged.files.push(...(part.files || []));
+      merged.notes.push(...(part.notes || []));
+      notifyIsCodeApp(appTabId, "QE_IS_CODE_FILL", {
+        payload: {
+          fields: { ...merged.fields },
+          files: part.files || [],
+          notes: part.notes || [],
+          partial: true,
+          done: false,
+        },
+      });
+    }
+    notifyIsCodeApp(appTabId, "QE_IS_CODE_FILL", {
+      payload: { fields: merged.fields, notes: merged.notes, done: true },
+    });
+  } finally {
+    isCodeFetchActive = false;
+  }
+}
+
 if (hasDownloads) {
+  chrome.downloads.onCreated.addListener((item) => {
+    if (!isCodeFetchActive) return;
+    const blob = `${item.url || ""} ${item.finalUrl || ""} ${item.filename || ""}`;
+    if (!/bsbedge|standards\.bis\.gov|product.manual|oraclecloud|bis\.gov\.in|manakonline/i.test(blob)) {
+      return;
+    }
+    try {
+      chrome.downloads.cancel(item.id, () => {
+        void chrome.runtime.lastError;
+        chrome.downloads.erase({ id: item.id }, () => {
+          void chrome.runtime.lastError;
+        });
+      });
+    } catch {
+      /* ignore */
+    }
+  });
   chrome.downloads.onChanged.addListener((delta) => {
     if (!delta.state || delta.state.current !== "complete") return;
     chrome.downloads.search({ id: delta.id }, async (items) => {
       const item = items && items[0];
       if (!item) return;
-      const blob = `${item.url} ${item.referrer || ""} ${item.filename || ""} ${item.mime || ""}`;
+      const blob = `${item.url} ${item.finalUrl || ""} ${item.referrer || ""} ${item.filename || ""} ${item.mime || ""}`;
+      if (pendingDownloadCapture && /pdf/i.test(blob)) {
+        const wantedTab = pendingDownloadCapture.tabId;
+        const sameTab = !wantedTab || item.tabId === wantedTab || /bsbedge|bis\.gov/i.test(blob);
+        if (sameTab) {
+          try {
+            const res = await fetch(item.finalUrl || item.url, { credentials: "include" });
+            const buf = await res.arrayBuffer();
+            if (buf.byteLength >= 80) {
+              const reply = pendingDownloadCapture.sendResponse;
+              const wantedName =
+                pendingDownloadCapture.wantedName ||
+                (item.filename || "document.pdf").split(/[/\\]/).pop();
+              clearTimeout(pendingDownloadCapture.timer);
+              pendingDownloadCapture = null;
+              reply({
+                ok: true,
+                name: wantedName,
+                mime: item.mime || "application/pdf",
+                base64: arrayBufferToBase64(buf),
+              });
+              try {
+                await chrome.downloads.removeFile(item.id);
+              } catch {
+                /* ignore */
+              }
+              try {
+                await chrome.downloads.erase({ id: item.id });
+              } catch {
+                /* ignore */
+              }
+              return;
+            }
+          } catch {
+            /* fall through to Manak watcher */
+          }
+        }
+      }
       if (!/manakonline\.in/i.test(blob) || !/pdf/i.test(blob)) return;
       try {
         const res = await fetch(item.url);

@@ -1,5 +1,11 @@
+import ExcelJS from "exceljs";
 import { DEFAULT_AMENDMENT_NUMBER } from "@backend/shared/constants/is-code-master";
 import type { IsCodeMasterRow } from "@backend/shared/types/is-code-master";
+import {
+  isFilePathHeader,
+  normalizeImportHeader,
+  splitImportFilePaths,
+} from "./import-file-match";
 
 export const IS_CODE_CSV_HEADERS = [
   "is_number",
@@ -21,6 +27,13 @@ export const IS_CODE_CSV_HEADERS = [
   "slab_2_rate",
   "slab_3_quantity",
   "slab_3_rate",
+] as const;
+
+export const IS_CODE_FILE_CSV_HEADERS = ["file_names", "file_path"] as const;
+
+export const IS_CODE_EXPORT_HEADERS = [
+  ...IS_CODE_CSV_HEADERS,
+  ...IS_CODE_FILE_CSV_HEADERS,
 ] as const;
 
 export type IsCodeCsvHeader = (typeof IS_CODE_CSV_HEADERS)[number];
@@ -90,18 +103,79 @@ export function isCodeRowToCsvRecord(c: IsCodeMasterRow): Record<string, string>
     slab_2_rate: numStr(c.slab_2_rate),
     slab_3_quantity: c.slab_3_quantity ?? "",
     slab_3_rate: numStr(c.slab_3_rate),
+    file_names: (c.files ?? [])
+      .map((f) => f.file_name || f.storage_path.split("/").pop() || "")
+      .filter(Boolean)
+      .join("; "),
+    file_path: "",
   };
 }
 
 export function buildIsCodeExportCsv(rows: IsCodeMasterRow[]): string {
-  const header = IS_CODE_CSV_HEADERS.join(",");
+  const header = IS_CODE_EXPORT_HEADERS.join(",");
   const lines = rows.map((c) => {
     const rec = isCodeRowToCsvRecord(c);
-    return IS_CODE_CSV_HEADERS.map((h) =>
+    return IS_CODE_EXPORT_HEADERS.map((h) =>
       csvEscapeField(rec[h] ?? ""),
     ).join(",");
   });
   return [header, ...lines].join("\r\n");
+}
+
+export async function buildIsCodeExportXlsx(rows: IsCodeMasterRow[]): Promise<Blob> {
+  const workbook = new ExcelJS.Workbook();
+  const sheet = workbook.addWorksheet("IS Code Master");
+  sheet.addRow([...IS_CODE_EXPORT_HEADERS]);
+  for (const row of rows) {
+    const rec = isCodeRowToCsvRecord(row);
+    sheet.addRow(IS_CODE_EXPORT_HEADERS.map((h) => rec[h] ?? ""));
+  }
+  sheet.getRow(1).font = { bold: true };
+  sheet.columns.forEach((col) => {
+    col.width = 18;
+  });
+  const buffer = await workbook.xlsx.writeBuffer();
+  return new Blob([buffer], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+}
+
+export function parseIsCodeImportTable(headerCells: string[], dataRows: string[][]): {
+  ok: true;
+  rows: Record<string, string>[];
+} | { ok: false; error: string } {
+  const headers = headerCells.map((h) => h.trim());
+  const idx: Record<string, number> = {};
+  const pathIndexes: number[] = [];
+  for (let i = 0; i < headers.length; i++) {
+    const raw = headers[i];
+    const key = normalizeImportHeader(raw);
+    idx[key] = i;
+    idx[raw.toLowerCase()] = i;
+    if (isFilePathHeader(raw) || isFilePathHeader(key)) pathIndexes.push(i);
+  }
+  if (idx.is_number === undefined) {
+    return { ok: false, error: "Missing required column: is_number" };
+  }
+  const rows: Record<string, string>[] = [];
+  for (const cells of dataRows) {
+    const row: Record<string, string> = {};
+    for (const h of IS_CODE_CSV_HEADERS) {
+      const i = idx[h] ?? idx[h.toLowerCase()];
+      row[h] = i !== undefined ? String(cells[i] ?? "").trim() : "";
+    }
+    const paths: string[] = [];
+    for (const i of pathIndexes) {
+      paths.push(...splitImportFilePaths(String(cells[i] ?? "")));
+    }
+    row.file_path = [...new Set(paths)].join("; ");
+    if (!row.is_number) continue;
+    rows.push(row);
+  }
+  if (rows.length === 0) {
+    return { ok: false, error: "No IS number rows found in the spreadsheet." };
+  }
+  return { ok: true, rows };
 }
 
 export function parseIsCodeImportCsv(text: string): {
@@ -116,28 +190,61 @@ export function parseIsCodeImportCsv(text: string): {
   if (lines.length < 2) {
     return { ok: false, error: "CSV must include a header row and at least one data row." };
   }
-  const headerCells = parseCsvLine(lines[0]).map((h) => h.trim().toLowerCase());
-  const idx: Record<string, number> = {};
-  for (let i = 0; i < headerCells.length; i++) {
-    idx[headerCells[i]] = i;
-  }
-  for (const required of ["is_number", "revision_year", "is_code_title"] as const) {
-    if (idx[required] === undefined) {
-      return {
-        ok: false,
-        error: `Missing required column: ${required}`,
-      };
+  const headerCells = parseCsvLine(lines[0]);
+  const dataRows = lines.slice(1).map((line) => parseCsvLine(line));
+  return parseIsCodeImportTable(headerCells, dataRows);
+}
+
+function cellText(value: ExcelJS.CellValue): string {
+  if (value == null) return "";
+  if (typeof value === "string" || typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === "object") {
+    if ("result" in value && value.result != null) return cellText(value.result as ExcelJS.CellValue);
+    if ("text" in value && value.text != null) return String(value.text);
+    if ("richText" in value && Array.isArray(value.richText)) {
+      return value.richText.map((part) => part.text ?? "").join("");
     }
   }
-  const rows: Record<string, string>[] = [];
-  for (let li = 1; li < lines.length; li++) {
-    const cells = parseCsvLine(lines[li]);
-    const row: Record<string, string> = {};
-    for (const h of IS_CODE_CSV_HEADERS) {
-      const i = idx[h.toLowerCase()];
-      row[h] = i !== undefined ? String(cells[i] ?? "").trim() : "";
-    }
-    rows.push(row);
+  return String(value);
+}
+
+export async function parseIsCodeImportXlsx(buffer: ArrayBuffer): Promise<{
+  ok: true;
+  rows: Record<string, string>[];
+} | { ok: false; error: string }> {
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(buffer);
+  const sheet = workbook.worksheets[0];
+  if (!sheet) return { ok: false, error: "Excel file has no sheet." };
+  const table: string[][] = [];
+  sheet.eachRow({ includeEmpty: false }, (row) => {
+    const cells: string[] = [];
+    row.eachCell({ includeEmpty: true }, (cell, col) => {
+      cells[col - 1] = cellText(cell.value).trim();
+    });
+    table.push(cells);
+  });
+  if (table.length < 2) {
+    return { ok: false, error: "Excel must include a header row and at least one data row." };
   }
-  return { ok: true, rows };
+  return parseIsCodeImportTable(table[0], table.slice(1));
+}
+
+export async function parseIsCodeImportSpreadsheet(file: File): Promise<{
+  ok: true;
+  rows: Record<string, string>[];
+} | { ok: false; error: string }> {
+  const name = file.name.toLowerCase();
+  if (name.endsWith(".xlsx") || name.endsWith(".xlsm")) {
+    return parseIsCodeImportXlsx(await file.arrayBuffer());
+  }
+  if (name.endsWith(".xls")) {
+    return {
+      ok: false,
+      error: "Legacy .xls is not supported. Save the file as .xlsx or .csv and try again.",
+    };
+  }
+  return parseIsCodeImportCsv(await file.text());
 }

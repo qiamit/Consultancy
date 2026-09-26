@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "QE Consultancy",
-  "version": "2.0.3",
-  "description": "Manak Test Request fill plus copy/paste bypass and bulk field fill for Chrome, Edge, and other Chromium browsers.",
+  "version": "2.2.7",
+  "description": "Manak Test Request, IS Code portal fetch, copy/paste bypass, and bulk field fill for Chrome, Edge, and other Chromium browsers.",
   "action": {
     "default_title": "QE Consultancy",
     "default_popup": "popup.html"
@@ -39,7 +39,22 @@
       ],
       "js": [
         "field-map.js",
+        "captcha-assist.js",
         "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.manakonline.in/*",
+        "https://manakonline.in/*",
+        "https://lims.bis.gov.in/*",
+        "https://standards.bis.gov.in/*",
+        "https://standardsbis.bsbedge.com/*"
+      ],
+      "js": [
+        "captcha-assist.js",
+        "is-code-fetch.js"
       ],
       "run_at": "document_idle"
     },
@@ -57,7 +72,7 @@
       "js": [
         "bridge.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     },
     {
       "matches": [

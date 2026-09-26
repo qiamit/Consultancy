@@ -1,21 +1,23 @@
 {
   "manifest_version": 3,
-  "name": "QE Consultancy",
-  "version": "2.0.3",
-  "description": "Manak Test Request fill plus copy/paste bypass and bulk field fill for Safari.",
+  "name": "QE Consultancy Safari",
+  "version": "2.2.7",
+  "description": "Manak Test Request, IS Code portal fetch, copy/paste bypass, and bulk field fill for Chrome, Edge, and other Chromium browsers.",
   "action": {
     "default_title": "QE Consultancy",
     "default_popup": "popup.html"
   },
   "background": {
-    "service_worker": "background.js",
-    "scripts": ["background.js"],
-    "persistent": false
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content-bypass.js"],
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content-bypass.js"
+      ],
       "run_at": "document_start",
       "all_frames": true
     },
@@ -24,7 +26,9 @@
         "https://www.manakonline.in/*",
         "https://manakonline.in/*"
       ],
-      "js": ["page-hook.js"],
+      "js": [
+        "page-hook.js"
+      ],
       "run_at": "document_start",
       "world": "MAIN"
     },
@@ -33,7 +37,25 @@
         "https://www.manakonline.in/*",
         "https://manakonline.in/*"
       ],
-      "js": ["field-map.js", "content.js"],
+      "js": [
+        "field-map.js",
+        "captcha-assist.js",
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://www.manakonline.in/*",
+        "https://manakonline.in/*",
+        "https://lims.bis.gov.in/*",
+        "https://standards.bis.gov.in/*",
+        "https://standardsbis.bsbedge.com/*"
+      ],
+      "js": [
+        "captcha-assist.js",
+        "is-code-fetch.js"
+      ],
       "run_at": "document_idle"
     },
     {
@@ -47,15 +69,19 @@
         "https://*.railway.app/*",
         "https://consultancy-production-9720.up.railway.app/*"
       ],
-      "js": ["bridge.js"],
-      "run_at": "document_idle"
+      "js": [
+        "bridge.js"
+      ],
+      "run_at": "document_start"
     },
     {
       "matches": [
         "https://play.google.com/*",
         "https://apps.apple.com/*"
       ],
-      "js": ["close-play-store.js"],
+      "js": [
+        "close-play-store.js"
+      ],
       "run_at": "document_start"
     }
   ],
@@ -68,7 +94,8 @@
     "scripting",
     "downloads",
     "declarativeNetRequest",
-    "webNavigation"
+    "webNavigation",
+    "debugger"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -81,10 +108,5 @@
         "path": "block-rules.json"
       }
     ]
-  },
-  "browser_specific_settings": {
-    "safari": {
-      "strict_min_version": "16.4"
-    }
   }
 }

@@ -1,4 +1,5 @@
 import { createClient } from "@backend/db/client/server";
+import { compatibleChatBaseUrl } from "@backend/modules/ai/compatible-chat";
 import type { EmailAccountRow } from "@backend/shared/types/email";
 
 export type AiDraftRequest = {
@@ -138,11 +139,7 @@ async function callAppAiModel(
     return data.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
   }
 
-  const baseUrl = providerLower.includes("mistral")
-    ? "https://api.mistral.ai/v1"
-    : providerLower.includes("deepseek")
-      ? "https://api.deepseek.com/v1"
-      : "https://api.openai.com/v1";
+  const baseUrl = compatibleChatBaseUrl(provider);
 
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: "POST",

@@ -8,6 +8,7 @@ import {
 } from "@/components/dashboard/sidebar-layout-context";
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { QEAssistantProvider } from "@/components/dashboard/qe-assistant-provider";
+import { IsCodePortalAiListener } from "@/components/modules/is-code-master/portal-ai-listener";
 import { createClient } from "@backend/db/client/server";
 
 export default async function DashboardLayout({
@@ -39,6 +40,7 @@ export default async function DashboardLayout({
             {children}
           </main>
         </MainContentOffset>
+        <IsCodePortalAiListener />
         <QEAssistantProvider />
       </div>
     </SidebarLayoutProvider>

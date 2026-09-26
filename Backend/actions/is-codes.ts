@@ -632,9 +632,18 @@ export async function signIsCodeFileDownload(
   return { ok: true, url: signed.signedUrl };
 }
 
+export type ImportedIsCodeRef = {
+  id: string;
+  is_number: string;
+  revision_year: number;
+};
+
 export async function importIsCodesMaster(
   rows: Record<string, string>[],
-): Promise<{ ok: true; inserted: number } | { ok: false; error: string }> {
+): Promise<
+  | { ok: true; inserted: number; skipped: number; codes: ImportedIsCodeRef[] }
+  | { ok: false; error: string }
+> {
   if (rows.length === 0) {
     return { ok: false, error: "No rows to import." };
   }
@@ -650,11 +659,14 @@ export async function importIsCodesMaster(
 
   const { data: existing } = await supabase
     .from("is_codes")
-    .select("is_number, revision_year");
-  const seen = new Set<string>();
+    .select("id, is_number, revision_year");
+  const existingByKey = new Map<string, ImportedIsCodeRef>();
   for (const r of existing ?? []) {
-    const rec = r as { is_number: string; revision_year: number };
-    seen.add(`${rec.is_number.trim().toLowerCase()}|${rec.revision_year}`);
+    const rec = r as ImportedIsCodeRef;
+    existingByKey.set(
+      `${rec.is_number.trim().toLowerCase()}|${rec.revision_year}`,
+      rec,
+    );
   }
 
   const now = new Date().toISOString();
@@ -664,6 +676,8 @@ export async function importIsCodesMaster(
       updated_at: string;
     }
   > = [];
+  const wantedKeys: string[] = [];
+  let skipped = 0;
 
   for (let i = 0; i < rows.length; i++) {
     const parsed = rowFromImportRecord(rows[i], { aspects, units });
@@ -674,13 +688,16 @@ export async function importIsCodesMaster(
       };
     }
     const key = `${String(parsed.payload.is_number).trim().toLowerCase()}|${parsed.payload.revision_year}`;
-    if (seen.has(key)) {
-      return {
-        ok: false,
-        error: `Row ${i + 2}: duplicate IS number and revision year (“${parsed.payload.is_number}” / ${parsed.payload.revision_year}) in database or file.`,
-      };
+    wantedKeys.push(key);
+    if (existingByKey.has(key)) {
+      skipped += 1;
+      continue;
     }
-    seen.add(key);
+    existingByKey.set(key, {
+      id: "",
+      is_number: String(parsed.payload.is_number),
+      revision_year: Number(parsed.payload.revision_year),
+    });
     payloads.push({
       ...parsed.payload,
       created_by: user.id,
@@ -688,18 +705,30 @@ export async function importIsCodesMaster(
     });
   }
 
-  const { error } = await supabase.from("is_codes").insert(payloads);
-  if (error) {
-    if (error.code === "23505") {
-      return {
-        ok: false,
-        error:
-          "Import failed: duplicate IS number and revision year for one or more rows.",
-      };
+  if (payloads.length > 0) {
+    const { error } = await supabase.from("is_codes").insert(payloads);
+    if (error) {
+      if (error.code === "23505") {
+        return {
+          ok: false,
+          error:
+            "Import failed: duplicate IS number and revision year for one or more rows.",
+        };
+      }
+      return { ok: false, error: error.message };
     }
-    return { ok: false, error: error.message };
   }
 
+  const { data: resolved, error: resolveErr } = await supabase
+    .from("is_codes")
+    .select("id, is_number, revision_year");
+  if (resolveErr) return { ok: false, error: resolveErr.message };
+
+  const wanted = new Set(wantedKeys);
+  const codes = ((resolved ?? []) as ImportedIsCodeRef[]).filter((row) =>
+    wanted.has(`${row.is_number.trim().toLowerCase()}|${row.revision_year}`),
+  );
+
   revalidatePath("/dashboard/is-code-master");
-  return { ok: true, inserted: payloads.length };
+  return { ok: true, inserted: payloads.length, skipped, codes };
 }

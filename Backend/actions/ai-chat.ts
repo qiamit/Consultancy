@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@backend/db/client/server";
+import { compatibleChatBaseUrl } from "@backend/modules/ai/compatible-chat";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
@@ -116,12 +117,7 @@ export async function sendAiMessage(
     }
 
     // ── Mistral / DeepSeek / OpenAI-compatible ────────────────────────────────
-    const providerLower = provider.toLowerCase();
-    const baseUrl = providerLower.includes("mistral")
-      ? "https://api.mistral.ai/v1"
-      : providerLower.includes("deepseek")
-        ? "https://api.deepseek.com/v1"
-        : "https://api.openai.com/v1";
+    const baseUrl = compatibleChatBaseUrl(provider);
 
     const res = await fetch(`${baseUrl}/chat/completions`, {
       method: "POST",

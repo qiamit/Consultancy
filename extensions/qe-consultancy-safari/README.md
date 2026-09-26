@@ -7,7 +7,7 @@ Safari cannot load an unpacked folder the way Chrome does. Build the macOS wrapp
 ## Features
 
 - Open / fill BIS Manak Test Request from Consultancy Pro.
-- Wait for you to type captcha, then continue Generate / Sample Code / PDF.
+- IS Code search icon fetches LIMS charges, Manak marking fees, product manuals, and BSB Edge PDFs. Weak image captchas are solved inside the extension.
 - Copy/paste and Command shortcuts on sites that try to block them.
 - Bulk fill matching fields by name, id, placeholder, or label.
 

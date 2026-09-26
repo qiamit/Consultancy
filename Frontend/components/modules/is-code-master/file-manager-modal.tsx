@@ -4,7 +4,6 @@ import { useCallback, useRef, useState, useTransition } from "react";
 import {
   addIsCodeFiles,
   deleteIsCodeFile,
-  signIsCodeFileDownload,
 } from "@backend/actions/is-codes";
 import type { IsCodeFileRow, IsCodeMasterRow } from "@backend/shared/types/is-code-master";
 
@@ -14,6 +13,24 @@ function formatBytes(n: number): string {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function fileDisplayName(file: IsCodeFileRow): string {
+  return file.file_name ?? file.storage_path.split("/").pop() ?? "File";
+}
+
+function storagePublicUrl(
+  path: string,
+  disposition: "inline" | "attachment",
+  filename?: string,
+): string {
+  const params = new URLSearchParams({
+    bucket: "is_code_documents",
+    path,
+    disposition,
+  });
+  if (filename?.trim()) params.set("filename", filename.trim());
+  return `/api/storage/public?${params.toString()}`;
+}
+
 function FileRow({
   file,
   onDeleted,
@@ -21,21 +38,30 @@ function FileRow({
   file: IsCodeFileRow;
   onDeleted: (id: string) => void;
 }) {
-  const [viewing, startView] = useTransition();
   const [deleting, startDelete] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const name = fileDisplayName(file);
 
   const handleView = () => {
-    startView(async () => {
-      setError(null);
-      const res = await signIsCodeFileDownload(file.id);
-      if (!res.ok) { setError(res.error); return; }
-      window.open(res.url, "_blank", "noopener,noreferrer");
-    });
+    window.open(
+      storagePublicUrl(file.storage_path, "inline", name),
+      "_blank",
+      "noopener,noreferrer",
+    );
+  };
+
+  const handleDownload = () => {
+    const a = document.createElement("a");
+    a.href = storagePublicUrl(file.storage_path, "attachment", name);
+    a.download = name;
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
   };
 
   const handleDelete = () => {
-    if (!window.confirm(`Delete "${file.file_name ?? file.id}"? This cannot be undone.`)) return;
+    if (!window.confirm(`Delete "${name}"? This cannot be undone.`)) return;
     startDelete(async () => {
       setError(null);
       try {
@@ -53,8 +79,8 @@ function FileRow({
         <svg className="h-5 w-5 shrink-0 text-red-500" viewBox="0 0 20 20" fill="currentColor">
           <path fillRule="evenodd" d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z" clipRule="evenodd" />
         </svg>
-        <span className="min-w-0 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100" title={file.file_name ?? file.id}>
-          {file.file_name ?? "Unnamed file"}
+        <span className="min-w-0 truncate text-sm font-medium text-zinc-800 dark:text-zinc-100" title={name}>
+          {name}
         </span>
       </div>
       {error && <span className="text-xs text-red-600 dark:text-red-400">{error}</span>}
@@ -62,15 +88,23 @@ function FileRow({
         <button
           type="button"
           onClick={handleView}
-          disabled={viewing || deleting}
+          disabled={deleting}
           className="rounded-none px-2.5 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-50 disabled:opacity-50 dark:text-sky-400 dark:hover:bg-sky-950/40"
         >
-          {viewing ? "Opening…" : "View"}
+          View
+        </button>
+        <button
+          type="button"
+          onClick={handleDownload}
+          disabled={deleting}
+          className="rounded-none px-2.5 py-1 text-xs font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 dark:text-emerald-400 dark:hover:bg-emerald-950/40"
+        >
+          Download
         </button>
         <button
           type="button"
           onClick={handleDelete}
-          disabled={viewing || deleting}
+          disabled={deleting}
           className="rounded-none px-2.5 py-1 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/40"
         >
           {deleting ? "Deleting…" : "Delete"}

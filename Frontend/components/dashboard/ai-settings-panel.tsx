@@ -14,6 +14,7 @@ import {
 // ─── preset data ──────────────────────────────────────────────────────────────
 
 const PRESET_PROVIDERS = [
+  "xAI (Grok)",
   "Anthropic",
   "OpenAI",
   "Google",
@@ -24,6 +25,11 @@ const PRESET_PROVIDERS = [
 ];
 
 const PRESET_MODELS: Record<string, { id: string; name: string }[]> = {
+  "xAI (Grok)": [
+    { id: "grok-4.6", name: "Grok 4.6 (vision + captcha)" },
+    { id: "grok-4", name: "Grok 4" },
+    { id: "grok-2-vision-1212", name: "Grok 2 Vision" },
+  ],
   Anthropic: [
     { id: "claude-sonnet-4-6", name: "Claude Sonnet 4.6" },
     { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5" },
@@ -192,6 +198,20 @@ function ModelForm({
                 ))}
                 <option value={CUSTOM_VALUE}>+ Add custom provider</option>
               </select>
+              {provider === "xAI (Grok)" ? (
+                <p className="text-xs leading-relaxed text-zinc-500 dark:text-zinc-400">
+                  Official Grok API only. Create a key at{" "}
+                  <a
+                    href="https://console.x.ai"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="font-medium text-sky-600 underline dark:text-sky-400"
+                  >
+                    console.x.ai
+                  </a>
+                  . The grok.com chat bot cannot be packed inside the browser extension.
+                </p>
+              ) : null}
               {isCustomProvider && (
                 <input
                   name="provider_custom"

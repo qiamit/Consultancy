@@ -1,6 +1,16 @@
 (function () {
   if (/manakonline\.in$/i.test(location.hostname)) return;
 
+  function markPresent() {
+    try {
+      document.documentElement.dataset.qeConsultancy = "1";
+      window.__QE_CONSULTANCY__ = true;
+    } catch {
+      /* ignore */
+    }
+  }
+  markPresent();
+
   function runtimeOk() {
     try {
       return Boolean(typeof chrome !== "undefined" && chrome.runtime && chrome.runtime.id);
@@ -80,6 +90,18 @@
       pullStoredResult(true);
       return;
     }
+    if (data.type === "QE_IS_CODE_PING") {
+      markPresent();
+      window.postMessage({ type: "QE_IS_CODE_PONG" }, "*");
+      sendRuntime({ type: "QE_IS_CODE_PING" });
+      return;
+    }
+    if (data.type === "QE_IS_CODE_FETCH") {
+      markPresent();
+      window.postMessage({ type: "QE_IS_CODE_FETCH_ACK" }, "*");
+      sendRuntime({ type: "QE_IS_CODE_FETCH", isNumber: data.isNumber || "" });
+      return;
+    }
     if (data.type !== "QE_MANAK_OPEN") return;
     if (window.__qeManakOpenSent && Date.now() - window.__qeManakOpenSent < 2000) {
       window.postMessage({ type: "QE_MANAK_OPEN_ACK" }, "*");
@@ -103,11 +125,36 @@
   });
 
   if (runtimeOk()) {
+    sendRuntime({ type: "QE_IS_CODE_PING" });
     try {
-      chrome.runtime.onMessage.addListener((msg) => {
+      chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!msg || typeof msg !== "object") return;
         if ((msg.type === "QE_MANAK_RESULT" || msg.type === "QE_MANAK_PDF") && msg.result) {
           publish(msg.result, true);
+        }
+        if (msg.type === "QE_IS_CODE_PROGRESS") {
+          window.postMessage({ type: "QE_IS_CODE_PROGRESS", message: msg.message || "" }, "*");
+        }
+        if (msg.type === "QE_IS_CODE_FILL") {
+          window.postMessage({ type: "QE_IS_CODE_FILL", payload: msg.payload || {} }, "*");
+        }
+        if (msg.type === "QE_CAPTCHA_AI") {
+          const requestId = msg.requestId || `cap-${Date.now()}`;
+          const timer = window.setTimeout(() => {
+            window.removeEventListener("message", onAiResult);
+            sendResponse({ text: "" });
+          }, 25000);
+          function onAiResult(event) {
+            if (event.source !== window) return;
+            if (!event.data || event.data.type !== "QE_CAPTCHA_AI_RESULT") return;
+            if (event.data.requestId && event.data.requestId !== requestId) return;
+            window.clearTimeout(timer);
+            window.removeEventListener("message", onAiResult);
+            sendResponse({ text: String(event.data.text || "") });
+          }
+          window.addEventListener("message", onAiResult);
+          window.postMessage({ type: "QE_CAPTCHA_AI", image: msg.image || "", requestId }, "*");
+          return true;
         }
       });
     } catch {

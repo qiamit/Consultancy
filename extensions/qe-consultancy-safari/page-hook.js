@@ -84,9 +84,14 @@
     return el.tagName === "IMG" && /captcha|kaptcha/.test(blob);
   }
 
+  function isKnowFeesPage() {
+    return /knowfees/i.test(location.pathname || "");
+  }
+
   document.addEventListener(
     "click",
     (event) => {
+      if (isKnowFeesPage()) return;
       const t = event.target;
       if (!t) return;
       if (isCaptchaRefreshNode(t) || (t.closest && isCaptchaRefreshNode(t.closest("a, button, img, span")))) {
@@ -379,8 +384,23 @@
   }
 
   document.addEventListener("qe-manak-fill-login", (event) => {
+    if (isKnowFeesPage()) return;
     const detail = (event && event.detail) || {};
     fillManakLoginFields(detail.userId, detail.password);
+  });
+
+  const captchaTextWatch = new MutationObserver(() => {
+    const value = document.documentElement.getAttribute("data-qe-captcha-text") || "";
+    if (!value || value === window.__qeCaptchaTextApplied) return;
+    window.__qeCaptchaTextApplied = value;
+    const input =
+      document.getElementById("captcha0071") ||
+      document.querySelector('input[id*="captcha" i], input[placeholder*="captcha" i]');
+    if (input) setPageInput(input, value);
+  });
+  captchaTextWatch.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-qe-captcha-text"],
   });
 
   const labAttrWatch = new MutationObserver(() => {

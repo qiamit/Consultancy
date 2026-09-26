@@ -1,4 +1,6 @@
 (function () {
+  if (/knowfees/i.test(location.pathname || "")) return;
+
   window.addEventListener("unhandledrejection", (event) => {
     const msg = String((event.reason && event.reason.message) || event.reason || "");
     if (/not focused|clipboard|could not establish connection|receiving end|navigation rejected/i.test(msg)) {
@@ -656,7 +658,12 @@
     return Boolean(loggedInPortalUser() || hasLogoutLink());
   }
 
+  function isKnowFeesPage() {
+    return /knowfees/i.test(location.pathname);
+  }
+
   function isLoginPage() {
+    if (isKnowFeesPage()) return false;
     if (isLoggedInSession()) return false;
     if (/ebislogin/i.test(location.pathname)) return true;
     const pass = document.querySelector("#InputPassword, input[name='passwd'], input[type='password']");
@@ -1103,12 +1110,22 @@
     showBanner(
       loginMode
         ? loginFilled
-          ? "User ID and password filled. Type captcha only."
-          : "Type captcha when ready. Login starts as soon as you finish. Page will not refresh."
-        : "Type captcha if asked. Submit waits until you type it.",
+          ? "User ID and password filled. Type the captcha. Process continues when you finish."
+          : "Type the captcha. Process continues when you finish."
+        : "Type the captcha if the page shows one. Process continues when you finish.",
       true,
       true,
     );
+
+    void (async () => {
+      const assist = self.qeCaptchaAssist;
+      if (!assist || typeof assist.solvePageCaptcha !== "function") return;
+      const solved = await assist.solvePageCaptcha({ minChars: 4, fallbackMs: 300000 });
+      if (!solved) return;
+      typedByUser = true;
+      bindInputs();
+      void tryContinue();
+    })();
 
     window.__qeManakCaptchaTimer = window.setInterval(() => {
       bindInputs();
@@ -1557,6 +1574,9 @@
   }
 
   async function runWorkflow(payload, options) {
+    if (isKnowFeesPage()) {
+      return { ok: false, message: "Know Fees has no Manak login. Only captcha + IS digits." };
+    }
     const force = Boolean(options && options.force);
     if (!(await isExtensionOn())) {
       return { ok: false, message: "Extension is OFF." };
@@ -1745,6 +1765,7 @@
   }
 
   chrome.storage.local.get(["pendingFill", "qeManakEnabled", "qeManakArmed", "qeManakPortal"], (data) => {
+    if (isKnowFeesPage()) return;
     if (!data || data.qeManakEnabled === false) return;
     if (isLoginPage()) {
       const portal = data.qeManakPortal || {};

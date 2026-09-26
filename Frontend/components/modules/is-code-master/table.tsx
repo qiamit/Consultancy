@@ -104,7 +104,7 @@ export function IsCodeMasterTable({
   matchedCount,
   grandCount,
   searchActive,
-  onImportFile,
+  onImport,
   onExport,
   onPrintList,
   onDelete,
@@ -121,7 +121,7 @@ export function IsCodeMasterTable({
   matchedCount: number;
   grandCount: number;
   searchActive: boolean;
-  onImportFile: (file: File) => void | Promise<void>;
+  onImport: () => void;
   onExport: () => void;
   onPrintList: () => void;
   onDelete: () => void;
@@ -326,7 +326,7 @@ export function IsCodeMasterTable({
           grandCount={grandCount}
           searchActive={searchActive}
           selectedCount={selectedIds.size}
-          onImportFile={onImportFile}
+          onImport={onImport}
           onExport={onExport}
           onPrintList={onPrintList}
           onDelete={onDelete}

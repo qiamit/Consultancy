@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   deleteIsCodeFile,
   executeSaveIsCodeMaster,
@@ -16,6 +16,10 @@ import {
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 import type { IsCodeFileRow } from "@backend/shared/types/is-code-master";
 import { bisStandardsWebsiteSearchUrl } from "@backend/modules/bis/bis-standards-portal";
+import {
+  applyIsCodePortalPayload,
+  type IsCodePortalPayload,
+} from "./portal-fetch";
 import {
   DEFAULT_ASPECT_OF_IS,
   DEFAULT_MONEY_FIELD,
@@ -56,6 +60,98 @@ export function IsCodeMasterForm({
   onEmbeddedSaveSuccess?: (isCodeId: string) => void;
 }) {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [portalStatus, setPortalStatus] = useState("");
+  const [portalBusy, setPortalBusy] = useState(false);
+  const [sessionUploads, setSessionUploads] = useState<string[]>([]);
+  const onUpdateFieldRef = useRef(onUpdateField);
+  const formValuesRef = useRef(formValues);
+  const onEmbeddedSaveSuccessRef = useRef(onEmbeddedSaveSuccess);
+  const portalFetchGenRef = useRef(0);
+  const autoSavingRef = useRef(false);
+  onUpdateFieldRef.current = onUpdateField;
+  formValuesRef.current = formValues;
+  onEmbeddedSaveSuccessRef.current = onEmbeddedSaveSuccess;
+
+  useEffect(() => {
+    async function persistPortalSave(payload: IsCodePortalPayload, extra: string) {
+      const values = { ...formValuesRef.current, ...(payload.fields || {}) };
+      const canSave =
+        Boolean(values.is_number?.trim()) &&
+        /^\d{4}$/.test(String(values.revision_year || "").trim()) &&
+        Boolean(values.is_code_title?.trim());
+      const input = document.getElementById("is_code_files") as HTMLInputElement | null;
+      const pendingNames = input ? Array.from(input.files || []).map((f) => f.name) : [];
+      const shouldSave =
+        canSave &&
+        !autoSavingRef.current &&
+        (payload.done === true || pendingNames.length > 0 || Boolean(values.id));
+      if (!shouldSave) {
+        if (payload.done === true) {
+          setPortalBusy(false);
+          setPortalStatus(
+            extra ||
+              "Portal data filled. Check IS Number, Revision Year, and Title, then save.",
+          );
+        } else {
+          setPortalStatus(extra || "Reading portals…");
+        }
+        return;
+      }
+      autoSavingRef.current = true;
+      setPortalBusy(true);
+      setPortalStatus(extra ? `${extra} Saving to IS Code…` : "Saving to IS Code…");
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      const form = document.getElementById(
+        "is-code-master-save-form",
+      ) as HTMLFormElement | null;
+      if (!form) {
+        autoSavingRef.current = false;
+        setPortalBusy(false);
+        setPortalStatus(extra || "Form not found for auto-save.");
+        return;
+      }
+      const saved = await executeSaveIsCodeMaster(new FormData(form));
+      autoSavingRef.current = false;
+      if (!saved.ok) {
+        setPortalBusy(payload.done !== true);
+        setPortalStatus(`${extra} Save stopped: ${saved.error}`.trim());
+        return;
+      }
+      onUpdateFieldRef.current("id", saved.id);
+      if (pendingNames.length) {
+        setSessionUploads((prev) => [...prev, ...pendingNames.filter((n) => !prev.includes(n))]);
+        const empty = new DataTransfer();
+        if (input) input.files = empty.files;
+      }
+      onEmbeddedSaveSuccessRef.current?.(saved.id);
+      setPortalBusy(payload.done !== true);
+      setPortalStatus(
+        extra
+          ? `${extra} Saved in the app.`
+          : "Portal data saved in the app.",
+      );
+    }
+
+    function onMessage(event: MessageEvent) {
+      if (event.source !== window) return;
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+      if (data.type === "QE_IS_CODE_PROGRESS") {
+        setPortalBusy(true);
+        setPortalStatus(String(data.message || "Fetching portal data…"));
+        return;
+      }
+      if (data.type !== "QE_IS_CODE_FILL") return;
+      const payload = (data.payload || {}) as IsCodePortalPayload;
+      if (payload.done !== true) setPortalBusy(true);
+      if (payload.done === true) portalFetchGenRef.current += 1;
+      void applyIsCodePortalPayload(payload, onUpdateFieldRef.current).then((notes) =>
+        persistPortalSave(payload, notes.filter(Boolean).join(" ")),
+      );
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, []);
 
   if (!visible) return null;
 
@@ -117,17 +213,81 @@ export function IsCodeMasterForm({
                 required
                 value={formValues.is_number}
                 onChange={(v) => onUpdateField("is_number", v)}
-                title="Indian Standard designation as you store it (e.g. IS 1786). The search icon opens BIS Know Your Standards in a new tab; if this field is not empty, your text is sent as the searchTerm query parameter."
+                title="Indian Standard designation as you store it (e.g. IS 1786). The search icon asks the QE Consultancy extension to pull testing charges, marking fees, product manuals, and the standard PDF."
                 suffix={
-                  <a
-                    href={bisStandardsWebsiteSearchUrl(formValues.is_number)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className={`${fieldSuffixActionClass} min-w-9`}
-                    title="Open BIS Know Your Standards (new tab). Non-empty IS number is sent as the searchTerm query parameter."
-                    aria-label="Open BIS Know Your Standards in a new tab; uses this IS number as searchTerm when the field is not empty."
+                  <button
+                    type="button"
+                    disabled={portalBusy}
+                    className={`${fieldSuffixActionClass} min-w-9 disabled:opacity-50`}
+                    title="Fetch IS data through the QE Consultancy extension. Hold Ctrl/Cmd to open BIS Know Your Standards instead."
+                    aria-label="Fetch IS number data from BIS portals through the QE Consultancy extension"
+                    onClick={(event) => {
+                      if (event.metaKey || event.ctrlKey || event.shiftKey) {
+                        window.open(
+                          bisStandardsWebsiteSearchUrl(formValues.is_number),
+                          "_blank",
+                          "noopener,noreferrer",
+                        );
+                        return;
+                      }
+                      const isNumber = formValues.is_number.trim();
+                      if (!isNumber) {
+                        setPortalStatus("Type an IS Number first.");
+                        return;
+                      }
+                      const fetchGen = portalFetchGenRef.current + 1;
+                      portalFetchGenRef.current = fetchGen;
+                      setPortalBusy(true);
+                      setPortalStatus(
+                        "Connecting to QE Consultancy extension…",
+                      );
+                      const present =
+                        document.documentElement.dataset.qeConsultancy === "1" ||
+                        Boolean(
+                          (window as Window & { __QE_CONSULTANCY__?: boolean })
+                            .__QE_CONSULTANCY__,
+                        );
+                      let acked = present;
+                      const onAck = (ackEvent: MessageEvent) => {
+                        if (ackEvent.source !== window) return;
+                        if (
+                          ackEvent.data?.type !== "QE_IS_CODE_FETCH_ACK" &&
+                          ackEvent.data?.type !== "QE_IS_CODE_PONG"
+                        ) {
+                          return;
+                        }
+                        acked = true;
+                        window.removeEventListener("message", onAck);
+                        setPortalStatus(
+                          "Extension connected. Opening LIMS, Know Fees, Product Manuals, and BSB Edge…",
+                        );
+                      };
+                      window.addEventListener("message", onAck);
+                      window.postMessage({ type: "QE_IS_CODE_PING" }, "*");
+                      window.postMessage(
+                        { type: "QE_IS_CODE_FETCH", isNumber },
+                        "*",
+                      );
+                      window.setTimeout(() => {
+                        window.removeEventListener("message", onAck);
+                        if (acked || portalFetchGenRef.current !== fetchGen) return;
+                        portalFetchGenRef.current += 1;
+                        setPortalBusy(false);
+                        setPortalStatus(
+                          "QE Consultancy extension is not loaded in this browser. Open this page in Chrome/Edge, then chrome://extensions → Reload QE Consultancy (2.2.7). Hold Ctrl/Cmd and click the icon only if you want BIS Know Your Standards.",
+                        );
+                      }, 4000);
+                      window.setTimeout(() => {
+                        if (portalFetchGenRef.current !== fetchGen) return;
+                        portalFetchGenRef.current += 1;
+                        setPortalBusy(false);
+                        setPortalStatus(
+                          "Fetch timed out. Keep the extension popup BSB login saved, reload QE Consultancy 2.2.7, then try again. Fields already filled can still be saved.",
+                        );
+                      }, 180000);
+                    }}
                   >
-                    <span className="sr-only">Search on BIS Know Your Standards</span>
+                    <span className="sr-only">Fetch IS data from BIS portals</span>
                     <svg
                       xmlns="http://www.w3.org/2000/svg"
                       viewBox="0 0 24 24"
@@ -142,7 +302,7 @@ export function IsCodeMasterForm({
                       <circle cx="11" cy="11" r="7" />
                       <path d="m20 20-3.2-3.2" />
                     </svg>
-                  </a>
+                  </button>
                 }
               />
             </div>
@@ -370,9 +530,9 @@ export function IsCodeMasterForm({
               >
                 IS Code Related Files
               </label>
-              {existingFiles.length > 0 ? (
+              {existingFiles.length + sessionUploads.length > 0 ? (
                 <span className="rounded-none bg-zinc-200/90 px-2.5 py-0.5 text-[11px] font-medium tabular-nums text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                  {existingFiles.length} saved
+                  {existingFiles.length + sessionUploads.length} saved
                 </span>
               ) : null}
             </div>
@@ -387,6 +547,11 @@ export function IsCodeMasterForm({
                   className="block w-full cursor-pointer text-sm leading-relaxed text-zinc-600 file:mr-4 file:cursor-pointer file:rounded-none file:border-0 file:bg-sky-600 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-white file:shadow-sm hover:file:bg-sky-500 dark:text-zinc-400 dark:file:bg-sky-600 dark:hover:file:bg-sky-500"
                 />
               </div>
+              {sessionUploads.length > 0 ? (
+                <p className="text-[11px] font-medium text-emerald-700 dark:text-emerald-400">
+                  Uploaded this session: {sessionUploads.join(", ")}
+                </p>
+              ) : null}
               {existingFiles.length > 0 ? (
                 <div className="space-y-2">
                   <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
@@ -432,6 +597,17 @@ export function IsCodeMasterForm({
             </div>
           </div>
         </div>
+
+        {portalStatus ? (
+          <p
+            className="sm:col-span-2 lg:col-span-4 rounded-none border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900 dark:border-sky-900 dark:bg-sky-950/40 dark:text-sky-100"
+            role="status"
+            aria-live="polite"
+          >
+            {portalBusy ? "Working… " : ""}
+            {portalStatus}
+          </p>
+        ) : null}
 
         <div className="flex flex-wrap items-center justify-end gap-3 sm:col-span-2 lg:col-span-4">
           <button

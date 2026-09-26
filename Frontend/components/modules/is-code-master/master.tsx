@@ -12,9 +12,9 @@ import {
 import {
   deleteIsCodeMaster,
   deleteIsCodesMaster,
-  importIsCodesMaster,
 } from "@backend/actions/is-codes";
-import { buildIsCodeExportCsv, parseIsCodeImportCsv } from "@backend/modules/is-code/is-code-master-csv";
+import { buildIsCodeExportXlsx } from "@backend/modules/is-code/is-code-master-csv";
+import { IsCodeImportModal } from "./import-modal";
 import type { IsCodeMasterRow } from "@backend/shared/types/is-code-master";
 import type { AppDropdownOptionRow } from "@backend/shared/types/app-dropdown-option";
 import { emptyForm, rowToForm } from "./constants";
@@ -54,6 +54,7 @@ export function IsCodeMaster({
   const searchParams = useSearchParams();
   const [rows, setRows] = useSyncedRows(initialRows);
   const [searchQuery, setSearchQuery] = useState("");
+  const [importOpen, setImportOpen] = useState(false);
 
   const idParam = searchParams.get("id");
   const isNewParam = searchParams.get("new") === "1";
@@ -127,15 +128,12 @@ export function IsCodeMaster({
     setForm((f) => ({ ...f, [key]: value }));
   }
 
-  function handleExport() {
-    const csv = buildIsCodeExportCsv(filteredRows);
-    const blob = new Blob([`\uFEFF${csv}`], {
-      type: "text/csv;charset=utf-8;",
-    });
+  async function handleExport() {
+    const blob = await buildIsCodeExportXlsx(filteredRows);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "is-code-master-export.csv";
+    a.download = "is-code-master-export.xlsx";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -155,20 +153,8 @@ export function IsCodeMaster({
     printIsCodeMasterList(toPrint);
   }
 
-  async function handleImportFile(file: File) {
-    const text = await file.text();
-    const parsed = parseIsCodeImportCsv(text);
-    if (!parsed.ok) {
-      window.alert(parsed.error);
-      return;
-    }
-    const result = await importIsCodesMaster(parsed.rows);
-    if (!result.ok) {
-      window.alert(result.error);
-      return;
-    }
-    window.alert(`Imported ${result.inserted} IS code(s).`);
-    router.refresh();
+  function handleImport() {
+    setImportOpen(true);
   }
 
   function handleDelete() {
@@ -284,8 +270,8 @@ export function IsCodeMaster({
           matchedCount={filteredTotal}
           grandCount={grandTotal}
           searchActive={searchActive}
-          onImportFile={handleImportFile}
-          onExport={handleExport}
+          onImport={handleImport}
+          onExport={() => void handleExport()}
           onPrintList={handlePrintList}
           onDelete={handleDelete}
           deleteDisabled={deleteDisabled}
@@ -300,6 +286,17 @@ export function IsCodeMaster({
           }}
         />
       </div>
+
+      {importOpen ? (
+        <IsCodeImportModal
+          existingRows={rows}
+          onClose={() => setImportOpen(false)}
+          onDone={() => {
+            setImportOpen(false);
+            router.refresh();
+          }}
+        />
+      ) : null}
 
       {formVisible ? (
         <div

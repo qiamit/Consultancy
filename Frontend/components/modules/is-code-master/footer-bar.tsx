@@ -1,7 +1,5 @@
 "use client";
 
-import { useRef } from "react";
-
 const btn =
   "inline-flex items-center justify-center rounded-lg border border-zinc-300 bg-white px-2.5 py-1.5 text-xs font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700";
 
@@ -10,7 +8,7 @@ export function IsCodeMasterFooterBar({
   grandCount,
   searchActive,
   selectedCount,
-  onImportFile,
+  onImport,
   onExport,
   onPrintList,
   onDelete,
@@ -20,13 +18,12 @@ export function IsCodeMasterFooterBar({
   grandCount: number;
   searchActive: boolean;
   selectedCount: number;
-  onImportFile: (file: File) => void | Promise<void>;
+  onImport: () => void;
   onExport: () => void;
   onPrintList: () => void;
   onDelete: () => void;
   deleteDisabled: boolean;
 }) {
-  const fileRef = useRef<HTMLInputElement>(null);
   const subsetNote =
     searchActive && matchedCount !== grandCount
       ? ` (${matchedCount} of ${grandCount} loaded)`
@@ -46,23 +43,7 @@ export function IsCodeMasterFooterBar({
               ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-2">
-              <input
-                ref={fileRef}
-                type="file"
-                accept=".csv,text/csv"
-                className="hidden"
-                tabIndex={-1}
-                onChange={(e) => {
-                  const f = e.target.files?.[0];
-                  e.target.value = "";
-                  if (f) void onImportFile(f);
-                }}
-              />
-              <button
-                type="button"
-                className={btn}
-                onClick={() => fileRef.current?.click()}
-              >
+              <button type="button" className={btn} onClick={onImport}>
                 Import
               </button>
               <button type="button" className={btn} onClick={onExport}>
