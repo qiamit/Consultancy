@@ -51,6 +51,7 @@ export type ManakTestRequestPayload = {
   application: ManakTestRequestApplication;
   sample: ManakTestRequestSample;
   portalUserId?: string;
+  portalPassword?: string;
 };
 
 export type ManakTestRequestResult = {

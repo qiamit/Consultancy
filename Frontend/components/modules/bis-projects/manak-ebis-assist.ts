@@ -35,9 +35,33 @@ export function openManakEbisAssist(payload: {
   };
 
   const loginHref = manakOnlineEbisLoginHref(data.userId, data.password);
-  if (!/play\.google\.com|com\.bis\.app/i.test(loginHref)) {
-    window.open(loginHref, "_blank", "noopener,noreferrer");
+
+  let acked = false;
+  function onAck(event: MessageEvent) {
+    if (event.source !== window) return;
+    if (event.data?.type !== "QE_MANAK_OPEN_ACK") return;
+    acked = true;
+    window.removeEventListener("message", onAck);
   }
+  window.addEventListener("message", onAck);
+  window.postMessage(
+    {
+      type: "QE_MANAK_OPEN",
+      payload: null,
+      loginOnly: true,
+      loginUrl: loginHref,
+      portalUserId: data.userId,
+      portalPassword: data.password,
+    },
+    "*",
+  );
+  window.setTimeout(() => {
+    window.removeEventListener("message", onAck);
+    if (acked) return;
+    if (!/play\.google\.com|com\.bis\.app/i.test(loginHref)) {
+      window.open(loginHref, "_blank", "noopener,noreferrer");
+    }
+  }, 400);
 
   return data;
 }

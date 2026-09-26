@@ -13,6 +13,7 @@ import {
   isInclusionCaseListRow,
   type BisApplicationSource,
 } from "@backend/modules/bis/bis-project-kind";
+import { parseSourceLicenseIdFromNotes } from "@backend/modules/bis/bis-project-license-scope-notes";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export default async function BisNewInclusionPage() {
       // Pending + completed inclusion cases (completed sort to the bottom in UI).
       supabase
         .from("bis_projects")
-        .select(selectCols)
+        .select(`${selectCols}, notes`)
         .in("project_kind", inclusionKinds)
         .order("created_at", { ascending: false })
         .limit(2000),
@@ -111,18 +112,62 @@ export default async function BisNewInclusionPage() {
     };
   }
 
-  const inclusionRows = (inclusionRaw ?? [])
+  const licenseRows = (licensesRaw ?? [])
     .map((r) => mapBisRow(r as Record<string, unknown>))
+    .filter((r) => {
+      const kind = (r.project_kind ?? "").toLowerCase();
+      return !kind.includes("inclusion");
+    });
+
+  function filled(value: string | null | undefined): string {
+    return String(value ?? "").trim();
+  }
+
+  function cmDigits(value: string | null | undefined): string {
+    return String(value ?? "").replace(/\D/g, "");
+  }
+
+  function portalFromLicense(
+    row: ReturnType<typeof mapBisRow>,
+    notes: string | null | undefined,
+  ) {
+    const ownUser = filled(row.portal_user_id);
+    const ownPass = filled(row.portal_password);
+    if (ownUser && ownPass) {
+      return { portal_user_id: ownUser, portal_password: ownPass };
+    }
+    const sourceId = parseSourceLicenseIdFromNotes(notes);
+    const byId = sourceId ? licenseRows.find((license) => license.id === sourceId) : null;
+    const wanted = cmDigits(row.cm_l_digits);
+    const byCml =
+      row.client_id && wanted
+        ? licenseRows.find(
+            (license) =>
+              license.client_id === row.client_id &&
+              cmDigits(license.cm_l_digits) === wanted &&
+              (filled(license.portal_user_id) || filled(license.portal_password)),
+          )
+        : null;
+    const source = byId || byCml;
+    return {
+      portal_user_id: ownUser || filled(source?.portal_user_id) || null,
+      portal_password: ownPass || filled(source?.portal_password) || null,
+    };
+  }
+
+  const inclusionRows = (inclusionRaw ?? [])
+    .map((raw) => {
+      const record = raw as Record<string, unknown>;
+      const row = mapBisRow(record);
+      return {
+        ...row,
+        ...portalFromLicense(row, (record.notes as string | null) ?? null),
+      };
+    })
     .filter(isInclusionCaseListRow)
     .sort(compareInclusionListRows);
 
-  const inclusionLicenses = (licensesRaw ?? [])
-    .map((r) => mapBisRow(r as Record<string, unknown>))
-    .filter((r) => {
-      // Exclude in-progress inclusion cases from the picker.
-      const kind = (r.project_kind ?? "").toLowerCase();
-      return !kind.includes("inclusion");
-    })
+  const inclusionLicenses = licenseRows
     .map((r) => ({
       id: r.id,
       title: r.title,

@@ -102,6 +102,7 @@ export function openManakTestRequest(
   const payload: ManakTestRequestPayload = {
     ...buildSampleManakTestRequestPayload(row, application),
     portalUserId,
+    portalPassword,
   };
   try {
     sessionStorage.setItem("qeManakLastSampleId", payload.sampleId || "");

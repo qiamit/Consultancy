@@ -1,4 +1,9 @@
-# QE Manak Test Request (Chrome / Edge)
+# QE Manak Test Request (legacy)
+
+This folder is kept for reference. Use the merged extension instead:
+
+- Chrome / Edge / Brave: `extensions/qe-consultancy-chrome`
+- Safari: `extensions/qe-consultancy-safari`
 
 Unpacked browser extension. It opens
 [Generate Test Request](https://www.manakonline.in/MANAK/testRequestGenerationForApplicant),

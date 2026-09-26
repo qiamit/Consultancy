@@ -96,7 +96,7 @@ export function MainContentOffset({ children }: { children: ReactNode }) {
   const { open } = useSidebarLayout();
   return (
     <div
-      className={`min-h-screen transition-[padding] duration-200 ease-out ${
+      className={`min-h-dvh transition-[padding] duration-200 ease-out ${
         open ? "lg:pl-64" : "lg:pl-0"
       }`}
     >

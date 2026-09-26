@@ -21,7 +21,7 @@ export function WhatsAppFab({
       rel="noopener noreferrer"
       aria-label="Chat on WhatsApp"
       title="Free WhatsApp Consultation"
-      className={`fixed bottom-6 ${side} z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-2xl shadow-emerald-900/30 transition-transform hover:scale-110 hover:bg-[#1eb858] ${className}`}
+      className={`fixed bottom-[max(1.5rem,env(safe-area-inset-bottom))] ${side} z-50 flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-2xl shadow-emerald-900/30 transition-transform hover:scale-110 hover:bg-[#1eb858] ${className}`}
     >
       <svg className="h-7 w-7 fill-current" viewBox="0 0 24 24" aria-hidden>
         <path d={WA_PATH} />

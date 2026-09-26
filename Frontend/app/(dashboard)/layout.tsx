@@ -23,7 +23,7 @@ export default async function DashboardLayout({
 
   return (
     <SidebarLayoutProvider>
-      <div className="min-h-screen bg-background text-foreground">
+      <div className="min-h-dvh bg-background text-foreground">
         <Suspense fallback={<SidebarFallback />}>
           <Sidebar />
         </Suspense>
@@ -35,7 +35,9 @@ export default async function DashboardLayout({
           >
             <DashboardHeader />
           </Suspense>
-          <main className="px-[2mm] pt-[2mm] pb-4">{children}</main>
+          <main className="px-[2mm] pt-[2mm] pb-[max(1rem,env(safe-area-inset-bottom))]">
+            {children}
+          </main>
         </MainContentOffset>
         <QEAssistantProvider />
       </div>

@@ -41,10 +41,10 @@ export function AuthShell({
   children: ReactNode;
 }) {
   return (
-    <div className="min-h-screen flex flex-col lg:grid lg:grid-cols-[25%_50%_25%]">
+    <div className="flex min-h-dvh flex-col lg:grid lg:grid-cols-[25%_50%_25%]">
       {/* ── Left 25% — Product Certification ── */}
       <aside
-        className="order-2 flex flex-col justify-between border-b border-white/8 px-5 py-6 text-white lg:order-1 lg:min-h-screen lg:border-b-0 lg:border-r lg:px-6 lg:py-8 xl:px-7"
+        className="order-2 flex flex-col justify-between border-b border-white/8 px-5 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-white lg:order-1 lg:min-h-dvh lg:border-b-0 lg:border-r lg:px-6 lg:py-8 xl:px-7"
         style={{
           background: "linear-gradient(175deg,#0A1628 0%,#0F2347 60%,#0D1F3C 100%)",
         }}
@@ -105,7 +105,7 @@ export function AuthShell({
       </aside>
 
       {/* ── Center 50% — Auth form ── */}
-      <main className="order-1 flex flex-1 flex-col justify-center bg-zinc-50 px-5 py-10 dark:bg-zinc-950 lg:order-2 lg:min-h-screen lg:px-10 lg:py-12 xl:px-14">
+      <main className="order-1 flex flex-1 flex-col justify-center bg-zinc-50 px-5 py-10 pt-[max(2.5rem,env(safe-area-inset-top))] dark:bg-zinc-950 lg:order-2 lg:min-h-dvh lg:px-10 lg:py-12 xl:px-14">
         <div className="mx-auto w-full max-w-sm space-y-6">
           <div className="flex justify-center lg:hidden">
             <Link href="/" className="transition-opacity hover:opacity-90">
@@ -137,7 +137,7 @@ export function AuthShell({
 
       {/* ── Right 25% — Motivational ── */}
       <aside
-        className="order-3 flex flex-col justify-between border-t border-white/8 px-5 py-6 text-white lg:min-h-screen lg:border-l lg:border-t-0 lg:px-6 lg:py-8 xl:px-7"
+        className="order-3 flex flex-col justify-between border-t border-white/8 px-5 py-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] text-white lg:min-h-dvh lg:border-l lg:border-t-0 lg:px-6 lg:py-8 xl:px-7"
         style={{
           background: "linear-gradient(165deg,#0c4a6e 0%,#1e3a5f 45%,#0f172a 100%)",
         }}

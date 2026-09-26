@@ -13,7 +13,7 @@ export function splitModalEditorPaneClass(
     : "xl:w-1/2";
   return [
     "flex min-h-0 min-w-0 flex-col border-b border-zinc-800 bg-zinc-900 xl:border-b-0 xl:border-r",
-    "w-full min-h-[45vh] flex-1 xl:min-h-0 xl:flex-none",
+    "w-full min-h-[45dvh] flex-1 xl:min-h-0 xl:flex-none",
     width,
     mobilePane === "editor" ? "flex" : "hidden xl:flex",
   ].join(" ");
@@ -28,7 +28,7 @@ export function splitModalPreviewPaneClass(
     : "xl:w-1/2";
   return [
     "flex min-w-0 flex-col bg-zinc-600",
-    "w-full min-h-[45vh] flex-1 xl:min-h-0 xl:flex-none",
+    "w-full min-h-[45dvh] flex-1 xl:min-h-0 xl:flex-none",
     width,
     mobilePane === "preview" ? "flex" : "hidden xl:flex",
   ].join(" ");
@@ -37,6 +37,6 @@ export function splitModalPreviewPaneClass(
 export function splitModalSettingsPaneClass(): string {
   return [
     "w-full shrink-0 overflow-y-auto border-t border-zinc-800 bg-zinc-900 p-4",
-    "max-h-[40vh] xl:max-h-none xl:w-72 xl:border-t-0 xl:border-l",
+    "max-h-[40dvh] xl:max-h-none xl:w-72 xl:border-t-0 xl:border-l",
   ].join(" ");
 }

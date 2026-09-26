@@ -271,7 +271,10 @@ import {
   type LicenseScopeFormat,
   type LicenseScopeTableRow,
 } from "@backend/modules/bis/application-checklist-notes";
-import { parseBisProjectLicenseScopeNotes } from "@backend/modules/bis/bis-project-license-scope-notes";
+import {
+  parseBisProjectLicenseScopeNotes,
+  parseSourceLicenseIdFromNotes,
+} from "@backend/modules/bis/bis-project-license-scope-notes";
 import {
   rowHasContent as oslSampleRowHasContent,
   combineOslAndPiSamples,
@@ -472,6 +475,14 @@ type ApplicationRow = {
   notes: string | null;
   source?: BisApplicationSource;
 };
+
+function filledPortal(value: string | null | undefined): string {
+  return String(value ?? "").trim();
+}
+
+function cmLDigits(value: string | null | undefined): string {
+  return String(value ?? "").replace(/\D/g, "");
+}
 
 type ChecklistRow = {
   id: string;
@@ -1158,10 +1169,17 @@ function ApplicationFormModal({
   const [legalDocumentRows, setLegalDocumentRows] = useState<LegalDocumentRow[]>(() =>
     editorRowsFromStored(initialNotes.legalDocuments),
   );
+  const [portalUserId, setPortalUserId] = useState(() => row.portal_user_id ?? null);
+  const [portalPassword, setPortalPassword] = useState(() => row.portal_password ?? null);
   const [notesReady, setNotesReady] = useState(
     () => Boolean((row.notes ?? "").trim()),
   );
   const notesHydratedRef = useRef(Boolean((row.notes ?? "").trim()));
+
+  useEffect(() => {
+    setPortalUserId(row.portal_user_id ?? null);
+    setPortalPassword(row.portal_password ?? null);
+  }, [row.id, row.portal_user_id, row.portal_password]);
   const notesLoadGenRef = useRef(0);
   const notesSaveGenRef = useRef(0);
   const productManualPrefilledRef = useRef(false);
@@ -1684,10 +1702,14 @@ function ApplicationFormModal({
       tasks.push(
         supabase
           .from(notesTable)
-          .select("notes")
+          .select(
+            notesTable === "bis_projects"
+              ? "notes, portal_user_id, portal_password"
+              : "notes",
+          )
           .eq("id", row.id)
           .maybeSingle()
-          .then(({ data }) => {
+          .then(async ({ data }) => {
             if (cancelled || loadGen !== notesLoadGenRef.current) return;
             // One hydrate per open — a late response must not wipe in-progress edits / post-Save UI.
             if (notesHydratedRef.current) return;
@@ -1916,6 +1938,62 @@ function ApplicationFormModal({
             notesHydratedRef.current = true;
             setNotesReady(true);
             // Do not auto-flush queued edits after hydrate — wait for Save button.
+
+            const ownUser =
+              filledPortal(data?.portal_user_id) || filledPortal(row.portal_user_id);
+            const ownPass =
+              filledPortal(data?.portal_password) || filledPortal(row.portal_password);
+            let nextUser = ownUser;
+            let nextPass = ownPass;
+            if (!nextUser || !nextPass) {
+              const sourceId = parseSourceLicenseIdFromNotes(data?.notes ?? row.notes);
+              if (sourceId) {
+                const { data: license } = await supabase
+                  .from("bis_projects")
+                  .select("portal_user_id, portal_password")
+                  .eq("id", sourceId)
+                  .maybeSingle();
+                nextUser = nextUser || filledPortal(license?.portal_user_id);
+                nextPass = nextPass || filledPortal(license?.portal_password);
+              }
+            }
+            if ((!nextUser || !nextPass) && row.client_id && cmLDigits(row.cm_l_digits)) {
+              const wanted = cmLDigits(row.cm_l_digits);
+              const { data: licenses } = await supabase
+                .from("bis_projects")
+                .select("portal_user_id, portal_password, cm_l_digits")
+                .eq("client_id", row.client_id)
+                .not("license_validity_date", "is", null);
+              const match = (licenses ?? []).find((license) => {
+                if (cmLDigits(license.cm_l_digits as string | null) !== wanted) return false;
+                return Boolean(
+                  filledPortal(license.portal_user_id as string | null) ||
+                    filledPortal(license.portal_password as string | null),
+                );
+              });
+              if (match) {
+                nextUser = nextUser || filledPortal(match.portal_user_id as string | null);
+                nextPass = nextPass || filledPortal(match.portal_password as string | null);
+              }
+            }
+            if (cancelled || loadGen !== notesLoadGenRef.current) return;
+            setPortalUserId(nextUser || null);
+            setPortalPassword(nextPass || null);
+            if (
+              notesTable === "bis_projects" &&
+              nextUser &&
+              nextPass &&
+              (!ownUser || !ownPass)
+            ) {
+              void supabase
+                .from("bis_projects")
+                .update({
+                  portal_user_id: nextUser,
+                  portal_password: nextPass,
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("id", row.id);
+            }
           }),
       );
 
@@ -1968,7 +2046,7 @@ function ApplicationFormModal({
       cancelled = true;
     };
     // Keep this dependency list fixed-length (client, is-code, project, source).
-  }, [row.client_id, row.is_code_id, row.id, row.source]);
+  }, [row.client_id, row.is_code_id, row.id, row.source, row.cm_l_digits]);
 
   const done = items.filter((item) => item.done).length;
   const total = items.length;
@@ -2615,7 +2693,7 @@ function ApplicationFormModal({
     >
       <div className="relative flex h-dvh w-full flex-col overflow-hidden bg-white shadow-2xl dark:bg-zinc-900">
         {/* Header */}
-        <div className="shrink-0 bg-gradient-to-r from-sky-600 to-indigo-600 px-3 py-3 sm:px-5 sm:py-4">
+        <div className="shrink-0 bg-gradient-to-r from-sky-600 to-indigo-600 px-3 py-3 pt-[max(0.75rem,env(safe-area-inset-top))] sm:px-5 sm:py-4">
           <div className="relative flex items-center">
             <div className="absolute left-0 hidden h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/20 sm:flex">
               <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
@@ -2627,7 +2705,7 @@ function ApplicationFormModal({
             </p>
             <button
               onClick={onClose}
-              className="absolute right-0 shrink-0 rounded-lg p-1.5 text-white/70 hover:bg-white/10 hover:text-white"
+              className="absolute right-0 flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-white/70 hover:bg-white/10 hover:text-white"
             >
               <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -2951,8 +3029,8 @@ function ApplicationFormModal({
                 ? "bis_new_applications"
                 : "bis_projects",
           }}
-          portalUserId={row.portal_user_id}
-          portalPassword={row.portal_password}
+          portalUserId={portalUserId}
+          portalPassword={portalPassword}
           onSave={saveOslSampleRequirements}
           onClose={closeOslSampleRequirementsModal}
           initialFocusSampleIndex={sampleOfferLetterFocusIndex}

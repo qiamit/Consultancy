@@ -21,12 +21,12 @@ export function DashboardTopBar({
   const { open, toggle } = useSidebarLayout();
 
   return (
-    <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-zinc-200 bg-white/95 px-4 py-2.5 backdrop-blur-sm dark:border-zinc-800 dark:bg-zinc-900/95">
+    <header className="sticky top-0 z-30 flex items-center justify-between gap-3 border-b border-zinc-200 bg-white/95 px-3 py-2.5 pt-[max(0.625rem,env(safe-area-inset-top))] backdrop-blur-sm sm:px-4 dark:border-zinc-800 dark:bg-zinc-900/95">
       <div className="flex min-w-0 items-center gap-3">
         <button
           type="button"
           onClick={toggle}
-          className="rounded-none border border-zinc-200 p-2 text-zinc-600 shadow-sm hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-none border border-zinc-200 text-zinc-600 shadow-sm hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
           aria-label={open ? "Hide sidebar" : "Show sidebar"}
           aria-expanded={open}
           title={open ? "Hide sidebar" : "Show sidebar"}

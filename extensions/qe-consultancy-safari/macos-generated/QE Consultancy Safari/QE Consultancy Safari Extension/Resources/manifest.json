@@ -1,0 +1,90 @@
+{
+  "manifest_version": 3,
+  "name": "QE Consultancy",
+  "version": "2.0.3",
+  "description": "Manak Test Request fill plus copy/paste bypass and bulk field fill for Safari.",
+  "action": {
+    "default_title": "QE Consultancy",
+    "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "scripts": ["background.js"],
+    "persistent": false
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content-bypass.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    },
+    {
+      "matches": [
+        "https://www.manakonline.in/*",
+        "https://manakonline.in/*"
+      ],
+      "js": ["page-hook.js"],
+      "run_at": "document_start",
+      "world": "MAIN"
+    },
+    {
+      "matches": [
+        "https://www.manakonline.in/*",
+        "https://manakonline.in/*"
+      ],
+      "js": ["field-map.js", "content.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://qengineering.in/*",
+        "https://www.qengineering.in/*",
+        "https://*.qengineering.in/*",
+        "https://*.up.railway.app/*",
+        "https://*.railway.app/*",
+        "https://consultancy-production-9720.up.railway.app/*"
+      ],
+      "js": ["bridge.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://play.google.com/*",
+        "https://apps.apple.com/*"
+      ],
+      "js": ["close-play-store.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "tabs",
+    "activeTab",
+    "clipboardRead",
+    "clipboardWrite",
+    "scripting",
+    "downloads",
+    "declarativeNetRequest",
+    "webNavigation"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "block_bis_play_store",
+        "enabled": true,
+        "path": "block-rules.json"
+      }
+    ]
+  },
+  "browser_specific_settings": {
+    "safari": {
+      "strict_min_version": "16.4"
+    }
+  }
+}

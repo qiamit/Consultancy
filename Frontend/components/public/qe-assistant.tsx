@@ -179,7 +179,7 @@ export function QEAssistant() {
       {open && (
         <div
           className="fixed z-[60] flex flex-col rounded-2xl shadow-2xl shadow-black/20 border border-zinc-200 dark:border-zinc-700 overflow-hidden bg-white dark:bg-zinc-900 transition-all bottom-24 right-6 w-[min(380px,calc(100vw-3rem))]"
-          style={{ maxHeight: "min(520px, calc(100vh - 10rem))" }}
+          style={{ maxHeight: "min(520px, calc(100dvh - 10rem))" }}
         >
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-3 bg-gradient-to-r from-sky-600 via-sky-500 to-indigo-600 flex-shrink-0">

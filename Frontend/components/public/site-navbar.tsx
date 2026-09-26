@@ -112,7 +112,7 @@ export function SiteNavbar() {
   };
 
   return (
-    <header className={`fixed top-0 left-0 right-0 z-50 w-full max-w-[100vw] overflow-x-clip transition-all duration-300 border-b border-zinc-200/80 dark:border-zinc-800 ${scrolled ? "bg-white shadow-sm dark:bg-zinc-900" : "bg-white/90 backdrop-blur-md dark:bg-zinc-900/90"}`}>
+    <header className={`fixed top-0 left-0 right-0 z-50 w-full max-w-[100vw] overflow-x-clip pt-[env(safe-area-inset-top)] transition-all duration-300 border-b border-zinc-200/80 dark:border-zinc-800 ${scrolled ? "bg-white shadow-sm dark:bg-zinc-900" : "bg-white/90 backdrop-blur-md dark:bg-zinc-900/90"}`}>
       <div className="h-[3px] bg-gradient-to-r from-sky-600 via-indigo-600 to-sky-600" />
 
       <nav className="w-full px-3 sm:px-6 lg:px-8 flex items-center h-[62px] gap-2 sm:gap-4 overflow-hidden">

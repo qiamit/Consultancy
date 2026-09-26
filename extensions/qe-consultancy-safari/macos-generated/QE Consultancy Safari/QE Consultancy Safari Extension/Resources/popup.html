@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>QE Consultancy</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main class="app">
+      <header class="topbar">
+        <div class="brand-row">
+          <span class="mark" aria-hidden="true">QE</span>
+          <div>
+            <h1>QE Consultancy</h1>
+            <p class="subtitle">Manak + copy / paste</p>
+          </div>
+        </div>
+      </header>
+
+      <section class="panel" aria-labelledby="manakTitle">
+        <div class="panel-head">
+          <h2 id="manakTitle">Manak Test Request</h2>
+        </div>
+        <div class="action-row">
+          <button id="power" class="icon-btn on" type="button" title="Extension ON/OFF">ON</button>
+          <button id="openTr" class="icon-btn green" type="button" title="Open Test Request">TR</button>
+          <button id="fill" class="icon-btn" type="button" title="Fill from clipboard">Fill</button>
+          <button id="login" class="icon-btn red" type="button" title="Open eBIS login">Login</button>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="settingsTitle">
+        <div class="panel-head">
+          <h2 id="settingsTitle">Copy / Paste</h2>
+        </div>
+        <div class="toggle-grid">
+          <label class="tile" for="enableBypass">
+            <span class="tile-top">
+              <span class="tile-title">Copy / Paste</span>
+              <span class="switch">
+                <input id="enableBypass" type="checkbox" />
+                <span class="slider"></span>
+              </span>
+            </span>
+          </label>
+          <label class="tile" for="enableCtrlBypass">
+            <span class="tile-top">
+              <span class="tile-title">Shortcuts</span>
+              <span class="switch">
+                <input id="enableCtrlBypass" type="checkbox" />
+                <span class="slider"></span>
+              </span>
+            </span>
+          </label>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="fillTitle">
+        <div class="panel-head">
+          <h2 id="fillTitle">Bulk Fill</h2>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="fieldName">Field name</label>
+            <input id="fieldName" type="text" placeholder="email, batch…" autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="fieldValue">Value</label>
+            <input id="fieldValue" type="text" placeholder="Value to apply" autocomplete="off" />
+          </div>
+        </div>
+        <button id="fillButton" type="button">Fill matching fields</button>
+      </section>
+
+      <p id="status" class="status" aria-live="polite"></p>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>
