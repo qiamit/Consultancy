@@ -312,7 +312,7 @@ export function DashboardHome({
   const quickLinks = DASHBOARD_MODULES.filter(
     (m) =>
       canSee(allowed, m.key) &&
-      (m.inMainNav || m.key === "email") &&
+      m.inMainNav &&
       (user.isAdmin || m.key !== "email"),
   );
 
