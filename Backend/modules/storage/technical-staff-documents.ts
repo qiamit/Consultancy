@@ -25,6 +25,8 @@ export function decodeStoredDocumentRef(value: string): string | null {
     return v.slice(TECH_STAFF_STORAGE_PREFIX.length);
   }
   if (v.startsWith("bis-projects/")) return v;
+  if (v.startsWith("osl-sample-test-requests/")) return v;
+  if (v.startsWith("osl-sample-test-reports/")) return v;
   return null;
 }
 

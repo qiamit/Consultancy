@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { LicenseScopeFormat } from "@backend/modules/bis/application-checklist-notes";
 import { editorRowsToStored } from "@backend/modules/bis/license-scope-format";
 import { BIS_FIELD_LABEL_CLASS } from "./constants";
+import { IsCodeRelatedFilesPanel } from "@/components/modules/is-code-master/related-files-panel";
 import {
   LicenseScopeTableEditor,
   rowsFromScopeJson,
@@ -17,6 +18,7 @@ export function LicenseScopeField({
   onRowsJsonChange,
   label = "Licence Scope",
   placeholder = "Enter licence / manufacturing scope…",
+  isCodeId,
 }: {
   scopeType: LicenseScopeFormat;
   plainText: string;
@@ -25,6 +27,7 @@ export function LicenseScopeField({
   onRowsJsonChange: (v: string) => void;
   label?: string;
   placeholder?: string;
+  isCodeId?: string | null;
 }) {
   const [tableRows, setTableRows] = useState(() => rowsFromScopeJson(rowsJson));
 
@@ -70,6 +73,7 @@ export function LicenseScopeField({
           </div>
         </>
       )}
+      <IsCodeRelatedFilesPanel isCodeId={isCodeId} />
     </div>
   );
 }

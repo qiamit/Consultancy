@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { createClient } from "@backend/db/client/client";
-import { uploadTechnicalStaffDocument } from "@backend/modules/storage/technical-staff-documents";
+import { DOCUMENTS_BUCKET } from "@backend/modules/storage/documents";
+import {
+  decodeStoredDocumentRef,
+  isDirectDocumentUrl,
+  uploadTechnicalStaffDocument,
+} from "@backend/modules/storage/technical-staff-documents";
 import { StorageDocumentLink } from "@/components/dashboard/storage-document-link";
 import {
   isSampleIncludedInPrint,
@@ -187,6 +193,234 @@ function IconDoc() {
   );
 }
 
+function oslDocumentStoragePath(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const decoded = decodeStoredDocumentRef(trimmed);
+  if (decoded) return decoded;
+  if (
+    trimmed.startsWith("osl-sample-test-requests/") ||
+    trimmed.startsWith("osl-sample-test-reports/")
+  ) {
+    return trimmed;
+  }
+  if (!isDirectDocumentUrl(trimmed)) return null;
+  try {
+    const path = decodeURIComponent(new URL(trimmed).pathname.replace(/^\/+/, ""));
+    if (
+      path.startsWith("osl-sample-test-requests/") ||
+      path.startsWith("osl-sample-test-reports/")
+    ) {
+      return path;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+export function oslDocumentInlineUrl(ref: string, filename?: string): string | null {
+  const path = oslDocumentStoragePath(ref);
+  if (!path) return null;
+  const params = new URLSearchParams({
+    bucket: DOCUMENTS_BUCKET,
+    path,
+    disposition: "inline",
+  });
+  const name = (filename ?? "").trim() || path.split("/").pop() || "Test-Request.pdf";
+  params.set("filename", name);
+  return `/api/storage/public?${params.toString()}`;
+}
+
+export async function fetchOslDocumentFile(
+  ref: string,
+  filename: string,
+): Promise<File | null> {
+  const name = filename.trim() || "Test-Request.pdf";
+  const inlineUrl = oslDocumentInlineUrl(ref, name);
+  if (inlineUrl) {
+    const res = await fetch(inlineUrl);
+    if (res.ok) {
+      const blob = await res.blob();
+      return new File([blob], name, { type: "application/pdf" });
+    }
+  }
+  return null;
+}
+
+function testRequestButtonClass(hasSampleCode: boolean, hasPdf: boolean): string {
+  if (hasSampleCode && hasPdf) {
+    return "border-emerald-500/50 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25";
+  }
+  if (hasSampleCode && !hasPdf) {
+    return "border-red-500/50 bg-red-500/15 text-red-200 hover:bg-red-500/25";
+  }
+  return "border-zinc-600/70 bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800";
+}
+
+function TestRequestButton({
+  hasSampleCode,
+  fileRef,
+  fileName,
+  uploading,
+  onAttach,
+  onDelete,
+}: {
+  hasSampleCode: boolean;
+  fileRef: string;
+  fileName?: string;
+  uploading: boolean;
+  onAttach: (file: File | null) => void;
+  onDelete: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const clickTimerRef = useRef<number | null>(null);
+  const ignoreGhostClickRef = useRef(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const hasPdf = Boolean(fileRef.trim());
+  const attachedName = (fileName ?? "").trim();
+
+  useEffect(() => {
+    return () => {
+      if (clickTimerRef.current != null) window.clearTimeout(clickTimerRef.current);
+    };
+  }, []);
+
+  function openPicker() {
+    ignoreGhostClickRef.current = true;
+    inputRef.current?.click();
+    window.setTimeout(() => {
+      ignoreGhostClickRef.current = false;
+    }, 800);
+  }
+
+  function viewTestRequest() {
+    const inlineUrl = oslDocumentInlineUrl(fileRef, attachedName);
+    if (inlineUrl) {
+      window.open(inlineUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    window.alert("Test Request file could not be opened.");
+  }
+
+  function handleClick() {
+    if (uploading || ignoreGhostClickRef.current) return;
+    if (!hasPdf) {
+      if (clickTimerRef.current != null) {
+        window.clearTimeout(clickTimerRef.current);
+        clickTimerRef.current = null;
+      }
+      openPicker();
+      return;
+    }
+    if (clickTimerRef.current != null) window.clearTimeout(clickTimerRef.current);
+    clickTimerRef.current = window.setTimeout(() => {
+      clickTimerRef.current = null;
+      viewTestRequest();
+    }, 280);
+  }
+
+  function handleDoubleClick() {
+    if (uploading || !hasPdf) return;
+    if (clickTimerRef.current != null) {
+      window.clearTimeout(clickTimerRef.current);
+      clickTimerRef.current = null;
+    }
+    setConfirmOpen(true);
+  }
+
+  const title = uploading
+    ? "Attaching Test Request…"
+    : hasPdf
+      ? `Test Request${attachedName ? `: ${attachedName}` : ""}. Click to view. Double-click to delete.`
+      : hasSampleCode
+        ? "Sample Code is ready, but Test Request PDF is missing. Click to attach."
+        : "No Sample Code and no Test Request. Click to attach.";
+
+  return (
+    <span className="inline-flex">
+      <button
+        type="button"
+        disabled={uploading}
+        onClick={handleClick}
+        onDoubleClick={handleDoubleClick}
+        aria-label={title}
+        title={title}
+        className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-semibold ${testRequestButtonClass(hasSampleCode, hasPdf)} ${
+          uploading ? "pointer-events-none opacity-60" : ""
+        }`}
+      >
+        <IconDoc />
+        Request
+      </button>
+      <input
+        ref={inputRef}
+        type="file"
+        className="sr-only"
+        tabIndex={-1}
+        accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
+        disabled={uploading}
+        onClick={(e) => e.stopPropagation()}
+        onChange={(e) => {
+          const file = e.target.files?.[0] ?? null;
+          e.target.value = "";
+          if (file) onAttach(file);
+        }}
+      />
+      {confirmOpen
+        ? createPortal(
+            <div
+              className="fixed inset-0 z-[600] flex items-center justify-center bg-black/70 px-4"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="osl-delete-test-request-title"
+              onClick={() => setConfirmOpen(false)}
+            >
+              <div
+                className="w-full max-w-sm rounded-xl border border-zinc-700 bg-zinc-900 p-4 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <h3
+                  id="osl-delete-test-request-title"
+                  className="text-sm font-semibold text-white"
+                >
+                  Delete Test Request?
+                </h3>
+                <p className="mt-2 text-xs leading-relaxed text-zinc-300">
+                  Remove{" "}
+                  <span className="font-semibold text-zinc-100">
+                    {attachedName || "this Test Request PDF"}
+                  </span>
+                  ? This cannot be undone.
+                </p>
+                <div className="mt-4 flex justify-end gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmOpen(false)}
+                    className="rounded-lg border border-zinc-600 bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setConfirmOpen(false);
+                      onDelete();
+                    }}
+                    className="rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500"
+                  >
+                    Delete
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </span>
+  );
+}
+
 function AttachFileButton({
   attached,
   fileName,
@@ -328,11 +562,11 @@ export function OslSampleRequirementsTableEditor({
   ) {
     if (!file) return;
     const key = `${row.id}:${kind}`;
+    const label = kind === "request" ? "Test request" : "Test report";
     setUploadingKey(key);
     try {
       const folder = kind === "request" ? "osl-sample-test-requests" : "osl-sample-test-reports";
       const fallback = kind === "request" ? "test-request" : "test-report";
-      const label = kind === "request" ? "Test request" : "Test report";
       const safeName = file.name.replace(/[^\w.\-]+/g, "-").slice(0, 120) || fallback;
       const safeId = row.id.replace(/[^\w.\-]+/g, "-").slice(0, 80);
       const path = `${folder}/${safeId}/${Date.now()}-${safeName}`;
@@ -353,9 +587,29 @@ export function OslSampleRequirementsTableEditor({
               test_report_name: file.name.trim() || safeName,
             }),
       });
+    } catch (err) {
+      window.alert(
+        `${label} upload failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
     } finally {
       setUploadingKey(null);
     }
+  }
+
+  async function removeSampleRequestFile(row: OslSampleRequirementRow) {
+    const ref = (row.test_request_ref ?? "").trim();
+    const path = oslDocumentStoragePath(ref);
+    if (path) {
+      await createClient()
+        .storage.from(DOCUMENTS_BUCKET)
+        .remove([path])
+        .catch(() => undefined);
+    }
+    onUpdate({
+      ...row,
+      test_request_ref: "",
+      test_request_name: "",
+    });
   }
 
   useEffect(() => {
@@ -394,22 +648,14 @@ export function OslSampleRequirementsTableEditor({
             {row.priority}
           </span>
         ) : null}
-        <AttachFileButton
-          attached={Boolean(row.test_request_ref?.trim())}
+        <TestRequestButton
+          hasSampleCode={Boolean(row.sample_code.trim())}
+          fileRef={row.test_request_ref ?? ""}
           fileName={row.test_request_name}
           uploading={uploadingKey === `${row.id}:request`}
-          title="Attach Test Request"
-          accept=".pdf,.doc,.docx,.jpg,.jpeg,.png"
-          icon={<IconDoc />}
-          onPick={(file) => void attachSampleFile(row, file, "request")}
+          onAttach={(file) => void attachSampleFile(row, file, "request")}
+          onDelete={() => void removeSampleRequestFile(row)}
         />
-        {row.test_request_ref?.trim() ? (
-          <StorageDocumentLink
-            value={row.test_request_ref}
-            label="Request"
-            className="inline-flex items-center rounded-full border border-sky-500/40 bg-sky-500/10 px-2 py-0.5 text-[10px] font-semibold text-sky-200 hover:bg-sky-500/20"
-          />
-        ) : null}
         <AttachFileButton
           attached={Boolean(row.test_report_ref?.trim())}
           fileName={row.test_report_name}

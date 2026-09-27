@@ -29,11 +29,17 @@ export const IS_CODE_CSV_HEADERS = [
   "slab_3_rate",
 ] as const;
 
-export const IS_CODE_FILE_CSV_HEADERS = ["file_names", "file_path"] as const;
+export const IS_CODE_PDF_CSV_HEADERS = [
+  "pdf_files",
+  "product_manual_pdf",
+  "standard_pdf",
+  "file_path",
+] as const;
 
 export const IS_CODE_EXPORT_HEADERS = [
-  ...IS_CODE_CSV_HEADERS,
-  ...IS_CODE_FILE_CSV_HEADERS,
+  ...IS_CODE_CSV_HEADERS.slice(0, 7),
+  ...IS_CODE_PDF_CSV_HEADERS,
+  ...IS_CODE_CSV_HEADERS.slice(7),
 ] as const;
 
 export type IsCodeCsvHeader = (typeof IS_CODE_CSV_HEADERS)[number];
@@ -80,7 +86,36 @@ function numStr(n: number | null | undefined): string {
   return String(n);
 }
 
+function fileDisplayName(file: { file_name: string | null; storage_path: string }): string {
+  return file.file_name || file.storage_path.split("/").pop() || "";
+}
+
+function isProductManualPdf(name: string): boolean {
+  return /product[_\s-]*manual|\bpm[_\s-]/i.test(name);
+}
+
+function isStandardPdf(name: string): boolean {
+  return /standard|amendment/i.test(name) && !isProductManualPdf(name);
+}
+
+function pdfColumnsFromFiles(c: IsCodeMasterRow): {
+  pdf_files: string;
+  product_manual_pdf: string;
+  standard_pdf: string;
+  file_path: string;
+} {
+  const names = (c.files ?? []).map(fileDisplayName).filter(Boolean);
+  const pdf_files = names.join("; ");
+  return {
+    pdf_files,
+    product_manual_pdf: names.filter(isProductManualPdf).join("; "),
+    standard_pdf: names.filter(isStandardPdf).join("; "),
+    file_path: pdf_files,
+  };
+}
+
 export function isCodeRowToCsvRecord(c: IsCodeMasterRow): Record<string, string> {
+  const pdfs = pdfColumnsFromFiles(c);
   return {
     is_number: c.is_number ?? "",
     revision_year: numStr(c.revision_year),
@@ -91,6 +126,7 @@ export function isCodeRowToCsvRecord(c: IsCodeMasterRow): Record<string, string>
     aspect_of_is: c.aspect_of_is ?? "",
     product_manual_number: c.product_manual_number ?? "",
     is_code_title: c.is_code_title ?? "",
+    ...pdfs,
     testing_charges: numStr(c.testing_charges),
     unit_of_is: c.unit_of_is ?? "",
     mmf_large_scale: numStr(c.mmf_large_scale),
@@ -103,11 +139,6 @@ export function isCodeRowToCsvRecord(c: IsCodeMasterRow): Record<string, string>
     slab_2_rate: numStr(c.slab_2_rate),
     slab_3_quantity: c.slab_3_quantity ?? "",
     slab_3_rate: numStr(c.slab_3_rate),
-    file_names: (c.files ?? [])
-      .map((f) => f.file_name || f.storage_path.split("/").pop() || "")
-      .filter(Boolean)
-      .join("; "),
-    file_path: "",
   };
 }
 
@@ -131,9 +162,30 @@ export async function buildIsCodeExportXlsx(rows: IsCodeMasterRow[]): Promise<Bl
     sheet.addRow(IS_CODE_EXPORT_HEADERS.map((h) => rec[h] ?? ""));
   }
   sheet.getRow(1).font = { bold: true };
-  sheet.columns.forEach((col) => {
-    col.width = 18;
+  sheet.columns.forEach((col, index) => {
+    const key = IS_CODE_EXPORT_HEADERS[index];
+    col.width = key && /pdf|file_path|title/i.test(key) ? 36 : 16;
   });
+
+  const filesSheet = workbook.addWorksheet("PDF Files");
+  filesSheet.addRow(["is_number", "revision_year", "pdf_kind", "file_name"]);
+  filesSheet.getRow(1).font = { bold: true };
+  for (const row of rows) {
+    const files = row.files ?? [];
+    if (files.length === 0) continue;
+    for (const file of files) {
+      const name = fileDisplayName(file);
+      if (!name) continue;
+      const kind = isProductManualPdf(name)
+        ? "product_manual"
+        : isStandardPdf(name)
+          ? "standard"
+          : "other";
+      filesSheet.addRow([row.is_number, row.revision_year, kind, name]);
+    }
+  }
+  filesSheet.columns = [{ width: 16 }, { width: 14 }, { width: 18 }, { width: 48 }];
+
   const buffer = await workbook.xlsx.writeBuffer();
   return new Blob([buffer], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

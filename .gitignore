@@ -94,6 +94,10 @@ scratch/
 uploads/
 tmp/
 temp/
+.tmp/
+
+# leftover unused extension folder (nested git / local only)
+extensions/Copy Paste/
 
 # tooling caches
 .cache/

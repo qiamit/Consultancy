@@ -19,6 +19,12 @@ export const FILE_PATH_HEADER_ALIASES = new Set([
   "product manual pdf",
   "document_path",
   "document path",
+  "pdf_files",
+  "pdf_file",
+  "pdfs",
+  "product_manual_pdf",
+  "standard_pdf",
+  "file_names",
 ]);
 
 export function normalizeImportHeader(raw: string): string {

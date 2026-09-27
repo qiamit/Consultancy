@@ -579,6 +579,7 @@ export function BisProjectsMasterForm({
           rowsJson={formValues.license_scope_rows}
           onPlainTextChange={(v) => onUpdateField("notes", v)}
           onRowsJsonChange={(v) => onUpdateField("license_scope_rows", v)}
+          isCodeId={formValues.is_code_id}
         />
 
         <div className="flex flex-wrap items-center justify-end gap-3 sm:col-span-2 lg:col-span-4">

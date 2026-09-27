@@ -15,6 +15,7 @@ import {
 } from "@backend/modules/bis/bis-project-license-status";
 import { BIS_FIELD_LABEL_CLASS, DEFAULT_BILLING_FREQUENCY } from "./constants";
 import { openManakEbisAssist } from "@/components/modules/bis-projects/manak-ebis-assist";
+import { IsCodeRelatedFilesPanel } from "@/components/modules/is-code-master/related-files-panel";
 import { IsCodeCombobox, type IsCodeComboboxOption } from "./is-code-combobox";
 
 const fieldInputRowShellClass =
@@ -544,6 +545,7 @@ export function BisNewApplicationsMasterForm({
             onChange={(e) => onUpdateField("notes", e.target.value)}
             className="mt-1 block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100"
           />
+          <IsCodeRelatedFilesPanel isCodeId={formValues.is_code_id} />
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3 sm:col-span-2 lg:col-span-4">

@@ -458,6 +458,7 @@ export function StartInclusionFromLicenseModal({
               onRowsJsonChange={setScopeRowsJson}
               label="Inclusion Scope"
               placeholder="Enter inclusion / manufacturing scope to add…"
+              isCodeId={isCodeId}
             />
           </div>
 

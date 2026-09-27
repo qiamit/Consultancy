@@ -636,6 +636,7 @@ export function AddNewApplicationModal({
               rowsJson={scopeRowsJson}
               onPlainTextChange={setScopePlain}
               onRowsJsonChange={setScopeRowsJson}
+              isCodeId={isCodeId}
             />
 
             {error ? (

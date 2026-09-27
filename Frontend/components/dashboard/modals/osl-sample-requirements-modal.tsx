@@ -7,7 +7,9 @@ import { OslSampleFormModal } from "@/components/dashboard/modals/osl-sample-for
 import {
   OslSampleAddButton,
   OslSampleRequirementsTableEditor,
+  fetchOslDocumentFile,
 } from "@/components/dashboard/osl-sample-requirements-table-editor";
+import { PDFDocument } from "pdf-lib";
 import { DocumentPrintSettingsPanel } from "@/components/dashboard/print/document-print-settings-panel";
 import {
   printPreviewIframeStyle,
@@ -266,6 +268,7 @@ export function OslSampleRequirementsModal({
   const [clientRows, setClientRows] = useState<ClientPickerRow[]>([]);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
+  const [combiningKind, setCombiningKind] = useState<"request" | "report" | null>(null);
   const [showCourierLabelsPreview, setShowCourierLabelsPreview] = useState(false);
   const [courierFocusRowId, setCourierFocusRowId] = useState<string | null>(null);
   const [courierLabelsHtml, setCourierLabelsHtml] = useState("");
@@ -512,6 +515,14 @@ export function OslSampleRequirementsModal({
     () => storedFromEditor(rows).length,
     [rows],
   );
+  const testRequestRows = useMemo(
+    () => rows.filter((row) => (row.test_request_ref ?? "").trim()),
+    [rows],
+  );
+  const testReportRows = useMemo(
+    () => rows.filter((row) => (row.test_report_ref ?? "").trim()),
+    [rows],
+  );
 
   const refreshPreview = useCallback(() => {
     const iframe = iframeRef.current;
@@ -690,6 +701,81 @@ export function OslSampleRequirementsModal({
       letterVariant,
       printAssets,
     ).catch(() => window.alert("Unable to download Word file."));
+  }
+
+  async function handleDownloadCombinedPdfs(kind: "request" | "report") {
+    if (combiningKind) return;
+    const sourceRows = kind === "request" ? testRequestRows : testReportRows;
+    const label = kind === "request" ? "Test Request" : "Test Report";
+    const filePrefix = kind === "request" ? "Test_Requests" : "Test_Reports";
+    if (sourceRows.length === 0) {
+      window.alert(`No ${label} PDFs are attached on the sample cards.`);
+      return;
+    }
+
+    setCombiningKind(kind);
+    try {
+      const files: File[] = [];
+      for (const row of sourceRows) {
+        const ref =
+          kind === "request"
+            ? (row.test_request_ref ?? "").trim()
+            : (row.test_report_ref ?? "").trim();
+        const storedName =
+          kind === "request"
+            ? (row.test_request_name ?? "").trim()
+            : (row.test_report_name ?? "").trim();
+        const name =
+          storedName ||
+          `${label.replace(" ", "-")}-${(row.sample_code || row.id).replace(/[^\w.-]+/g, "-")}.pdf`;
+        const file = await fetchOslDocumentFile(ref, name);
+        if (file) files.push(file);
+      }
+
+      if (files.length === 0) {
+        window.alert(`Could not load any ${label} PDFs.`);
+        return;
+      }
+
+      const merged = await PDFDocument.create();
+      for (const file of files) {
+        try {
+          const src = await PDFDocument.load(await file.arrayBuffer(), {
+            ignoreEncryption: true,
+          });
+          const pages = await merged.copyPages(src, src.getPageIndices());
+          pages.forEach((page) => merged.addPage(page));
+        } catch {
+          /* skip encrypted or unreadable files */
+        }
+      }
+
+      if (merged.getPageCount() < 1) {
+        window.alert(`Could not combine ${label} PDFs.`);
+        return;
+      }
+
+      const bytes = await merged.save();
+      const copy = new Uint8Array(bytes.byteLength);
+      copy.set(bytes);
+      const blob = new Blob([copy], { type: "application/pdf" });
+      const filename = `${filePrefix}_${safePdfFilenamePart(letterData.companyName)}.pdf`;
+      const href = URL.createObjectURL(blob);
+      window.open(href, "_blank", "noopener,noreferrer");
+      const a = document.createElement("a");
+      a.href = href;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(href), 60_000);
+    } catch (err) {
+      window.alert(
+        err instanceof Error ? err.message : `Unable to download combined ${label}s.`,
+      );
+    } finally {
+      setCombiningKind(null);
+    }
   }
 
   async function handleDownloadPdf() {
@@ -1035,12 +1121,52 @@ export function OslSampleRequirementsModal({
               }`}
             >
               <div className="border-b border-zinc-800 px-3 py-2.5 sm:px-4 sm:py-3">
-                <div className="flex flex-wrap items-center gap-2 sm:justify-between">
-                  <h2 className="min-w-0 flex-1 truncate text-sm font-semibold text-white">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="min-w-0 shrink-0 text-sm font-semibold text-white">
                     {labels.modalTitle}
                   </h2>
-                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
                   <OslSampleAddButton theme="dark" onClick={openAddSampleForm} />
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadCombinedPdfs("request")}
+                    disabled={combiningKind !== null || testRequestRows.length === 0}
+                    title={
+                      testRequestRows.length === 0
+                        ? "Attach Test Request PDFs on sample cards first"
+                        : `Merge all ${testRequestRows.length} Test Request PDFs into one file, then download`
+                    }
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-sky-500/60 bg-sky-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-50"
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12L12 16.5m0 0l4.5-4.5M12 16.5V3" />
+                    </svg>
+                    {combiningKind === "request"
+                      ? "Merging…"
+                      : testRequestRows.length > 0
+                        ? `Merge Test Requests (${testRequestRows.length})`
+                        : "Merge Test Requests"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleDownloadCombinedPdfs("report")}
+                    disabled={combiningKind !== null || testReportRows.length === 0}
+                    title={
+                      testReportRows.length === 0
+                        ? "Attach Test Report PDFs on sample cards first"
+                        : `Merge all ${testReportRows.length} Test Report PDFs into one file, then download`
+                    }
+                    className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-amber-500/60 bg-amber-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-50"
+                  >
+                    <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M7.5 12L12 16.5m0 0l4.5-4.5M12 16.5V3" />
+                    </svg>
+                    {combiningKind === "report"
+                      ? "Merging…"
+                      : testReportRows.length > 0
+                        ? `Merge Test Reports (${testReportRows.length})`
+                        : "Merge Test Reports"}
+                  </button>
                   {isCodeFiles.map((file) => {
                     const name = isCodeFileDisplayName(file);
                     return (
