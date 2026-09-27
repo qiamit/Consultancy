@@ -19,14 +19,10 @@ function extensionOf(fileName: string): string {
 
 type PdfParseFn = (data: Buffer) => Promise<{ text: string }>;
 
-declare module "pdf-parse/lib/pdf-parse.js" {
-  const pdfParse: PdfParseFn;
-  export default pdfParse;
-}
-
 async function loadPdfParse(): Promise<PdfParseFn> {
   // Import the implementation file. `pdf-parse` index.js runs debug I/O when
   // `module.parent` is missing (ESM / some bundlers).
+  // @ts-expect-error pdf-parse has no types for this implementation path
   const mod = (await import("pdf-parse/lib/pdf-parse.js")) as
     | PdfParseFn
     | { default: PdfParseFn };
