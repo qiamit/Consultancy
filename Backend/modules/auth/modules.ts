@@ -1,105 +1,131 @@
+export type StaffModuleGroup = "core" | "bis" | "masters" | "tools";
+
+export const STAFF_MODULE_GROUPS: { id: StaffModuleGroup; label: string }[] = [
+  { id: "core", label: "Home" },
+  { id: "bis", label: "BIS Operations" },
+  { id: "masters", label: "Masters" },
+  { id: "tools", label: "Tools" },
+];
+
 export const DASHBOARD_MODULES = [
   {
     key: "dashboard",
     label: "Dashboard",
     href: "/dashboard",
     inMainNav: true,
+    group: "core" as StaffModuleGroup,
   },
   {
     key: "bis_applications",
     label: "BIS New Application",
     href: "/dashboard/bis-new-applications",
     inMainNav: true,
+    group: "bis" as StaffModuleGroup,
   },
   {
     key: "bis_new_inclusion",
     label: "BIS New Inclusion",
     href: "/dashboard/bis-new-inclusion",
     inMainNav: true,
+    group: "bis" as StaffModuleGroup,
   },
   {
     key: "bis_license_renewals",
     label: "BIS Licenses Renewals",
     href: "/dashboard/bis-license-renewals",
     inMainNav: true,
+    group: "bis" as StaffModuleGroup,
   },
   {
     key: "license_stop_marking",
     label: "License in Stop Marking",
     href: "/dashboard/license-stop-marking",
     inMainNav: true,
+    group: "bis" as StaffModuleGroup,
   },
   {
     key: "bis_surveillance",
     label: "BIS Surveillances",
     href: "/dashboard/bis-surveillance",
     inMainNav: true,
+    group: "bis" as StaffModuleGroup,
   },
   {
     key: "bis_sample_failure_reply",
     label: "BIS Sample Failure Reply",
     href: "/dashboard/bis-sample-failure-reply",
     inMainNav: true,
+    group: "bis" as StaffModuleGroup,
   },
   {
     key: "our_bis_licenses",
     label: "QE BIS Licenses",
     href: "/dashboard/our-bis-licenses",
     inMainNav: true,
+    group: "bis" as StaffModuleGroup,
   },
   {
     key: "bis_projects",
     label: "All BIS Licenses",
     href: "/dashboard/bis-projects",
     inMainNav: true,
+    group: "bis" as StaffModuleGroup,
+  },
+  {
+    key: "expired_licenses",
+    label: "Expired Licenses",
+    href: "/dashboard/expired-licenses",
+    inMainNav: true,
+    group: "bis" as StaffModuleGroup,
   },
   {
     key: "clients",
     label: "Client Master",
     href: "/dashboard/clients",
     inMainNav: true,
+    group: "masters" as StaffModuleGroup,
   },
   {
     key: "is_codes",
     label: "IS Code Master",
     href: "/dashboard/is-code-master",
     inMainNav: true,
+    group: "masters" as StaffModuleGroup,
   },
   {
     key: "products",
     label: "Product & Services",
     href: "/dashboard/products",
     inMainNav: true,
+    group: "masters" as StaffModuleGroup,
+  },
+  {
+    key: "test_parameters",
+    label: "Test Parameter",
+    href: "/dashboard/test-parameters",
+    inMainNav: true,
+    group: "masters" as StaffModuleGroup,
   },
   {
     key: "finance",
     label: "Finance Management",
     href: "/dashboard/finance",
     inMainNav: true,
-  },
-  {
-    key: "expired_licenses",
-    label: "Expired Licenses",
-    href: "/dashboard/expired-licenses",
-    inMainNav: false,
-  },
-  {
-    key: "test_parameters",
-    label: "Test Parameter",
-    href: "/dashboard/test-parameters",
-    inMainNav: false,
+    group: "tools" as StaffModuleGroup,
   },
   {
     key: "email",
     label: "Email",
     href: "/dashboard/email",
-    inMainNav: false,
+    inMainNav: true,
+    group: "tools" as StaffModuleGroup,
   },
   {
     key: "cms",
     label: "Website CMS",
     href: "/dashboard/cms",
     inMainNav: true,
+    group: "tools" as StaffModuleGroup,
   },
   {
     key: "company_settings",
@@ -209,6 +235,51 @@ export function normalizeModuleAccessMap(raw: unknown): ModuleAccessMap {
   return result;
 }
 
+/** Every staff module gets an explicit Edit / View / None value. */
+export function completeStaffModuleAccessMap(raw: unknown): ModuleAccessMap {
+  const normalized = normalizeModuleAccessMap(raw);
+  const result: ModuleAccessMap = { dashboard: "edit" };
+  for (const mod of STAFF_ASSIGNABLE_MODULES) {
+    if (mod.key === "dashboard") {
+      result.dashboard = "edit";
+      continue;
+    }
+    result[mod.key] = normalized[mod.key] ?? "none";
+  }
+  return result;
+}
+
+/** Sensible defaults when a new Inspection Engineer or Accountant is created. */
+export function defaultModuleAccessForRole(role: string): ModuleAccessMap {
+  const map = completeStaffModuleAccessMap({});
+  const slug = role.trim().toLowerCase();
+
+  if (slug === "accountant") {
+    map.finance = "edit";
+    map.clients = "view";
+    map.bis_projects = "view";
+    map.our_bis_licenses = "view";
+    map.expired_licenses = "view";
+    map.email = "view";
+    return map;
+  }
+
+  if (slug === "inspection_engineer" || slug === "staff") {
+    for (const mod of STAFF_ASSIGNABLE_MODULES) {
+      if (mod.key === "dashboard") {
+        map.dashboard = "edit";
+      } else if (mod.key === "finance" || mod.key === "cms") {
+        map[mod.key] = "none";
+      } else {
+        map[mod.key] = "edit";
+      }
+    }
+    return map;
+  }
+
+  return map;
+}
+
 /** Keys the user may open in the sidebar (Edit or View). */
 export function normalizeModuleAccess(raw: unknown): DashboardModuleKey[] {
   const map = normalizeModuleAccessMap(raw);
@@ -259,7 +330,7 @@ export function moduleKeyForPath(pathname: string): DashboardModuleKey | null {
   if (pathname.startsWith("/dashboard/settings/company")) return "company_settings";
   if (pathname.startsWith("/dashboard/email")) return "email";
 
-  const match = DASHBOARD_MODULES.filter((m) => m.inMainNav || m.key === "email" || m.key === "test_parameters")
+  const match = [...DASHBOARD_MODULES]
     .sort((a, b) => b.href.length - a.href.length)
     .find(
       (m) => pathname === m.href || (m.href !== "/dashboard" && pathname.startsWith(m.href)),
@@ -284,5 +355,5 @@ export function parseModuleAccessForm(formData: FormData): ModuleAccessMap {
       map[mod.key] = "none";
     }
   }
-  return normalizeModuleAccessMap(map);
+  return completeStaffModuleAccessMap(map);
 }

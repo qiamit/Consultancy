@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QE Consultancy</title>
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=2.2.19" />
   </head>
   <body>
     <main class="app">
@@ -13,26 +13,14 @@
           <span class="mark" aria-hidden="true">QE</span>
           <div>
             <h1>QE Consultancy</h1>
-            <p class="subtitle">Manak + copy / paste</p>
           </div>
         </div>
       </header>
 
-      <section class="panel" aria-labelledby="manakTitle">
+      <section class="panel panel-copy" aria-labelledby="copyTitle">
         <div class="panel-head">
-          <h2 id="manakTitle">Manak Test Request</h2>
-        </div>
-        <div class="action-row">
-          <button id="power" class="icon-btn on" type="button" title="Extension ON/OFF">ON</button>
-          <button id="openTr" class="icon-btn green" type="button" title="Open Test Request">TR</button>
-          <button id="fill" class="icon-btn" type="button" title="Fill from clipboard">Fill</button>
-          <button id="login" class="icon-btn red" type="button" title="Open eBIS login">Login</button>
-        </div>
-      </section>
-
-      <section class="panel" aria-labelledby="settingsTitle">
-        <div class="panel-head">
-          <h2 id="settingsTitle">Copy / Paste</h2>
+          <span class="step">1</span>
+          <h2 id="copyTitle">Copy &amp; Paste</h2>
         </div>
         <div class="toggle-grid">
           <label class="tile" for="enableBypass">
@@ -56,9 +44,74 @@
         </div>
       </section>
 
-      <section class="panel" aria-labelledby="fillTitle">
+      <section class="panel panel-manak" aria-labelledby="manakTitle">
         <div class="panel-head">
-          <h2 id="fillTitle">Bulk Fill</h2>
+          <span class="step">2</span>
+          <h2 id="manakTitle">Manak Test Request</h2>
+        </div>
+        <div class="action-row">
+          <button id="power" class="icon-btn on" type="button" title="Extension ON/OFF">ON</button>
+          <button id="openTr" class="icon-btn green" type="button" title="Open Test Request">TR</button>
+          <button id="fill" class="icon-btn teal" type="button" title="Fill from clipboard">Fill</button>
+          <button id="login" class="icon-btn red" type="button" title="Open eBIS login">Login</button>
+        </div>
+      </section>
+
+      <div class="split-row">
+        <section class="panel panel-is" aria-labelledby="isTitle">
+          <div class="panel-head">
+            <span class="step">3</span>
+            <h2 id="isTitle">Update IS Details</h2>
+          </div>
+          <div class="field-row is-action-row">
+            <div class="field">
+              <label for="isNumber">IS Number</label>
+              <input id="isNumber" type="text" placeholder="IS 4984 : 2016" autocomplete="off" />
+            </div>
+            <button id="updateIsDetails" class="action-btn action-btn-teal" type="button">
+              Update IS Details
+            </button>
+          </div>
+        </section>
+
+        <section class="panel panel-manual" aria-labelledby="pmTitle">
+          <div class="panel-head">
+            <span class="step">5</span>
+            <h2 id="pmTitle">Download Product Manual</h2>
+          </div>
+          <button id="downloadProductManual" class="action-btn action-btn-navy" type="button">
+            Download Product Manual
+          </button>
+        </section>
+      </div>
+
+      <section class="panel panel-standard" aria-labelledby="stdTitle">
+        <div class="panel-head">
+          <span class="step">4</span>
+          <h2 id="stdTitle">Download Standard</h2>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="bsbEmail">Email</label>
+            <input id="bsbEmail" type="email" autocomplete="username" placeholder="BIS e-Sale email" />
+          </div>
+          <div class="field">
+            <label for="bsbPassword">Password</label>
+            <input id="bsbPassword" type="password" autocomplete="current-password" placeholder="Saved here only" />
+          </div>
+        </div>
+        <div class="btn-row">
+          <button id="saveBsb" class="action-btn action-btn-ghost" type="button">Save login</button>
+          <button id="downloadStandard" class="action-btn action-btn-navy" type="button">
+            Download Standard
+          </button>
+        </div>
+      </section>
+
+      <section class="panel panel-bulk" aria-labelledby="fillTitle">
+        <div class="panel-head">
+          <span class="step">6</span>
+          <h2 id="fillTitle">Bulk Fields Fill</h2>
         </div>
         <div class="field-row">
           <div class="field">
@@ -70,7 +123,9 @@
             <input id="fieldValue" type="text" placeholder="Value to apply" autocomplete="off" />
           </div>
         </div>
-        <button id="fillButton" type="button">Fill matching fields</button>
+        <button id="fillButton" class="action-btn action-btn-teal" type="button">
+          Fill matching fields
+        </button>
       </section>
 
       <p id="status" class="status" aria-live="polite"></p>

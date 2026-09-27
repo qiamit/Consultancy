@@ -10,12 +10,14 @@ export function DashboardTopBar({
   userEmail,
   isAdmin,
   canAccessEmail = false,
+  canAccessCms = false,
   unreadEmailCount = 0,
 }: {
   userName: string;
   userEmail: string;
   isAdmin: boolean;
   canAccessEmail?: boolean;
+  canAccessCms?: boolean;
   unreadEmailCount?: number;
 }) {
   const { open, toggle } = useSidebarLayout();
@@ -76,6 +78,7 @@ export function DashboardTopBar({
           userName={userName}
           userEmail={userEmail}
           isAdmin={isAdmin}
+          canAccessCms={canAccessCms}
         />
       </div>
     </header>

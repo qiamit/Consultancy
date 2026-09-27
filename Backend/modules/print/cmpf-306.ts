@@ -6,7 +6,6 @@ import {
   type ManufacturingScopeDeclarationData,
 } from "@backend/modules/print/manufacturing-scope-declaration";
 import {
-  buildPageSlots,
   CMPF306_SEPARATE_SHEET_LABEL,
   equipmentRowHasContent,
   type Cmpf306PageSlot,
@@ -301,35 +300,75 @@ export function buildCmpf306FlatSlots(
   equipment: Cmpf306Stored["equipment"],
   separateSheetEnclosed: boolean,
 ): Cmpf306PageSlot[] {
-  const total = equipment.filter(equipmentRowHasContent).length + (separateSheetEnclosed ? 1 : 0);
-  return buildPageSlots(equipment, separateSheetEnclosed, Math.max(total, 1)).flat();
+  const visible = equipment.filter(equipmentRowHasContent);
+  const slots: Cmpf306PageSlot[] = [];
+  let sr = 1;
+  for (const row of visible) {
+    slots.push({ kind: "equipment", row, srNo: sr });
+    sr += 1;
+  }
+  if (separateSheetEnclosed) {
+    slots.push({ kind: "separate_sheet", srNo: sr });
+  }
+  return slots;
 }
 
-/**
- * How many equipment table rows fit on a table sheet
- * (Form-II + signatures are always page 1).
- */
-export function cmpf306RowsCapacity(settings: PrintSettings): number {
+/** Usable height for equipment rows on a continuation sheet (page 2+). */
+function cmpf306TableBodyBudgetMm(settings: PrintSettings): number {
   const { heightMm } = iframeSizeForPrintSettings(settings);
   const usable = Math.max(
     80,
     heightMm - settings.margin_top - settings.margin_bottom,
   );
-  // 8-column equipment rows are a bit taller than machinery rows.
-  const rowMm = settings.orientation === "landscape" ? 4.8 : 5.4;
-  // Page 2+ always repeats letterhead + Application No/IS Code meta + TM signature.
-  const letterheadBlock = settings.show_letterhead ? 28 : 0;
-  const metaGrid = 16;
-  const tableHead = 8;
-  const signatureBlock = 28;
-  const overhead = letterheadBlock + metaGrid + tableHead + signatureBlock;
+  const letterhead = settings.show_letterhead ? 34 : 0;
+  const meta = 16;
+  const tableHeader = 8;
+  const tableTop = 2;
+  const signatory = 34;
+  const pageNum = 8;
+  const slack = 4;
+  return Math.max(40, usable - letterhead - meta - tableHeader - tableTop - signatory - pageNum - slack);
+}
 
-  return Math.max(4, Math.floor((usable - overhead) / rowMm));
+function cmpf306TextLineCount(value: string, charsPerLine: number): number {
+  const parts = String(value ?? "").trim().split(/\n/);
+  if (!parts.length || (parts.length === 1 && !parts[0])) return 1;
+  return Math.max(
+    1,
+    ...parts.map((part) => Math.ceil(Math.max(1, part.length) / Math.max(8, charsPerLine))),
+  );
+}
+
+/** Fit-to-content row: 1mm + 1mm padding plus wrapped line height. */
+function estimateCmpf306SlotHeightMm(slot: Cmpf306PageSlot, landscape: boolean): number {
+  const padMm = 2;
+  const lineMm = landscape ? 2.8 : 3.0;
+  if (slot.kind !== "equipment") return padMm + lineMm;
+  const row = slot.row;
+  const nameWidth = landscape ? 38 : 24;
+  const compactWidth = landscape ? 14 : 11;
+  const lines = Math.max(
+    cmpf306TextLineCount(row.equipment_name, nameWidth),
+    cmpf306TextLineCount(row.make, compactWidth),
+    cmpf306TextLineCount(row.least_count, compactWidth),
+    cmpf306TextLineCount(row.range, compactWidth),
+    cmpf306TextLineCount(row.calibration_details, compactWidth + 2),
+    cmpf306TextLineCount(row.clause_number, 10),
+    cmpf306TextLineCount(row.quantity, 10),
+  );
+  return padMm + lines * lineMm;
+}
+
+/** How many single-line rows would fill one continuation sheet. */
+export function cmpf306RowsCapacity(settings: PrintSettings): number {
+  const rowMm = settings.orientation === "landscape" ? 4.8 : 5.0;
+  const cap = settings.orientation === "landscape" ? 48 : 42;
+  return Math.max(4, Math.min(cap, Math.floor(cmpf306TableBodyBudgetMm(settings) / rowMm)));
 }
 
 /**
- * Paginate equipment slots into TABLE sheets only.
- * Form-II (header + To + signatures) is always a separate first page — see buildFormBody.
+ * Page 1 is the fixed Form-II cover.
+ * Page 2+ pack as many fit-to-content rows as the sheet allows, then spill to the next page.
  */
 export function paginateCmpf306ForPrint(
   equipment: Cmpf306Stored["equipment"],
@@ -339,25 +378,29 @@ export function paginateCmpf306ForPrint(
   const slots = buildCmpf306FlatSlots(equipment, separateSheetEnclosed);
   if (slots.length === 0) return [[]];
 
-  const tableCap = cmpf306RowsCapacity(settings);
-  if (slots.length <= tableCap) return [slots];
-
+  const landscape = settings.orientation === "landscape";
+  const budget = cmpf306TableBodyBudgetMm(settings);
+  const maxRows = landscape ? 48 : 42;
   const pages: Cmpf306PageSlot[][] = [];
-  let index = 0;
+  let page: Cmpf306PageSlot[] = [];
+  let used = 0;
 
-  while (index < slots.length) {
-    const remaining = slots.length - index;
-    const take = Math.min(tableCap, remaining);
-    pages.push(slots.slice(index, index + take));
-    index += take;
+  for (const slot of slots) {
+    const height = estimateCmpf306SlotHeightMm(slot, landscape);
+    if (page.length > 0 && (used + height > budget || page.length >= maxRows)) {
+      pages.push(page);
+      page = [];
+      used = 0;
+    }
+    page.push(slot);
+    used += height;
   }
-
+  if (page.length) pages.push(page);
   return pages;
 }
 
-function buildPageGapHtml(pageNum: number, totalPages: number): string {
-  if (pageNum <= 1 || totalPages <= 1) return "";
-  return `<div class="cmpf-page-gap" aria-hidden="true">Page break · ${padPageNum(pageNum - 1)} → ${padPageNum(pageNum)}</div>`;
+function buildPageGapHtml(_pageNum: number, _totalPages: number): string {
+  return "";
 }
 
 function buildDummyTestingEquipmentTableHtml(settings: PrintSettings): string {
@@ -422,16 +465,19 @@ function buildToBlockHtml(data: Cmpf306LetterData): string {
 </div>`;
 }
 
-/** Page 1 — Form-II + Applicant + To + dummy equipment table + declaration. */
+/** Page 1 — letterhead + Form-II + Applicant + To + dummy equipment table + declaration. */
 function buildFormCoverPageHtml(
   data: Cmpf306LetterData,
   totalPages: number,
   settings: PrintSettings,
+  company: PrintCompanyInfo,
 ): string {
+  const letterheadHtml = buildLetterheadHtml(company ?? buildCmpf306Company(data), settings);
   return `
 ${buildPageGapHtml(1, totalPages)}
 <div class="cmpf-sheet cmpf-sheet-cover">
   <div class="cmpf-sheet-body">
+    ${letterheadHtml}
     ${buildFormCoverHeaderHtml(data)}
     ${buildToBlockHtml(data)}
     ${buildDummyTestingEquipmentTableHtml(settings)}
@@ -480,6 +526,7 @@ function buildFormBody(
   data: Cmpf306LetterData,
   settings: PrintSettings,
   company: PrintCompanyInfo,
+  onlyPage?: number,
 ): string {
   const tablePages = paginateCmpf306ForPrint(
     data.document.equipment,
@@ -487,16 +534,21 @@ function buildFormBody(
     settings,
   );
   const totalPages = 1 + tablePages.length;
+  const wanted = onlyPage && onlyPage >= 1 && onlyPage <= totalPages ? onlyPage : 0;
 
-  const cover = buildFormCoverPageHtml(data, totalPages, settings);
+  const cover =
+    !wanted || wanted === 1
+      ? buildFormCoverPageHtml(data, totalPages, settings, company)
+      : "";
   const tables = tablePages
     .map((slots, i) => {
       const pageNum = i + 2;
+      if (wanted && wanted !== pageNum) return "";
       return buildTablePageHtml(data, slots, pageNum, totalPages, settings, company);
     })
     .join("");
 
-  return `${cover}${tables}`;
+  return `<div class="cmpf-sheets">${cover}${tables}</div>`;
 }
 
 export type Cmpf306PrintAssets = Partial<
@@ -533,7 +585,7 @@ export function defaultCmpf306PrintSettings(): PrintSettings {
     margin_top: 5,
     margin_bottom: 5,
     margin_left: 15,
-    margin_right: 10,
+    margin_right: 5,
   };
 }
 
@@ -550,32 +602,40 @@ export function buildCmpf306Html(
   data: Cmpf306LetterData,
   settings: PrintSettings,
   assets?: Cmpf306PrintAssets,
+  opts?: { onlyPage?: number },
 ): string {
   const letterheadSettings = cmpf306LetterheadSettings(settings);
   const company = buildCmpf306Company(data, assets);
   const pageSize = iframeSizeForPrintSettings(letterheadSettings);
-  // Outer letterhead sits above the cover sheet; continuation pages embed their own.
-  const letterheadReserveMm = letterheadSettings.show_letterhead ? 32 : 0;
-  const sheetMinHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm)`;
-  const coverSheetHeight = `calc(${pageSize.heightMm}mm - ${letterheadSettings.margin_top}mm - ${letterheadSettings.margin_bottom}mm - ${letterheadReserveMm}mm)`;
+  const sheetPad = `${letterheadSettings.margin_top}mm ${letterheadSettings.margin_right}mm ${letterheadSettings.margin_bottom}mm ${letterheadSettings.margin_left}mm`;
   const styles = `
+    .doc-page {
+      padding: 0 !important;
+      max-width: none !important;
+    }
+    .cmpf-sheets {
+      width: ${pageSize.widthMm}mm;
+    }
     .cmpf-sheet {
       font-family: "Times New Roman", Times, serif;
       color: #111;
       font-size: 10px;
       position: relative;
-      width: 100%;
-      min-height: ${sheetMinHeight};
+      width: ${pageSize.widthMm}mm;
+      height: ${pageSize.heightMm}mm;
+      min-height: ${pageSize.heightMm}mm;
+      max-height: ${pageSize.heightMm}mm;
+      overflow: hidden;
       box-sizing: border-box;
-      padding-bottom: 4mm;
+      padding: ${sheetPad};
       display: flex;
       flex-direction: column;
-      page-break-after: auto;
-      break-after: auto;
+      page-break-after: always;
+      break-after: page;
+      page-break-inside: avoid;
+      break-inside: avoid;
     }
     .cmpf-sheet-cover {
-      min-height: ${coverSheetHeight};
-      max-height: ${coverSheetHeight};
       overflow: hidden;
     }
     .cmpf-sheet-body {
@@ -585,6 +645,7 @@ export function buildCmpf306Html(
       display: flex;
       flex-direction: column;
       align-items: stretch;
+      padding-bottom: 6mm;
     }
     .cmpf-page-gap {
       display: none;
@@ -627,11 +688,16 @@ export function buildCmpf306Html(
     }
     .cmpf-page-indicator {
       position: absolute;
-      right: 0;
-      bottom: 0;
+      right: 5mm;
+      bottom: 5mm;
+      margin: 0;
+      padding: 0;
       font-size: 10px;
       font-weight: 600;
       text-align: right;
+      line-height: 1.2;
+      z-index: 3;
+      background: #fff;
     }
     .cmpf-to-block {
       font-size: 11px;
@@ -662,18 +728,29 @@ export function buildCmpf306Html(
       border-collapse: collapse;
       border-spacing: 0;
       table-layout: fixed;
-      margin-top: 10px;
+      margin-top: 6px;
       border: none;
+      flex: 0 0 auto;
+      height: auto;
+      min-height: 0;
+      page-break-inside: avoid;
+      break-inside: avoid;
     }
     .cmpf-equipment-table thead {
       display: table-header-group;
     }
+    .cmpf-equipment-table tr {
+      height: auto;
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
     .cmpf-equipment-table .cmpf-cell {
       border: 1px solid #111;
       border-width: 1px;
-      padding: 4px 5px;
+      padding: 1mm 4px;
+      height: auto;
       vertical-align: middle;
-      line-height: 1.3;
+      line-height: 1.25;
       overflow-wrap: anywhere;
       word-break: break-word;
     }
@@ -687,7 +764,7 @@ export function buildCmpf306Html(
     .cmpf-equipment-table .cmpf-td {
       font-size: 9px;
       text-align: center;
-      min-height: 20px;
+      min-height: 0;
     }
     .cmpf-equipment-table .cmpf-col-sr {
       white-space: nowrap;
@@ -782,56 +859,71 @@ export function buildCmpf306Html(
     }
     .cmpf-continuation-signatory {
       flex-shrink: 0;
-      margin-top: 8px;
+      margin-top: 6px;
+      margin-bottom: 0;
       padding-top: 0;
+      padding-bottom: 0;
     }
     .cmpf-continuation-signatory > div {
-      margin-top: 8px !important;
+      margin-top: 6px !important;
+      margin-bottom: 0 !important;
     }
-    .page-break { page-break-before: always; break-before: page; }
+    .cmpf-sheets {
+      display: block;
+    }
+    .page-break { page-break-before: auto; break-before: auto; }
     @media screen {
-      .cmpf-page-gap {
+      html, body, .doc-page {
+        background: #52525b !important;
+      }
+      .cmpf-sheets {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        justify-content: center;
-        height: 10mm;
-        margin: 4mm 0;
-        color: #64748b;
-        font-family: Arial, Helvetica, sans-serif;
-        font-size: 10px;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-        border-top: 2px dashed #94a3b8;
-        border-bottom: 2px dashed #94a3b8;
+        gap: 3mm;
+        background: transparent;
+      }
+      .cmpf-sheet {
+        background: #fff;
+        box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
+      }
+      .cmpf-page-gap {
+        display: none !important;
       }
     }
     @media print {
+      html, body {
+        width: ${pageSize.widthMm}mm;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
       .cmpf-page-gap {
         display: none !important;
+        height: 0 !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
       }
       .cmpf-sheet {
         page-break-after: always;
         break-after: page;
-      }
-      .cmpf-sheet:last-of-type {
-        page-break-after: auto;
-        break-after: auto;
-      }
-      .cmpf-sheet-cover {
-        page-break-after: always;
-        break-after: page;
         page-break-inside: avoid;
         break-inside: avoid;
+      }
+      .cmpf-sheets > .cmpf-sheet:last-child {
+        page-break-after: auto;
+        break-after: auto;
       }
     }
   `;
 
   return buildPrintDocument({
     title: "CMPF 306 — Declaration Regarding Testing Equipments",
-    bodyHtml: buildFormBody(data, letterheadSettings, company),
+    bodyHtml: buildFormBody(data, letterheadSettings, company, opts?.onlyPage),
     extraStyles: styles,
-    settings: letterheadSettings,
+    // Sheets embed their own letterhead. An outer copy made Chromium overflow
+    // page 1 and emit a blank 4th page on PDF download.
+    settings: { ...letterheadSettings, show_letterhead: false },
     company,
   });
 }
@@ -860,7 +952,7 @@ export function iframeSizeForCmpf306PrintSettings(
 } {
   const base = iframeSizeForPrintSettings(settings);
   const pages = Math.max(1, pageCount);
-  const gapMm = pages > 1 ? (pages - 1) * 14 : 0;
+  const gapMm = pages > 1 ? (pages - 1) * 3 : 0;
   return {
     widthMm: base.widthMm,
     heightMm: base.heightMm * pages + gapMm + (pages > 0 ? 4 : 0),

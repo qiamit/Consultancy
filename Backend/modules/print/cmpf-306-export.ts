@@ -1,10 +1,13 @@
 import {
   AlignmentType,
   BorderStyle,
+  convertMillimetersToTwip,
   Document,
+  Footer,
   ImageRun,
   PageBreak,
   Packer,
+  PageNumber,
   Paragraph,
   ShadingType,
   Table,
@@ -23,10 +26,12 @@ import {
   CMPF306_SEPARATE_SHEET_LABEL,
   equipmentRowHasContent,
   type Cmpf306EquipmentStored,
+  type Cmpf306PageSlot,
 } from "@backend/modules/bis/cmpf-306";
 import {
   buildCmpf306Company,
   cmpf306LetterheadSettings,
+  paginateCmpf306ForPrint,
   type Cmpf306LetterData,
   type Cmpf306PrintAssets,
 } from "@backend/modules/print/cmpf-306";
@@ -57,6 +62,15 @@ const CELL_BORDERS = {
   left: THIN_BORDER,
   right: THIN_BORDER,
 };
+
+/** 1mm top / 1mm bottom — matches print preview fit-to-content rows. */
+const CELL_FIT_MARGINS = {
+  top: 57,
+  bottom: 57,
+  left: 40,
+  right: 40,
+  marginUnitType: WidthType.DXA,
+} as const;
 
 const NO_BORDER = {
   style: BorderStyle.NONE,
@@ -268,6 +282,8 @@ function equipmentHeaderCells(widths: number[]): TableCell[] {
       new TableCell({
         width: { size: widths[i]!, type: WidthType.DXA },
         borders: CELL_BORDERS,
+        margins: CELL_FIT_MARGINS,
+        verticalAlign: VerticalAlign.CENTER,
         shading: { type: ShadingType.CLEAR, fill: "EEF2F7" },
         children: (col.lines ?? [col.label]).map(
           (line) =>
@@ -334,108 +350,130 @@ function dummyTestingEquipmentTable(widthTwip: number): Table {
   });
 }
 
-function equipmentTableSection(
-  rows: Cmpf306EquipmentStored[],
-  separateSheetEnclosed: boolean,
-  widthTwip: number,
-): (Paragraph | Table)[] {
+function pageNumberFooter(): Footer {
+  return new Footer({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { after: 0 },
+        children: [
+          bodyRun("Page ", true, 18),
+          new TextRun({
+            children: [PageNumber.CURRENT],
+            bold: true,
+            font: DOCX_FONT,
+            size: 18,
+          }),
+          bodyRun(" of ", true, 18),
+          new TextRun({
+            children: [PageNumber.TOTAL_PAGES],
+            bold: true,
+            font: DOCX_FONT,
+            size: 18,
+          }),
+        ],
+      }),
+    ],
+  });
+}
+
+function equipmentTableFromSlots(slots: Cmpf306PageSlot[], widthTwip: number): Table {
   const widths = equipmentColumnWidths(widthTwip);
-  const visible = rows.filter(equipmentRowHasContent);
-
-  const dataRows: TableRow[] = [];
-
-  if (separateSheetEnclosed) {
-    dataRows.push(
-      new TableRow({
-        children: [
-          new TableCell({
-            width: { size: widths[0]!, type: WidthType.DXA },
-            borders: CELL_BORDERS,
+  const dataRows: TableRow[] =
+    slots.length === 0
+      ? [
+          new TableRow({
+            cantSplit: true,
             children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                spacing: { after: 0 },
-                children: [bodyRun("1", false, 16)],
-              }),
-            ],
-          }),
-          new TableCell({
-            columnSpan: 7,
-            width: { size: widthTwip - widths[0]!, type: WidthType.DXA },
-            borders: CELL_BORDERS,
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                spacing: { after: 0 },
-                children: [bodyRun(CMPF306_SEPARATE_SHEET_LABEL, true, 16)],
-              }),
-            ],
-          }),
-        ],
-      }),
-    );
-  }
-
-  if (visible.length === 0 && !separateSheetEnclosed) {
-    dataRows.push(
-      new TableRow({
-        children: [
-          new TableCell({
-            columnSpan: 8,
-            width: { size: widthTwip, type: WidthType.DXA },
-            borders: CELL_BORDERS,
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.CENTER,
-                spacing: { after: 0 },
-                children: [bodyRun("No testing equipment entered yet.")],
-              }),
-            ],
-          }),
-        ],
-      }),
-    );
-  } else {
-    const srOffset = separateSheetEnclosed ? 1 : 0;
-    visible.forEach((row, i) => {
-      dataRows.push(
-        new TableRow({
-          children: [
-            String(i + 1 + srOffset),
-            row.equipment_name.trim() || "—",
-            row.make.trim() || "—",
-            row.least_count.trim() || "—",
-            row.range.trim() || "—",
-            row.calibration_details.trim() || "—",
-            row.clause_number.trim() || "—",
-            row.quantity.trim() || "—",
-          ].map(
-            (text, colIndex) =>
               new TableCell({
-                width: { size: widths[colIndex]!, type: WidthType.DXA },
+                columnSpan: 8,
+                width: { size: widthTwip, type: WidthType.DXA },
                 borders: CELL_BORDERS,
+                margins: CELL_FIT_MARGINS,
+                verticalAlign: VerticalAlign.CENTER,
                 children: [
                   new Paragraph({
-                    alignment:
-                      colIndex === 1 ? AlignmentType.LEFT : AlignmentType.CENTER,
+                    alignment: AlignmentType.CENTER,
                     spacing: { after: 0 },
-                    children: [bodyRun(text, false, 16)],
+                    children: [bodyRun("No testing equipment entered yet.")],
                   }),
                 ],
               }),
-          ),
-        }),
-      );
-    });
-  }
+            ],
+          }),
+        ]
+      : slots.map((slot) => {
+          if (slot.kind === "separate_sheet") {
+            return new TableRow({
+              cantSplit: true,
+              children: [
+                new TableCell({
+                  width: { size: widths[0]!, type: WidthType.DXA },
+                  borders: CELL_BORDERS,
+                  margins: CELL_FIT_MARGINS,
+                  verticalAlign: VerticalAlign.CENTER,
+                  children: [
+                    new Paragraph({
+                      alignment: AlignmentType.CENTER,
+                      spacing: { after: 0 },
+                      children: [bodyRun(String(slot.srNo), false, 16)],
+                    }),
+                  ],
+                }),
+                new TableCell({
+                  columnSpan: 7,
+                  width: { size: widthTwip - widths[0]!, type: WidthType.DXA },
+                  borders: CELL_BORDERS,
+                  margins: CELL_FIT_MARGINS,
+                  verticalAlign: VerticalAlign.CENTER,
+                  children: [
+                    new Paragraph({
+                      alignment: AlignmentType.CENTER,
+                      spacing: { after: 0 },
+                      children: [bodyRun(CMPF306_SEPARATE_SHEET_LABEL, true, 16)],
+                    }),
+                  ],
+                }),
+              ],
+            });
+          }
+          const row = slot.kind === "equipment" ? slot.row : null;
+          return new TableRow({
+            cantSplit: true,
+            children: [
+              String(slot.srNo),
+              row?.equipment_name.trim() || (slot.kind === "empty" ? "" : "—"),
+              row?.make.trim() || "",
+              row?.least_count.trim() || "",
+              row?.range.trim() || "",
+              row?.calibration_details.trim() || "",
+              row?.clause_number.trim() || "",
+              row?.quantity.trim() || "",
+            ].map(
+              (text, colIndex) =>
+                new TableCell({
+                  width: { size: widths[colIndex]!, type: WidthType.DXA },
+                  borders: CELL_BORDERS,
+                  margins: CELL_FIT_MARGINS,
+                  verticalAlign: VerticalAlign.CENTER,
+                  children: [
+                    new Paragraph({
+                      alignment:
+                        colIndex === 1 ? AlignmentType.LEFT : AlignmentType.CENTER,
+                      spacing: { after: 0 },
+                      children: [bodyRun(text || " ", false, 16)],
+                    }),
+                  ],
+                }),
+            ),
+          });
+        });
 
-  return [
-    new Table({
-      width: { size: widthTwip, type: WidthType.DXA },
-      columnWidths: widths,
-      rows: [new TableRow({ children: equipmentHeaderCells(widths) }), ...dataRows],
-    }),
-  ];
+  return new Table({
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: widths,
+    rows: [new TableRow({ cantSplit: true, children: equipmentHeaderCells(widths) }), ...dataRows],
+  });
 }
 
 /** Matches Print Preview: two-column bordered declaration + shaded signature bands. */
@@ -661,6 +699,12 @@ async function buildCmpf306Docx(
   const widthTwip = contentWidthTwip(letterheadSettings);
   const bisLine = `${data.bisBranchName.trim() || "________________"}, ${data.bisBranchState.trim() || "________________"}, INDIA`;
 
+  const tablePages = paginateCmpf306ForPrint(
+    data.document.equipment,
+    data.document.separate_sheet_enclosed,
+    letterheadSettings,
+  );
+
   const children: (Paragraph | Table)[] = [
     ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
     new Paragraph({
@@ -684,19 +728,18 @@ async function buildCmpf306Docx(
     plainParagraph(bisLine, { after: 80 }),
     dummyTestingEquipmentTable(widthTwip),
     ...(await buildDeclarationSignatureBox(data, widthTwip)),
-    // Page 2+ — letterhead + Application No/IS Code + equipment table.
-    new Paragraph({ spacing: { after: 0 }, children: [new PageBreak()] }),
-    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
-    buildApplicationMetaGrid(data, widthTwip),
-    new Paragraph({ spacing: { after: 120 }, children: [] }),
-    ...equipmentTableSection(
-      data.document.equipment,
-      data.document.separate_sheet_enclosed,
-      widthTwip,
-    ),
-    ...(await buildTmStyleSignatoryParagraphs(data)),
-    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
+
+  for (let i = 0; i < tablePages.length; i += 1) {
+    children.push(new Paragraph({ spacing: { after: 0 }, children: [new PageBreak()] }));
+    children.push(...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)));
+    children.push(buildApplicationMetaGrid(data, widthTwip));
+    children.push(new Paragraph({ spacing: { after: 80 }, children: [] }));
+    children.push(equipmentTableFromSlots(tablePages[i] ?? [], widthTwip));
+    children.push(...(await buildTmStyleSignatoryParagraphs(data)));
+  }
+
+  children.push(...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)));
 
   return new Document({
     sections: [
@@ -704,8 +747,14 @@ async function buildCmpf306Docx(
         properties: {
           page: {
             size: pageSizeTwipFromSettings(letterheadSettings),
-            margin: pageMarginsFromSettings(letterheadSettings),
+            margin: {
+              ...pageMarginsFromSettings(letterheadSettings),
+              footer: convertMillimetersToTwip(5),
+            },
           },
+        },
+        footers: {
+          default: pageNumberFooter(),
         },
         children,
       },

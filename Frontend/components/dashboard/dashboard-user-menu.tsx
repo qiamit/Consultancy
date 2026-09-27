@@ -11,6 +11,7 @@ type MenuNavItem = {
   label: string;
   icon: ReactNode;
   adminOnly?: boolean;
+  staffModule?: "cms";
 };
 
 const menuNavItems: MenuNavItem[] = [
@@ -59,7 +60,7 @@ const menuNavItems: MenuNavItem[] = [
   {
     href: "/dashboard/cms",
     label: "Website CMS",
-    adminOnly: true,
+    staffModule: "cms" as const,
     icon: (
       <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
         <path strokeLinecap="round" strokeLinejoin="round" d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9.5a2.5 2.5 0 00-2.5-2.5H14" />
@@ -103,16 +104,21 @@ export function DashboardUserMenu({
   userName,
   userEmail,
   isAdmin,
+  canAccessCms = false,
 }: {
   userName: string;
   userEmail: string;
   isAdmin: boolean;
+  canAccessCms?: boolean;
 }) {
   const { setOpen } = useSidebarLayout();
   const [menuOpen, setMenuOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
-  const items = menuNavItems.filter((item) => !item.adminOnly || isAdmin);
+  const items = menuNavItems.filter((item) => {
+    if (item.staffModule === "cms") return isAdmin || canAccessCms;
+    return !item.adminOnly || isAdmin;
+  });
 
   function handleNavigate() {
     setMenuOpen(false);

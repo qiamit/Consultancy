@@ -21,6 +21,164 @@
     document.documentElement.setAttribute("data-qe-pdf-url", href);
   }
 
+  function bytesToBase64(buf) {
+    const bytes = new Uint8Array(buf);
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  function publishPdfBuffer(url, buf, name) {
+    if (!buf || buf.byteLength < 80) return;
+    const head = String.fromCharCode.apply(null, new Uint8Array(buf.slice(0, 5)));
+    if (head !== "%PDF-") return;
+    rememberPdfUrl(url);
+    const base64 = bytesToBase64(buf);
+    const fileName = name || String(url || "").split("/").pop() || "Test_Request.pdf";
+    try {
+      sessionStorage.setItem("qeManakPdfB64", base64);
+      sessionStorage.setItem("qeManakPdfName", fileName);
+      document.documentElement.setAttribute("data-qe-pdf-ready", String(Date.now()));
+    } catch {
+      /* quota */
+    }
+    try {
+      window.postMessage(
+        {
+          type: "QE_PAGE_PDF",
+          url: String(url || ""),
+          name: fileName,
+          base64,
+        },
+        "*",
+      );
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function fetchPdfToPage(url) {
+    const href = String(url || "");
+    if (!href || blockedUrl(href) || /^javascript:/i.test(href) || href === "#") return;
+    try {
+      const res = await fetch(href, { credentials: "include" });
+      const buf = await res.arrayBuffer();
+      publishPdfBuffer(res.url || href, buf, href.split("/").pop());
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function fetchFormAsPdf(form, extra) {
+    if (!form) return false;
+    const params = new URLSearchParams();
+    Array.from(form.elements || []).forEach((el) => {
+      if (!el || !el.name) return;
+      const type = String(el.type || "").toLowerCase();
+      if (type === "file") return;
+      if ((type === "checkbox" || type === "radio") && !el.checked) return;
+      if (type === "submit" || type === "button" || type === "image") return;
+      params.append(el.name, el.value == null ? "" : String(el.value));
+    });
+    if (extra && typeof extra === "object") {
+      Object.keys(extra).forEach((key) => params.set(key, extra[key]));
+    }
+    try {
+      const action = form.getAttribute("action") || location.href;
+      const res = await fetch(action, {
+        method: "POST",
+        body: params.toString(),
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded",
+          Accept: "application/pdf,*/*",
+        },
+      });
+      const buf = await res.arrayBuffer();
+      const head = String.fromCharCode.apply(null, new Uint8Array(buf.slice(0, 5)));
+      if (buf.byteLength < 80 || head !== "%PDF-") return false;
+      publishPdfBuffer(res.url || location.href, buf, "Test_Request.pdf");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  function isDownloadPostback(target, arg) {
+    return /download|pdf|printtestrequest|generatepdf|lnkbtn.*print|lnkbtn.*down/i.test(
+      `${target || ""} ${arg || ""}`,
+    );
+  }
+
+  function wrapDoPostBack() {
+    if (typeof window.__doPostBack !== "function") return;
+    if (window.__doPostBack.__qeWrapped) return;
+    const orig = window.__doPostBack;
+    function wrapped(target, arg) {
+      if (isDownloadPostback(target, arg)) {
+        const form =
+          document.getElementById("aspnetForm") ||
+          document.querySelector("form[action]") ||
+          document.forms[0];
+        void fetchFormAsPdf(form, {
+          __EVENTTARGET: String(target || ""),
+          __EVENTARGUMENT: String(arg || ""),
+        }).then((ok) => {
+          if (!ok) orig.call(window, target, arg);
+        });
+        return;
+      }
+      return orig.call(this, target, arg);
+    }
+    wrapped.__qeWrapped = true;
+    try {
+      window.__doPostBack = wrapped;
+    } catch {
+      /* ignore */
+    }
+  }
+
+  wrapDoPostBack();
+  window.setInterval(wrapDoPostBack, 800);
+
+  function findDownloadControl() {
+    const nodes = Array.from(
+      document.querySelectorAll("a, button, input[type='button'], input[type='submit']"),
+    );
+    return (
+      nodes.find((el) => {
+        const t = `${el.id || ""} ${el.name || ""} ${el.value || ""} ${el.textContent || ""} ${el.getAttribute("onclick") || ""}`.toLowerCase();
+        return /download/.test(t) && /test request|pdf|print/.test(t);
+      }) ||
+      nodes.find((el) => /download test request|download pdf/i.test(el.textContent || el.value || ""))
+    );
+  }
+
+  document.addEventListener("qe-manak-download-pdf", () => {
+    const btn = findDownloadControl();
+    const form =
+      document.getElementById("aspnetForm") ||
+      document.querySelector("form[action]") ||
+      document.forms[0];
+    if (!btn) return;
+    const extra = {};
+    if (btn.name) extra[btn.name] = btn.value || "Download";
+    const onclick = btn.getAttribute("onclick") || "";
+    const match = onclick.match(/__doPostBack\(\s*['"]([^'"]+)['"]\s*,\s*['"]([^'"]*)['"]/);
+    if (match) {
+      extra.__EVENTTARGET = match[1];
+      extra.__EVENTARGUMENT = match[2];
+      void fetchFormAsPdf(form, extra);
+      return;
+    }
+    const href = btn.href || btn.getAttribute("href") || "";
+    if (href && !/^javascript:/i.test(href) && href !== "#") void fetchPdfToPage(href);
+    else void fetchFormAsPdf(form, extra);
+  });
+
   function lockOpen() {
     function safeOpen(url, name, specs) {
       if (blockedUrl(url)) return null;
@@ -43,6 +201,64 @@
 
   lockOpen();
   window.setInterval(lockOpen, 1000);
+
+  function hookNetworkPdf() {
+    if (window.__qePdfNetHooked) return;
+    window.__qePdfNetHooked = true;
+    const rememberIfPdf = (url, type) => {
+      const href = String(url || "");
+      const ct = String(type || "");
+      if (/pdf/i.test(ct) || isPdfLike(href)) rememberPdfUrl(href);
+    };
+    if (typeof window.fetch === "function") {
+      const origFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        const href = typeof input === "string" ? input : input && input.url;
+        return origFetch(input, init).then((res) => {
+          try {
+            const ct = res && res.headers && res.headers.get("content-type");
+            rememberIfPdf(res && res.url ? res.url : href, ct);
+            if (/pdf/i.test(String(ct || "")) || isPdfLike(res && res.url ? res.url : href)) {
+              res
+                .clone()
+                .arrayBuffer()
+                .then((buf) => publishPdfBuffer(res.url || href, buf, String(href || "").split("/").pop()))
+                .catch(() => {});
+            }
+          } catch {
+            /* ignore */
+          }
+          return res;
+        });
+      };
+    }
+    const XHR = window.XMLHttpRequest;
+    if (XHR && XHR.prototype) {
+      const origOpen = XHR.prototype.open;
+      const origSend = XHR.prototype.send;
+      XHR.prototype.open = function (method, url, ...rest) {
+        this.__qeUrl = url;
+        return origOpen.call(this, method, url, ...rest);
+      };
+      XHR.prototype.send = function (...args) {
+        this.addEventListener("load", function () {
+          try {
+            const ct = this.getResponseHeader("content-type");
+            const href = this.responseURL || this.__qeUrl;
+            rememberIfPdf(href, ct);
+            if (/pdf/i.test(String(ct || "")) || isPdfLike(href)) {
+              const buf = this.responseType === "arraybuffer" ? this.response : null;
+              if (buf && buf.byteLength) publishPdfBuffer(href, buf, String(href || "").split("/").pop());
+            }
+          } catch {
+            /* ignore */
+          }
+        });
+        return origSend.apply(this, args);
+      };
+    }
+  }
+  hookNetworkPdf();
 
   function lockPrint() {
     function silentPrint() {
@@ -116,6 +332,17 @@
         return;
       }
       rememberPdfUrl(href);
+      const downloadAttr = link.getAttribute("download") || "";
+      const label = String(link.textContent || link.title || "").toLowerCase();
+      const looksTrPdf =
+        isPdfLike(href) ||
+        /\.pdf/i.test(downloadAttr) ||
+        (/download/.test(label) && /test request|pdf/.test(label));
+      if (looksTrPdf && href && !/^javascript:/i.test(href) && href !== "#") {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        void fetchPdfToPage(href);
+      }
     },
     true,
   );

@@ -12,7 +12,11 @@ import { findUserByEmail } from "@backend/db/auth/users";
 
 import { requireAdminProfile } from "@backend/modules/auth/profile";
 
-import { normalizeModuleAccessMap, type ModuleAccessMap } from "@backend/modules/auth/modules";
+import {
+  completeStaffModuleAccessMap,
+  defaultModuleAccessForRole,
+  type ModuleAccessMap,
+} from "@backend/modules/auth/modules";
 
 
 
@@ -370,7 +374,7 @@ export async function fetchStaffUsers(): Promise<{
 
         module_access: isAdminRole
           ? {}
-          : normalizeModuleAccessMap(p?.module_access),
+          : completeStaffModuleAccessMap(p?.module_access),
 
         created_at: p?.created_at ?? u.created_at,
 
@@ -510,7 +514,7 @@ export async function createStaffUser(formData: FormData) {
 
     role,
 
-    module_access: role === "admin" ? [] : normalizeModuleAccessMap([]),
+    module_access: role === "admin" ? [] : defaultModuleAccessForRole(role),
 
     updated_at: new Date().toISOString(),
 
@@ -588,7 +592,7 @@ export async function updateStaffUser(userId: string, formData: FormData) {
 
       role,
 
-      module_access: role === "admin" ? [] : normalizeModuleAccessMap([]),
+      module_access: role === "admin" ? [] : defaultModuleAccessForRole(role),
 
       updated_at: new Date().toISOString(),
 
@@ -681,7 +685,7 @@ export async function updateStaffUserRole(userId: string, role: string) {
       module_access:
         nextRole === "admin"
           ? []
-          : normalizeModuleAccessMap(existingProfile?.module_access),
+          : completeStaffModuleAccessMap(existingProfile?.module_access),
       updated_at: new Date().toISOString(),
     })
     .eq("id", userId);
@@ -719,7 +723,7 @@ export async function updateStaffModuleAccess(
     };
   }
 
-  const module_access = normalizeModuleAccessMap(access);
+  const module_access = completeStaffModuleAccessMap(access);
 
   const { error } = await admin
     .from("profiles")
@@ -734,6 +738,47 @@ export async function updateStaffModuleAccess(
   revalidatePath("/dashboard/settings/users");
   revalidatePath("/dashboard/settings/module-access");
   return { ok: true };
+}
+
+export async function updateAllStaffModuleAccess(
+  updates: { userId: string; access: ModuleAccessMap }[],
+): Promise<{ ok: true; saved: number } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  await requireAdminProfile(supabase);
+
+  if (!Array.isArray(updates) || updates.length === 0) {
+    return { ok: false, error: "No users to update." };
+  }
+
+  const admin = createAdminClient();
+  let saved = 0;
+  const now = new Date().toISOString();
+
+  for (const item of updates) {
+    const userId = String(item.userId ?? "").trim();
+    if (!userId) continue;
+    const { data: profile, error: fetchError } = await admin
+      .from("profiles")
+      .select("id, role")
+      .eq("id", userId)
+      .maybeSingle();
+    if (fetchError) return { ok: false, error: fetchError.message };
+    if (!profile || (profile.role as string) === "admin") continue;
+
+    const { error } = await admin
+      .from("profiles")
+      .update({
+        module_access: completeStaffModuleAccessMap(item.access),
+        updated_at: now,
+      })
+      .eq("id", userId);
+    if (error) return { ok: false, error: error.message };
+    saved += 1;
+  }
+
+  revalidatePath("/dashboard/settings/users");
+  revalidatePath("/dashboard/settings/module-access");
+  return { ok: true, saved };
 }
 
 export async function resetStaffUserPassword(userId: string, newPassword: string) {

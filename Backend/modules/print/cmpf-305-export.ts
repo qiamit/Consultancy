@@ -1,10 +1,13 @@
 import {
   AlignmentType,
   BorderStyle,
+  convertMillimetersToTwip,
   Document,
+  Footer,
   ImageRun,
   PageBreak,
   Packer,
+  PageNumber,
   Paragraph,
   ShadingType,
   Table,
@@ -24,6 +27,7 @@ import {
   buildCmpf305Company,
   cmpf305LetterheadSettings,
   formatCmpf305ApplicantAddress,
+  paginateCmpf305ForPrint,
   type Cmpf305LetterData,
   type Cmpf305PrintAssets,
 } from "@backend/modules/print/cmpf-305";
@@ -54,6 +58,15 @@ const CELL_BORDERS = {
   left: THIN_BORDER,
   right: THIN_BORDER,
 };
+
+/** 1mm top / 1mm bottom — matches print preview fit-to-content rows. */
+const CELL_FIT_MARGINS = {
+  top: 57,
+  bottom: 57,
+  left: 40,
+  right: 40,
+  marginUnitType: WidthType.DXA,
+} as const;
 
 const NO_BORDER = {
   style: BorderStyle.NONE,
@@ -541,15 +554,38 @@ async function buildTmStyleSignatoryParagraphs(
   return out;
 }
 
-function machineryTableSection(
-  rows: Cmpf305MachineryStored[],
-  widthTwip: number,
-): (Paragraph | Table)[] {
-  const visible = visibleRows(rows);
-  if (visible.length === 0) {
-    return [plainParagraph("No plant & machinery details entered yet.")];
-  }
+function pageNumberFooter(): Footer {
+  return new Footer({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.RIGHT,
+        spacing: { after: 0 },
+        children: [
+          bodyRun("Page ", true, 18),
+          new TextRun({
+            children: [PageNumber.CURRENT],
+            bold: true,
+            font: DOCX_FONT,
+            size: 18,
+          }),
+          bodyRun(" of ", true, 18),
+          new TextRun({
+            children: [PageNumber.TOTAL_PAGES],
+            bold: true,
+            font: DOCX_FONT,
+            size: 18,
+          }),
+        ],
+      }),
+    ],
+  });
+}
 
+function machineryTableFromRows(
+  pageRows: Cmpf305MachineryStored[],
+  startIndex: number,
+  widthTwip: number,
+): Table {
   const widths = [
     Math.round(widthTwip * 0.08),
     Math.round(widthTwip * 0.28),
@@ -573,6 +609,7 @@ function machineryTableSection(
       new TableCell({
         width: { size: widths[i]!, type: WidthType.DXA },
         borders: CELL_BORDERS,
+        margins: CELL_FIT_MARGINS,
         shading: { type: ShadingType.CLEAR, fill: "EEF2F7" },
         children: (col.lines ?? [col.label]).map(
           (line) =>
@@ -585,40 +622,65 @@ function machineryTableSection(
       }),
   );
 
-  const dataRows = visible.map(
-    (row, i) =>
-      new TableRow({
-        children: [
-          String(i + 1),
-          row.machinery_name.trim() || "—",
-          row.make.trim() || "—",
-          row.production_capacity_per_day.trim() || "—",
-          row.number.trim() || "—",
-          row.remarks.trim() || "—",
-        ].map(
-          (text, colIndex) =>
-            new TableCell({
-              width: { size: widths[colIndex]!, type: WidthType.DXA },
-              borders: CELL_BORDERS,
+  const dataRows: TableRow[] =
+    pageRows.length === 0
+      ? [
+          new TableRow({
+            cantSplit: true,
+            children: [
+              new TableCell({
+                columnSpan: 6,
+                width: { size: widthTwip, type: WidthType.DXA },
+                borders: CELL_BORDERS,
+                margins: CELL_FIT_MARGINS,
+                verticalAlign: VerticalAlign.CENTER,
+                children: [
+                  new Paragraph({
+                    alignment: AlignmentType.CENTER,
+                    spacing: { after: 0 },
+                    children: [bodyRun("No plant & machinery details entered yet.")],
+                  }),
+                ],
+              }),
+            ],
+          }),
+        ]
+      : pageRows.map(
+          (row, i) =>
+            new TableRow({
+              cantSplit: true,
               children: [
-                new Paragraph({
-                  alignment: colIndex === 1 ? AlignmentType.LEFT : AlignmentType.CENTER,
-                  spacing: { after: 0 },
-                  children: [bodyRun(text, false, 18)],
-                }),
-              ],
+                String(startIndex + i + 1),
+                row.machinery_name.trim() || "—",
+                row.make.trim() || "",
+                row.production_capacity_per_day.trim() || "",
+                row.number.trim() || "",
+                row.remarks.trim() || "",
+              ].map(
+                (text, colIndex) =>
+                  new TableCell({
+                    width: { size: widths[colIndex]!, type: WidthType.DXA },
+                    borders: CELL_BORDERS,
+                    margins: CELL_FIT_MARGINS,
+                    verticalAlign: VerticalAlign.CENTER,
+                    children: [
+                      new Paragraph({
+                        alignment:
+                          colIndex === 1 ? AlignmentType.LEFT : AlignmentType.CENTER,
+                        spacing: { after: 0 },
+                        children: [bodyRun(text || " ", false, 16)],
+                      }),
+                    ],
+                  }),
+              ),
             }),
-        ),
-      }),
-  );
+        );
 
-  return [
-    new Table({
-      width: { size: widthTwip, type: WidthType.DXA },
-      columnWidths: widths,
-      rows: [new TableRow({ children: headerCells }), ...dataRows],
-    }),
-  ];
+  return new Table({
+    width: { size: widthTwip, type: WidthType.DXA },
+    columnWidths: widths,
+    rows: [new TableRow({ cantSplit: true, children: headerCells }), ...dataRows],
+  });
 }
 
 async function buildCmpf305Docx(
@@ -654,15 +716,22 @@ async function buildCmpf305Docx(
     plainParagraph(bisLine, { after: 80 }),
     dummyPlantMachineryTable(widthTwip),
     ...(await buildDeclarationSignatureBox(data, widthTwip)),
-    // Page 2+ — letterhead + Application No/IS Code + machinery table.
-    new Paragraph({ spacing: { after: 0 }, children: [new PageBreak()] }),
-    ...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)),
-    buildApplicationMetaGrid(data, widthTwip),
-    new Paragraph({ spacing: { after: 120 }, children: [] }),
-    ...machineryTableSection(data.rows, widthTwip),
-    ...(await buildTmStyleSignatoryParagraphs(data)),
-    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
   ];
+
+  const tablePages = paginateCmpf305ForPrint(data.rows, letterheadSettings);
+  let startIndex = 0;
+  for (let i = 0; i < tablePages.length; i += 1) {
+    const pageRows = tablePages[i] ?? [];
+    children.push(new Paragraph({ spacing: { after: 0 }, children: [new PageBreak()] }));
+    children.push(...(await buildNoLogoLetterheadBlocks(company, letterheadSettings)));
+    children.push(buildApplicationMetaGrid(data, widthTwip));
+    children.push(new Paragraph({ spacing: { after: 80 }, children: [] }));
+    children.push(machineryTableFromRows(pageRows, startIndex, widthTwip));
+    children.push(...(await buildTmStyleSignatoryParagraphs(data)));
+    startIndex += pageRows.length;
+  }
+
+  children.push(...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)));
 
   return new Document({
     sections: [
@@ -670,8 +739,14 @@ async function buildCmpf305Docx(
         properties: {
           page: {
             size: pageSizeTwipFromSettings(letterheadSettings),
-            margin: pageMarginsFromSettings(letterheadSettings),
+            margin: {
+              ...pageMarginsFromSettings(letterheadSettings),
+              footer: convertMillimetersToTwip(5),
+            },
           },
+        },
+        footers: {
+          default: pageNumberFooter(),
         },
         children,
       },

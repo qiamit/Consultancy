@@ -670,19 +670,56 @@ export async function openChecklistAttachmentPrint(documentRef: string): Promise
 export async function downloadChecklistAttachmentPdf(documentRef: string, label: string): Promise<void> {
   const { blob, url } = await fetchChecklistAttachmentBlob(documentRef);
   const safe = label.replace(/[^\w\-]+/g, "_").replace(/_+/g, "_").slice(0, 80) || "Attachment";
-  const pathName = (() => {
-    try {
-      return new URL(url, window.location.origin).pathname;
-    } catch {
-      return decodeStoredDocumentRef(documentRef) ?? "";
-    }
-  })();
+  const pathName = attachmentPathName(url, documentRef);
+  const bytes = new Uint8Array(await blob.arrayBuffer());
+  const typedBlob = new Blob([bytes], {
+    type: blob.type || "application/octet-stream",
+  });
+
+  const isPdf =
+    looksLikePdfBytes(bytes) ||
+    typedBlob.type.includes("pdf") ||
+    /\.pdf(?:\?|$)/i.test(pathName) ||
+    /\.pdf$/i.test(documentRef);
+  if (isPdf) {
+    triggerPdfDownload(new Blob([bytes], { type: "application/pdf" }), `${safe}.pdf`);
+    return;
+  }
+
+  const isHtml =
+    typedBlob.type.includes("html") ||
+    /\.html?(?:\?|$)/i.test(pathName) ||
+    /\.html?$/i.test(documentRef) ||
+    looksLikeHtmlBytes(bytes);
+  const isImage =
+    typedBlob.type.startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|bmp|svg)(?:\?|$)/i.test(pathName) ||
+    /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(documentRef);
+
+  if (isHtml || isImage) {
+    const html = isHtml
+      ? new TextDecoder("utf-8").decode(bytes)
+      : await buildAttachmentHtmlPage({
+          blob: typedBlob,
+          url,
+          label,
+          documentRef,
+        });
+    const pdfBlob = await renderPdfViaPlaywright({
+      html: prepareHtmlForBulkPdf(html),
+      filename: `${safe}.pdf`,
+      format: "a4",
+      landscape: false,
+      margin: { top: "0mm", right: "0mm", bottom: "0mm", left: "0mm" },
+    });
+    triggerPdfDownload(pdfBlob, `${safe}.pdf`);
+    return;
+  }
+
   const extMatch = /\.([a-zA-Z0-9]{2,5})(?:\?|$)/.exec(pathName);
-  const ext =
-    extMatch?.[1]?.toLowerCase() ??
-    (blob.type.includes("pdf") ? "pdf" : "bin");
+  const ext = extMatch?.[1]?.toLowerCase() || "bin";
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = URL.createObjectURL(typedBlob);
   a.download = `${safe}.${ext}`;
   a.click();
   URL.revokeObjectURL(a.href);
@@ -1594,6 +1631,18 @@ function pdfPageHasXObjects(page: ReturnType<PDFDocument["getPage"]>): boolean {
   }
 }
 
+function looksLikeHtmlBytes(bytes: Uint8Array): boolean {
+  const head = new TextDecoder("utf-8")
+    .decode(bytes.subarray(0, 800))
+    .trimStart()
+    .toLowerCase();
+  return (
+    head.startsWith("<!doctype html") ||
+    head.startsWith("<html") ||
+    head.includes("<html")
+  );
+}
+
 function looksLikePdfBytes(bytes: Uint8Array): boolean {
   let i = 0;
   while (
@@ -1756,10 +1805,14 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
 
 function attachmentPathName(url: string, fallbackRef: string): string {
   try {
-    return new URL(url).pathname;
+    const parsed = new URL(url, typeof window !== "undefined" ? window.location.origin : "http://localhost");
+    const fromQuery = parsed.searchParams.get("path") || parsed.searchParams.get("filename") || "";
+    if (fromQuery.trim()) return fromQuery;
+    if (/\.[a-zA-Z0-9]{2,5}$/.test(parsed.pathname)) return parsed.pathname;
   } catch {
-    return fallbackRef;
+    /* fall through */
   }
+  return decodeStoredDocumentRef(fallbackRef) || fallbackRef;
 }
 
 async function buildAttachmentHtmlPage(opts: {
@@ -1769,10 +1822,17 @@ async function buildAttachmentHtmlPage(opts: {
   documentRef: string;
 }): Promise<string> {
   const pathName = attachmentPathName(opts.url, opts.documentRef);
+  const bytes = new Uint8Array(await opts.blob.arrayBuffer());
   const isPdf =
+    looksLikePdfBytes(bytes) ||
     opts.blob.type.includes("pdf") ||
     /\.pdf(?:\?|$)/i.test(pathName) ||
     /\.pdf$/i.test(opts.documentRef);
+  const isHtml =
+    opts.blob.type.includes("html") ||
+    /\.html?(?:\?|$)/i.test(pathName) ||
+    /\.html?$/i.test(opts.documentRef) ||
+    looksLikeHtmlBytes(bytes);
   const isImage =
     opts.blob.type.startsWith("image/") ||
     /\.(png|jpe?g|gif|webp|bmp|svg)(?:\?|$)/i.test(pathName) ||
@@ -1789,8 +1849,11 @@ async function buildAttachmentHtmlPage(opts: {
     .replace(/>/g, "&gt;");
 
   let bodyHtml: string;
+  if (isHtml) {
+    return new TextDecoder("utf-8").decode(bytes);
+  }
   if (isImage) {
-    const dataUrl = await blobToDataUrl(opts.blob);
+    const dataUrl = await blobToDataUrl(new Blob([bytes], { type: opts.blob.type || "image/*" }));
     bodyHtml = `
       <div style="font-family:Arial,Helvetica,sans-serif;padding:8mm;color:#111;">
         <p style="font-size:12px;font-weight:700;margin:0 0 8px;">${safeLabel}</p>

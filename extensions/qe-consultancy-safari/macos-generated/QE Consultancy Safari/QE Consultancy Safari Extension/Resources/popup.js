@@ -161,6 +161,69 @@ function init() {
     });
   });
 
+  const bsbEmail = document.getElementById("bsbEmail");
+  const bsbPassword = document.getElementById("bsbPassword");
+  const saveBsb = document.getElementById("saveBsb");
+  if (bsbEmail && bsbPassword && saveBsb) {
+    chrome.storage.local.get(["qeBsbedgeEmail", "qeBsbedgePassword"], (data) => {
+      bsbEmail.value = data.qeBsbedgeEmail || "";
+      bsbPassword.value = data.qeBsbedgePassword || "";
+    });
+    saveBsb.addEventListener("click", async () => {
+      await chrome.storage.local.set({
+        qeBsbedgeEmail: bsbEmail.value.trim(),
+        qeBsbedgePassword: bsbPassword.value,
+      });
+      setStatus("BSB Edge login saved in this browser only.", false);
+    });
+  }
+
+  function readIsNumber() {
+    const el = document.getElementById("isNumber");
+    return (el && el.value ? el.value : "").trim();
+  }
+
+  function startIsFetch(sites, label) {
+    const isNumber = readIsNumber();
+    if (!isNumber) {
+      setStatus("Enter an IS Number first.", true);
+      return;
+    }
+    chrome.runtime.sendMessage(
+      { type: "QE_IS_CODE_FETCH", isNumber, sites },
+      (response) => {
+        if (chrome.runtime.lastError) {
+          setStatus(chrome.runtime.lastError.message, true);
+          return;
+        }
+        if (response && response.ok === false) {
+          setStatus(response.error || `${label} failed.`, true);
+          return;
+        }
+        setStatus(`${label} started. Keep the QE app tab open.`, false);
+      },
+    );
+  }
+
+  const updateIsDetails = document.getElementById("updateIsDetails");
+  const downloadStandard = document.getElementById("downloadStandard");
+  const downloadProductManual = document.getElementById("downloadProductManual");
+  if (updateIsDetails) {
+    updateIsDetails.addEventListener("click", () => {
+      startIsFetch(["details", "lims", "knowfees"], "Update IS Details");
+    });
+  }
+  if (downloadStandard) {
+    downloadStandard.addEventListener("click", () => {
+      startIsFetch(["bsbedge"], "Download Standard");
+    });
+  }
+  if (downloadProductManual) {
+    downloadProductManual.addEventListener("click", () => {
+      startIsFetch(["manuals"], "Download Product Manual");
+    });
+  }
+
   fillButton.addEventListener("click", () => {
     const fieldName = fieldNameInput.value.trim();
     const value = fieldValueInput.value;

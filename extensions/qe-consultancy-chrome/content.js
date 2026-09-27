@@ -954,25 +954,53 @@
     return btoa(binary);
   }
 
+  function sendRuntimeMessage(message) {
+    return new Promise((resolve, reject) => {
+      try {
+        const sent = chrome.runtime.sendMessage(message, (res) => {
+          if (chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(res);
+        });
+        if (sent && typeof sent.catch === "function") sent.catch(reject);
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
   async function sendPdfToApp(payload, base64, name) {
-    if (!base64 || window.__qeManakPdfSent) return;
-    window.__qeManakPdfSent = true;
-    const result = {
-      kind: RESULT_KIND,
+    const raw = String(base64 || "").replace(/^data:application\/pdf;base64,/i, "").replace(/\s+/g, "");
+    if (!raw || window.__qeManakPdfSent) return;
+    window.__qeManakPdfSending = true;
+    const meta = {
       sampleId: text(payload.sampleId),
-      sample_code: readSampleCodeFromPage() || lookup(payload, "sample.sample_code"),
+      sample_code: cleanSampleCode(readSampleCodeFromPage() || lookup(payload, "sample.sample_code")),
       qr_code: lookup(payload, "sample.qr_code"),
-      filledAt: Date.now(),
       pdfName: name || `Test_Request_${text(payload.sampleId) || "sample"}.pdf`,
-      pdfBase64: base64,
     };
+    const id = `pdf-${meta.sampleId || "x"}-${Date.now()}`;
+    const chunk = 120000;
+    const total = Math.ceil(raw.length / chunk) || 1;
     try {
-      const sent = chrome.runtime.sendMessage({ type: "QE_MANAK_PDF", result });
-      if (sent && typeof sent.catch === "function") sent.catch(() => {});
+      await sendRuntimeMessage({ type: "QE_MANAK_PDF_START", id, total, meta });
+      for (let i = 0; i < total; i += 1) {
+        await sendRuntimeMessage({
+          type: "QE_MANAK_PDF_PART",
+          id,
+          index: i,
+          total,
+          chunk: raw.slice(i * chunk, (i + 1) * chunk),
+        });
+      }
+      window.__qeManakPdfSent = true;
+      showBanner("Test Request PDF sent to Consultancy Pro for attach.", true);
     } catch {
-      /* ignore */
+      window.__qeManakPdfSending = false;
+      showBanner("PDF send failed. Retrying capture…", false);
     }
-    showBanner("Test Request PDF sent to Consultancy Pro for attach.", true);
   }
 
   async function capturePdfFromUrl(payload, url) {
@@ -992,16 +1020,19 @@
   }
 
   function findPdfUrlOnPage() {
+    const hooked = document.documentElement.getAttribute("data-qe-pdf-url") || "";
+    if (hooked && !isBlockedUrl(hooked)) return hooked;
     const anchors = Array.from(document.querySelectorAll("a[href], embed[src], iframe[src], object[data]"));
     for (const el of anchors) {
       const href = text(el.href || el.src || el.getAttribute("data") || "");
       if (!href || isBlockedUrl(href)) continue;
-      if (/pdf/i.test(href)) return href;
+      if (/pdf|generatePdf|printPdf|viewPdf|downloadPdf/i.test(href)) return href;
     }
     return "";
   }
 
   function startPdfWatch(payload) {
+    watchStoredPagePdf(payload);
     if (window.__qeManakPdfWatch) return;
     window.__qeManakPdfWatch = true;
     const origOpen = window.open;
@@ -1028,6 +1059,36 @@
     tick();
     const timer = window.setInterval(tick, 2000);
     window.setTimeout(() => window.clearInterval(timer), 15 * 60 * 1000);
+  }
+
+  window.addEventListener("message", (event) => {
+    if (event.source !== window) return;
+    const data = event.data;
+    if (!data || data.type !== "QE_PAGE_PDF" || !data.base64) return;
+    chrome.storage.local.get(["pendingFill"], (store) => {
+      const payload = (store && store.pendingFill) || {};
+      void sendPdfToApp(payload, data.base64, data.name || "");
+    });
+  });
+
+  function watchStoredPagePdf(payload) {
+    if (window.__qePagePdfWatch) return;
+    window.__qePagePdfWatch = true;
+    const tick = () => {
+      if (window.__qeManakPdfSent || window.__qeManakPdfSending) return;
+      let b64 = "";
+      let name = "Test_Request.pdf";
+      try {
+        b64 = sessionStorage.getItem("qeManakPdfB64") || "";
+        name = sessionStorage.getItem("qeManakPdfName") || name;
+      } catch {
+        /* ignore */
+      }
+      if (!b64) return;
+      void sendPdfToApp(payload || {}, b64, name);
+    };
+    tick();
+    window.setInterval(tick, 1200);
   }
 
   function startCaptchaContinue(payload, mode) {
@@ -1134,10 +1195,17 @@
     window.setTimeout(() => obs.disconnect(), 30 * 60 * 1000);
   }
 
+  function cleanSampleCode(value) {
+    return text(value)
+      .replace(/\s+/g, "")
+      .replace(/(?:QRCODE|QR)$/i, "");
+  }
+
   function isValidSampleCode(value, qr) {
-    const v = text(value);
+    const v = cleanSampleCode(value);
     if (!v || v.length < 4 || v.length > 48) return false;
     if (/\s/.test(v)) return false;
+    if (/^QR/i.test(v)) return false;
     if (/laboratory|laboratories|gravitas|limited|private|hyderabad|kolkata|jaipur/i.test(v)) {
       return false;
     }
@@ -1147,47 +1215,64 @@
   }
 
   function readSampleCodeFromPage() {
-    if (isTrPage() && !isTestRequestListPage() && !isViewOrPrintPage()) return "";
+    if (
+      isTrPage() &&
+      !isTestRequestListPage() &&
+      !isViewOrPrintPage() &&
+      !pageLooksLikePostQrSubmit()
+    ) {
+      return "";
+    }
     const qr = "";
     const field = (map.fields || []).find((item) => item.key === "sample.sample_code");
     const el =
       findBySelectors((field && field.selectors) || []) ||
       findByLabels((field && field.labels) || []);
     if (el && isValidSampleCode(el.value || el.textContent, qr)) {
-      return text(el.value || el.textContent);
+      return cleanSampleCode(el.value || el.textContent);
     }
 
-    const labeled = Array.from(document.querySelectorAll("td, th, label, span, b, strong, p, h3, h4")).find(
-      (node) => /sample\s*code|test\s*request\s*(no|number|code)/i.test(node.textContent || "") &&
-        (node.textContent || "").length < 80,
-    );
+    const labeled = Array.from(document.querySelectorAll("td, th, label, span, b, strong, p, h3, h4"))
+      .filter((node) => {
+        const raw = node.textContent || "";
+        if (raw.length >= 80) return false;
+        if (!/sample\s*code|test\s*request\s*(no|number|code)/i.test(raw)) return false;
+        if (/sample\s*code/i.test(raw) && /qr\s*code/i.test(raw) && raw.length > 24) return false;
+        return true;
+      })
+      .sort((a, b) => (a.textContent || "").length - (b.textContent || "").length)[0];
     if (labeled) {
+      const fromSelf = (labeled.textContent || "").match(
+        /sample\s*code\s*[:.\-]?\s*([A-Z0-9][A-Z0-9/._-]{3,40}?)(?=\s*(?:QR\b|$))/i,
+      );
+      if (fromSelf && isValidSampleCode(fromSelf[1], qr)) return cleanSampleCode(fromSelf[1]);
       const sib = labeled.nextElementSibling;
       const fromSib = sib ? text(sib.value || sib.textContent) : "";
-      if (isValidSampleCode(fromSib, qr)) return fromSib;
+      if (isValidSampleCode(fromSib, qr)) return cleanSampleCode(fromSib);
     }
 
     const body = document.body ? document.body.innerText || "" : "";
     const patterns = [
-      /sample\s*code\s*[:.\-]\s*([A-Z0-9][A-Z0-9/._-]{3,40})/i,
-      /test\s*request\s*(?:no|number|code)\s*[:.\-]\s*([A-Z0-9][A-Z0-9/._-]{3,40})/i,
-      /generated\s+(?:sample\s*code|tr\s*no)\s*[:.\-]\s*([A-Z0-9/._-]{4,40})/i,
+      /sample\s*code\s*[:.\-]?\s*([A-Z0-9][A-Z0-9/._-]{3,40}?)(?=\s*(?:QR\b|QR\s*CODE|$|[^A-Z0-9/._-]))/i,
+      /test\s*request\s*(?:no|number|code)\s*[:.\-]?\s*([A-Z0-9][A-Z0-9/._-]{3,40}?)(?=\s*(?:QR\b|$|[^A-Z0-9/._-]))/i,
+      /generated\s+(?:sample\s*code|tr\s*no)\s*[:.\-]?\s*([A-Z0-9/._-]{4,40}?)(?=\s*(?:QR\b|$|[^A-Z0-9/._-]))/i,
     ];
     for (const re of patterns) {
       const match = body.match(re);
-      if (match && isValidSampleCode(match[1], qr)) return match[1];
+      if (match && isValidSampleCode(match[1], qr)) return cleanSampleCode(match[1]);
     }
     return "";
   }
 
   function publishResult(payload, sampleCode) {
-    if (!isValidSampleCode(sampleCode, lookup(payload, "sample.qr_code"))) return;
-    if (!sampleCode || window.__qeManakCaptured === sampleCode) return;
-    window.__qeManakCaptured = sampleCode;
+    const code = cleanSampleCode(sampleCode);
+    if (!isValidSampleCode(code, lookup(payload, "sample.qr_code"))) return;
+    if (!code || window.__qeManakCaptured === code) return;
+    window.__qeManakCaptured = code;
     const result = {
       kind: RESULT_KIND,
       sampleId: text(payload.sampleId),
-      sample_code: sampleCode,
+      sample_code: code,
       qr_code: lookup(payload, "sample.qr_code"),
       filledAt: Date.now(),
     };
@@ -1197,7 +1282,7 @@
     } catch {
       /* ignore */
     }
-    showBanner(`Sample Code ${sampleCode} sent back to Consultancy Pro.`, true);
+    showBanner(`Sample Code ${code} sent back to Consultancy Pro.`, true);
     window.setTimeout(() => {
       if (!window.__qeManakPdfSent && isViewOrPrintPage()) requestSilentPdf(payload);
     }, 800);
@@ -1211,11 +1296,9 @@
       fillQrIfPresent(payload);
       const hooked = document.documentElement.getAttribute("data-qe-pdf-url") || "";
       if (hooked) void capturePdfFromUrl(payload, hooked);
-      if (isTestRequestListPage() || isViewOrPrintPage()) {
+      if (isTestRequestListPage() || isViewOrPrintPage() || pageLooksLikePostQrSubmit()) {
         const code = readSampleCodeFromPage();
-        if (code && code !== lookup(payload, "sample.sample_code")) {
-          publishResult(payload, code);
-        }
+        if (code) publishResult(payload, code);
       }
     };
 
@@ -1377,11 +1460,11 @@
     if (!found) return "";
     const cells = Array.from(found.row.querySelectorAll("td"));
     if (found.codeIdx >= 0 && cells[found.codeIdx]) {
-      const value = text(cells[found.codeIdx].textContent);
+      const value = cleanSampleCode(cells[found.codeIdx].textContent);
       if (isValidSampleCode(value, found.qr)) return value;
     }
     for (const cell of cells) {
-      const value = text(cell.textContent);
+      const value = cleanSampleCode(cell.textContent);
       if (isValidSampleCode(value, found.qr)) return value;
     }
     return readSampleCodeFromPage();
@@ -1413,32 +1496,48 @@
       /[^\w.\-]+/g,
       "_",
     );
-    showBanner("Saving Test Request PDF into Consultancy Pro. Print dialog is not used.", true);
-    const asked = chrome.runtime.sendMessage({
-      type: "QE_MANAK_PRINT_PDF",
-      result: {
-        sampleId: text(payload.sampleId),
-        sample_code: sampleCode,
-        qr_code: lookup(payload, "sample.qr_code"),
-        pdfName: name,
-      },
-    });
-    Promise.resolve(asked)
-      .then((res) => {
-        if (res && res.base64) {
-          void sendPdfToApp(payload, res.base64, res.name || name);
-          return;
-        }
-        window.__qeManakPdfAsked = false;
-        showBanner(
-          "PDF capture needs a Manak download or Chrome debugger. Do not use Print / Save as PDF.",
-          false,
-          true,
-        );
-      })
-      .catch(() => {
-        window.__qeManakPdfAsked = false;
+    startPdfWatch(payload);
+    watchStoredPagePdf(payload);
+    showBanner("Capturing Test Request PDF for Consultancy Pro…", true);
+    document.dispatchEvent(new CustomEvent("qe-manak-download-pdf", { bubbles: true }));
+    window.setTimeout(() => {
+      if (!window.__qeManakPdfSent) clickDownloadTestRequest();
+    }, 400);
+
+    const retry = window.setInterval(() => {
+      if (window.__qeManakPdfSent) {
+        window.clearInterval(retry);
+        return;
+      }
+      document.dispatchEvent(new CustomEvent("qe-manak-download-pdf", { bubbles: true }));
+      clickDownloadTestRequest();
+    }, 7000);
+
+    window.setTimeout(() => {
+      if (window.__qeManakPdfSent) {
+        window.clearInterval(retry);
+        return;
+      }
+      const asked = chrome.runtime.sendMessage({
+        type: "QE_MANAK_PRINT_PDF",
+        result: {
+          sampleId: text(payload.sampleId),
+          sample_code: sampleCode,
+          qr_code: lookup(payload, "sample.qr_code"),
+          pdfName: name,
+        },
       });
+      Promise.resolve(asked)
+        .then((res) => {
+          if (res && res.base64) {
+            window.clearInterval(retry);
+            void sendPdfToApp(payload, res.base64, res.name || name);
+          }
+        })
+        .catch(() => {});
+    }, 5000);
+
+    window.setTimeout(() => window.clearInterval(retry), 2 * 60 * 1000);
   }
 
   async function handleListPage(payload) {
@@ -1719,8 +1818,10 @@
         const store = await new Promise((resolve) => {
           chrome.storage.local.get(["pendingFill"], (data) => resolve(data || {}));
         });
-        const payload = pending || store.pendingFill;
-        if (payload && msg.url) await capturePdfFromUrl(payload, msg.url);
+        const payload = pending || store.pendingFill || {};
+        const url = msg.url || document.documentElement.getAttribute("data-qe-pdf-url") || findPdfUrlOnPage();
+        if (url) await capturePdfFromUrl(payload, url);
+        else startPdfWatch(payload);
         sendResponse({ ok: true });
       })();
       return true;

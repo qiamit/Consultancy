@@ -52,6 +52,8 @@ export type ManakTestRequestPayload = {
   sample: ManakTestRequestSample;
   portalUserId?: string;
   portalPassword?: string;
+  returnUrl?: string;
+  returnToken?: string;
 };
 
 export type ManakTestRequestResult = {
@@ -62,6 +64,8 @@ export type ManakTestRequestResult = {
   filledAt: number;
   pdfBase64?: string;
   pdfName?: string;
+  test_request_ref?: string;
+  test_request_name?: string;
 };
 
 function text(value: unknown): string {
@@ -210,10 +214,18 @@ export function parseManakTestRequestPayload(
   }
 }
 
+/** Drop a trailing "QR" picked up from the next table heading (Sample Code | QR Code). */
+export function cleanManakSampleCode(value: string): string {
+  return text(value)
+    .replace(/\s+/g, "")
+    .replace(/(?:QRCODE|QR)$/i, "");
+}
+
 export function isLikelyManakSampleCode(value: string): boolean {
-  const v = text(value);
+  const v = cleanManakSampleCode(value);
   if (!v || v.length < 4 || v.length > 48 || /\s/.test(v)) return false;
   if (/laboratory|laboratories|gravitas|limited|private/i.test(v)) return false;
+  if (/^QR/i.test(v)) return false;
   return /^[A-Z0-9][A-Z0-9/._-]+$/i.test(v);
 }
 
@@ -231,10 +243,11 @@ export function parseManakTestRequestResult(
     >;
     if (!parsed || parsed.kind !== MANAK_TEST_REQUEST_RESULT_KIND) return null;
     const sampleCode = isLikelyManakSampleCode(text(parsed.sample_code))
-      ? text(parsed.sample_code)
+      ? cleanManakSampleCode(text(parsed.sample_code))
       : "";
     const pdfBase64 = text(parsed.pdfBase64);
-    if (!sampleCode && !pdfBase64) return null;
+    const testRequestRef = text(parsed.test_request_ref);
+    if (!sampleCode && !pdfBase64 && !testRequestRef) return null;
     return {
       kind: MANAK_TEST_REQUEST_RESULT_KIND,
       sampleId: text(parsed.sampleId),
@@ -243,6 +256,8 @@ export function parseManakTestRequestResult(
       filledAt: Number(parsed.filledAt) || Date.now(),
       pdfBase64: pdfBase64 || undefined,
       pdfName: text(parsed.pdfName) || undefined,
+      test_request_ref: testRequestRef || undefined,
+      test_request_name: text(parsed.test_request_name) || undefined,
     };
   } catch {
     return null;

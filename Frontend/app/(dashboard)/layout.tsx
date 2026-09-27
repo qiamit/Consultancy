@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { Sidebar } from "@/components/dashboard/sidebar";
 import { SidebarFallback } from "@/components/dashboard/sidebar-fallback";
@@ -10,6 +11,7 @@ import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { QEAssistantProvider } from "@/components/dashboard/qe-assistant-provider";
 import { IsCodePortalAiListener } from "@/components/modules/is-code-master/portal-ai-listener";
 import { createClient } from "@backend/db/client/server";
+import { requirePageModuleAccess } from "@backend/modules/auth/require-page-access";
 
 export default async function DashboardLayout({
   children,
@@ -21,6 +23,8 @@ export default async function DashboardLayout({
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) redirect("/login");
+  const pathname = (await headers()).get("x-pathname") || "/dashboard";
+  await requirePageModuleAccess(pathname);
 
   return (
     <SidebarLayoutProvider>

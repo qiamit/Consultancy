@@ -8,9 +8,11 @@ import {
 } from "@backend/modules/bis/manak-online-portal";
 import {
   buildManakTestRequestPayload,
+  cleanManakSampleCode,
   isLikelyManakSampleCode,
   parseManakTestRequestResult,
   stringifyManakTestRequestPayload,
+  MANAK_TEST_REQUEST_RESULT_KIND,
   type ManakTestRequestPayload,
   type ManakTestRequestResult,
 } from "@backend/modules/bis/manak-test-request-payload";
@@ -63,12 +65,7 @@ export function copyManakTestRequestPayload(
   application: ManakTestRequestApplicationContext,
 ): boolean {
   const payload = buildSampleManakTestRequestPayload(row, application);
-  try {
-    sessionStorage.setItem("qeManakLastSampleId", payload.sampleId || "");
-    sessionStorage.setItem("qeManakLastQr", payload.sample.qr_code || "");
-  } catch {
-    /* ignore */
-  }
+  rememberLastManakOpen(payload.sampleId || "", payload.sample.qr_code || "");
   return copyTextToClipboard(stringifyManakTestRequestPayload(payload));
 }
 
@@ -104,12 +101,28 @@ export function openManakTestRequest(
     portalUserId,
     portalPassword,
   };
+  rememberLastManakOpen(payload.sampleId || "", payload.sample.qr_code || "");
+  const returnToken =
+    typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `manak-${Date.now()}`;
+  payload.returnUrl = window.location.origin;
+  payload.returnToken = returnToken;
   try {
-    sessionStorage.setItem("qeManakLastSampleId", payload.sampleId || "");
-    sessionStorage.setItem("qeManakLastQr", payload.sample.qr_code || "");
+    sessionStorage.setItem("qeManakReturnToken", returnToken);
   } catch {
     /* ignore */
   }
+  void fetch("/api/osl/manak-pdf", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      action: "register",
+      token: returnToken,
+      sampleId: payload.sampleId || "",
+    }),
+  }).catch(() => {});
   const copied = copyTextToClipboard(stringifyManakTestRequestPayload(payload));
   const loginUrl =
     portalUserId || portalPassword
@@ -145,7 +158,22 @@ export function openManakTestRequest(
   return copied;
 }
 
+let lastOpenedManakSample = { sampleId: "", qr_code: "" };
+
+function rememberLastManakOpen(sampleId: string, qrCode: string) {
+  lastOpenedManakSample = { sampleId: sampleId || "", qr_code: qrCode || "" };
+  try {
+    sessionStorage.setItem("qeManakLastSampleId", lastOpenedManakSample.sampleId);
+    sessionStorage.setItem("qeManakLastQr", lastOpenedManakSample.qr_code);
+  } catch {
+    /* ignore */
+  }
+}
+
 export function lastManakOpenSample(): { sampleId: string; qr_code: string } {
+  if (lastOpenedManakSample.sampleId || lastOpenedManakSample.qr_code) {
+    return lastOpenedManakSample;
+  }
   try {
     return {
       sampleId: sessionStorage.getItem("qeManakLastSampleId") || "",
@@ -209,9 +237,10 @@ function sanitizeManakResult(
   result: ManakTestRequestResult | undefined,
 ): ManakTestRequestResult | undefined {
   if (!result) return undefined;
-  const sampleCode = isLikelyManakSampleCode(result.sample_code) ? result.sample_code : "";
-  if (!sampleCode && !result.pdfBase64) return undefined;
-  return { ...result, sample_code: sampleCode };
+  const sampleCode = cleanManakSampleCode(result.sample_code || "");
+  const okCode = isLikelyManakSampleCode(sampleCode) ? sampleCode : "";
+  if (!okCode && !result.pdfBase64 && !result.test_request_ref) return undefined;
+  return { ...result, sample_code: okCode };
 }
 
 export function subscribeManakTestRequestResult(
@@ -227,12 +256,46 @@ export function subscribeManakTestRequestResult(
     const data = event.data;
     if (!data || data.type !== "QE_MANAK_RESULT") return;
     const result = sanitizeManakResult(data.result as ManakTestRequestResult | undefined);
-    if (result?.sample_code || result?.pdfBase64) onResult(result);
+    if (result?.sample_code || result?.pdfBase64 || result?.test_request_ref) onResult(result);
   }
 
   function onCustom(event: Event) {
     const detail = sanitizeManakResult((event as CustomEvent<ManakTestRequestResult>).detail);
-    if (detail?.sample_code || detail?.pdfBase64) onResult(detail);
+    if (detail?.sample_code || detail?.pdfBase64 || detail?.test_request_ref) onResult(detail);
+  }
+
+  async function pullInbox() {
+    let token = "";
+    try {
+      token = sessionStorage.getItem("qeManakReturnToken") || "";
+    } catch {
+      token = "";
+    }
+    if (!token) return;
+    try {
+      const res = await fetch(`/api/osl/manak-pdf?token=${encodeURIComponent(token)}`, {
+        credentials: "include",
+      });
+      const data = (await res.json()) as {
+        ready?: boolean;
+        sampleId?: string;
+        sample_code?: string;
+        ref?: string;
+        pdfName?: string;
+      };
+      if (!data?.ready || !data.ref) return;
+      onResult({
+        kind: MANAK_TEST_REQUEST_RESULT_KIND,
+        sampleId: data.sampleId || lastOpenedManakSample.sampleId || "",
+        sample_code: data.sample_code || "",
+        qr_code: lastOpenedManakSample.qr_code || "",
+        filledAt: Date.now(),
+        test_request_ref: data.ref,
+        test_request_name: data.pdfName || "Test_Request.pdf",
+      });
+    } catch {
+      /* inbox not ready */
+    }
   }
 
   async function pullClipboard() {
@@ -258,8 +321,14 @@ export function subscribeManakTestRequestResult(
   document.addEventListener("visibilitychange", onVisibility);
   window.postMessage({ type: "QE_MANAK_PULL_RESULT" }, "*");
   void pullClipboard();
+  void pullInbox();
+  const poll = window.setInterval(() => {
+    window.postMessage({ type: "QE_MANAK_PULL_RESULT" }, "*");
+    void pullInbox();
+  }, 2500);
 
   return () => {
+    window.clearInterval(poll);
     window.removeEventListener("message", onMessage);
     window.removeEventListener("qe-manak-sample-result", onCustom as EventListener);
     window.removeEventListener("focus", onFocus);
@@ -268,14 +337,19 @@ export function subscribeManakTestRequestResult(
 }
 
 export function manakPdfFileFromResult(result: ManakTestRequestResult): File | null {
-  const raw = (result.pdfBase64 ?? "").trim();
+  const raw = (result.pdfBase64 ?? "")
+    .trim()
+    .replace(/^data:application\/pdf;base64,/i, "")
+    .replace(/\s+/g, "");
   if (!raw) return null;
   try {
     const binary = atob(raw);
     const bytes = new Uint8Array(binary.length);
     for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+    const copy = new Uint8Array(bytes.byteLength);
+    copy.set(bytes);
     const name = (result.pdfName ?? "").trim() || `Test_Request_${result.sampleId || "sample"}.pdf`;
-    return new File([bytes], name, { type: "application/pdf" });
+    return new File([copy], name, { type: "application/pdf" });
   } catch {
     return null;
   }

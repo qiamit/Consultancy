@@ -305,10 +305,15 @@ export function DashboardHome({
   const portfolioTotal = portfolio.reduce((sum, s) => sum + s.value, 0);
 
   const masterCards = MASTER_CARDS.filter((c) => canSee(allowed, c.module));
-  const opsCards = OPS_CARDS.filter((c) => canSee(allowed, c.module));
+  const opsCards = OPS_CARDS.filter(
+    (c) => canSee(allowed, c.module) && (user.isAdmin || c.module !== "email"),
+  );
 
   const quickLinks = DASHBOARD_MODULES.filter(
-    (m) => canSee(allowed, m.key) && (m.inMainNav || m.key === "email"),
+    (m) =>
+      canSee(allowed, m.key) &&
+      (m.inMainNav || m.key === "email") &&
+      (user.isAdmin || m.key !== "email"),
   );
 
   const showFinanceCta = canSee(allowed, "finance");

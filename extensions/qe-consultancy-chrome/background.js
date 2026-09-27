@@ -7,13 +7,20 @@ const RESULT_KIND = "QE_MANAK_TR_RESULT_V1";
 const PLAY_STORE = /play\.google\.com|apps\.apple\.com|com\.bis\.app|itunes\.apple\.com/i;
 const APP_TAB_URLS = [
   "http://localhost/*",
+  "http://localhost:*/*",
   "http://127.0.0.1/*",
+  "http://127.0.0.1:*/*",
+  "http://localhost:3000/*",
   "https://qengineering.in/*",
   "https://www.qengineering.in/*",
   "https://*.qengineering.in/*",
   "https://*.up.railway.app/*",
   "https://*.railway.app/*",
+  "https://consultancy-production-9720.up.railway.app/*",
 ];
+const APP_HOST_RE =
+  /localhost|127\.0\.0\.1|qengineering\.in|railway\.app|consultancy-production/i;
+const PDF_CHUNK = 160000;
 
 const hasDebugger = Boolean(chrome.debugger);
 const hasDownloads = Boolean(chrome.downloads && chrome.downloads.onChanged);
@@ -150,12 +157,205 @@ async function printTabToPdf(tabId) {
   }
 }
 
-function notifyAppTabs(result) {
-  chrome.tabs.query({ url: APP_TAB_URLS }, (tabs) => {
-    (tabs || []).forEach((tab) => {
-      if (!tab.id) return;
-      void safeSendTab(tab.id, { type: "QE_MANAK_RESULT", result });
+async function injectPdfViaScript(tabId, result) {
+  if (!tabId || !result.pdfBase64 || !chrome.scripting || !chrome.scripting.executeScript) return;
+  const pdf = result.pdfBase64;
+  const chunk = 80000;
+  const total = Math.ceil(pdf.length / chunk) || 1;
+  const injectId = `inj-${result.sampleId || "x"}-${result.filledAt || Date.now()}`;
+  const meta = {
+    kind: RESULT_KIND,
+    sampleId: result.sampleId || "",
+    sample_code: result.sample_code || "",
+    qr_code: result.qr_code || "",
+    pdfName: result.pdfName || "Test_Request.pdf",
+    filledAt: result.filledAt || Date.now(),
+  };
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (id, count, info) => {
+        window.__qePdfInject = { id, total: count, meta: info, parts: [] };
+      },
+      args: [injectId, total, meta],
     });
+    for (let i = 0; i < total; i += 1) {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: (id, index, part) => {
+          if (!window.__qePdfInject || window.__qePdfInject.id !== id) return;
+          window.__qePdfInject.parts[index] = part;
+        },
+        args: [injectId, i, pdf.slice(i * chunk, (i + 1) * chunk)],
+      });
+    }
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      func: (id) => {
+        const bag = window.__qePdfInject;
+        if (!bag || bag.id !== id) return;
+        if (bag.parts.filter((part) => typeof part === "string").length !== bag.total) return;
+        const payload = { ...bag.meta, pdfBase64: bag.parts.join("") };
+        window.__qePdfInject = null;
+        window.postMessage({ type: "QE_MANAK_RESULT", result: payload }, "*");
+        window.dispatchEvent(new CustomEvent("qe-manak-sample-result", { detail: payload }));
+      },
+      args: [injectId],
+    });
+  } catch {
+    /* tab may have closed */
+  }
+}
+
+function deliverResultToTab(tabId, result) {
+  if (!tabId) return;
+  const pdf = result.pdfBase64 || "";
+  const light = { ...result, pdfBase64: "" };
+  void safeSendTab(tabId, { type: "QE_MANAK_RESULT", result: light });
+  injectLightResult(tabId, light);
+  if (!pdf) return;
+  void injectPdfViaScript(tabId, result);
+  const id = `manak-pdf-${result.sampleId || "x"}-${result.filledAt || Date.now()}`;
+  const total = Math.ceil(pdf.length / PDF_CHUNK) || 1;
+  const meta = {
+    sampleId: result.sampleId || "",
+    sample_code: result.sample_code || "",
+    qr_code: result.qr_code || "",
+    pdfName: result.pdfName || "Test_Request.pdf",
+    filledAt: result.filledAt || Date.now(),
+  };
+  for (let i = 0; i < total; i += 1) {
+    void safeSendTab(tabId, {
+      type: "QE_MANAK_PDF_CHUNK",
+      id,
+      index: i,
+      total,
+      chunk: pdf.slice(i * PDF_CHUNK, (i + 1) * PDF_CHUNK),
+      meta,
+    });
+  }
+}
+
+function notifyAppTabs(result) {
+  const seen = new Set();
+  const send = (tabId) => {
+    if (!tabId || seen.has(tabId)) return;
+    seen.add(tabId);
+    deliverResultToTab(tabId, result);
+  };
+  send(lastManakAppTabId || lastIsCodeAppTabId);
+  chrome.tabs.query({}, (all) => {
+    findAppTabIds(all).forEach(send);
+  });
+}
+
+const STORE_CHUNK = 350000;
+
+function rememberManakReturn(payload) {
+  const returnUrl = String((payload && payload.returnUrl) || "").trim().replace(/\/$/, "");
+  const returnToken = String((payload && payload.returnToken) || "").trim();
+  if (!returnUrl || !returnToken) return;
+  chrome.storage.local.set({
+    qeManakReturn: {
+      returnUrl,
+      returnToken,
+      sampleId: (payload && payload.sampleId) || "",
+    },
+  });
+}
+
+async function uploadPdfToAppInbox(result) {
+  if (!result || !result.pdfBase64) return;
+  let stored = {};
+  try {
+    stored = await chrome.storage.local.get(["pendingFill", "qeManakReturn"]);
+  } catch {
+    return;
+  }
+  const pending = (stored && stored.pendingFill) || {};
+  const ret = (stored && stored.qeManakReturn) || {};
+  const returnUrl = String(pending.returnUrl || ret.returnUrl || "").replace(/\/$/, "");
+  const returnToken = String(pending.returnToken || ret.returnToken || "").trim();
+  if (!returnUrl || !returnToken) return;
+  const pdf = String(result.pdfBase64)
+    .replace(/^data:application\/pdf;base64,/i, "")
+    .replace(/\s+/g, "");
+  if (!pdf) return;
+  const chunkSize = 120000;
+  const total = Math.ceil(pdf.length / chunkSize) || 1;
+  try {
+    for (let index = 0; index < total; index += 1) {
+      const res = await fetch(`${returnUrl}/api/osl/manak-pdf`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "chunk",
+          token: returnToken,
+          index,
+          total,
+          chunk: pdf.slice(index * chunkSize, (index + 1) * chunkSize),
+        }),
+      });
+      if (!res.ok) return;
+    }
+    await fetch(`${returnUrl}/api/osl/manak-pdf`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "finish",
+        token: returnToken,
+        pdfName: result.pdfName || "Test_Request.pdf",
+        sample_code: result.sample_code || "",
+        sampleId: result.sampleId || pending.sampleId || ret.sampleId || "",
+      }),
+    });
+  } catch {
+    /* app inbox unavailable */
+  }
+}
+
+function persistManakResult(result) {
+  const pdf = result.pdfBase64 || "";
+  const light = { ...result, pdfBase64: "" };
+  chrome.storage.local.get(null, (all) => {
+    const stale = Object.keys(all || {}).filter((key) => /^manakPdf_\d+$/.test(key) || key === "manakPdfMeta");
+    const writeChunks = () => {
+      chrome.storage.local.set({ manakResult: light, manakPdfMeta: null }, () => {
+        void chrome.runtime.lastError;
+        if (!pdf) return;
+        void uploadPdfToAppInbox({ ...result, pdfBase64: pdf });
+        const total = Math.ceil(pdf.length / STORE_CHUNK) || 1;
+        let index = 0;
+        const next = () => {
+          if (index >= total) {
+            chrome.storage.local.set(
+              {
+                manakPdfMeta: {
+                  total,
+                  pdfName: result.pdfName || "Test_Request.pdf",
+                  sampleId: result.sampleId || "",
+                  sample_code: result.sample_code || "",
+                  qr_code: result.qr_code || "",
+                  filledAt: result.filledAt || Date.now(),
+                },
+              },
+              () => void chrome.runtime.lastError,
+            );
+            return;
+          }
+          const key = `manakPdf_${index}`;
+          const chunk = pdf.slice(index * STORE_CHUNK, (index + 1) * STORE_CHUNK);
+          index += 1;
+          chrome.storage.local.set({ [key]: chunk }, () => {
+            void chrome.runtime.lastError;
+            next();
+          });
+        };
+        next();
+      });
+    };
+    if (stale.length) chrome.storage.local.remove(stale, writeChunks);
+    else writeChunks();
   });
 }
 
@@ -172,11 +372,42 @@ function storePdfResult(partial) {
       pdfName: partial.pdfName || prev.pdfName || "Test_Request.pdf",
       pdfBase64: partial.pdfBase64 || prev.pdfBase64 || "",
     };
-    chrome.storage.local.set({ manakResult: result }, () => {
-      void chrome.runtime.lastError;
-      notifyAppTabs(result);
+    persistManakResult(result);
+    notifyAppTabs(result);
+  });
+}
+
+function askManakTabsForPdf(url, filename) {
+  chrome.tabs.query({ url: ["https://www.manakonline.in/*", "https://manakonline.in/*"] }, (tabs) => {
+    (tabs || []).forEach((tab) => {
+      if (!tab.id) return;
+      void safeSendTab(tab.id, {
+        type: "QE_MANAK_FETCH_PDF",
+        url: url || "",
+        filename: (filename || "Test_Request.pdf").split(/[/\\]/).pop(),
+      });
     });
   });
+}
+
+function cancelBrowserDownload(downloadId) {
+  if (!hasDownloads || !downloadId) return;
+  try {
+    chrome.downloads.cancel(downloadId, () => {
+      void chrome.runtime.lastError;
+      chrome.downloads.erase({ id: downloadId }, () => {
+        void chrome.runtime.lastError;
+      });
+    });
+  } catch {
+    /* ignore */
+  }
+}
+
+function isManakPdfDownload(item) {
+  const blob = `${item.url || ""} ${item.finalUrl || ""} ${item.filename || ""} ${item.mime || ""} ${item.referrer || ""}`;
+  if (!/manakonline/i.test(blob)) return false;
+  return /pdf/i.test(blob) || /\.pdf/i.test(item.filename || "");
 }
 
 async function broadcastBypass(type, enabled) {
@@ -228,7 +459,61 @@ let lastOpenKey = "";
 let lastOpenAt = 0;
 let lastPortal = { userId: "", password: "" };
 let lastIsCodeAppTabId = 0;
+let lastManakAppTabId = 0;
 const fillSentAt = new Map();
+const incomingManakPdf = new Map();
+
+function rememberAppTab(tabId) {
+  const id = Number(tabId) || 0;
+  if (!id) return;
+  lastManakAppTabId = id;
+  lastIsCodeAppTabId = lastIsCodeAppTabId || id;
+  chrome.storage.local.set({ lastManakAppTabId: id, lastIsCodeAppTabId: lastIsCodeAppTabId }, () => {
+    void chrome.runtime.lastError;
+  });
+}
+
+chrome.storage.local.get(["lastManakAppTabId", "lastIsCodeAppTabId"], (data) => {
+  if (data && data.lastManakAppTabId) lastManakAppTabId = Number(data.lastManakAppTabId) || lastManakAppTabId;
+  if (data && data.lastIsCodeAppTabId) lastIsCodeAppTabId = Number(data.lastIsCodeAppTabId) || lastIsCodeAppTabId;
+});
+
+function isAppTabUrl(url) {
+  return APP_HOST_RE.test(String(url || ""));
+}
+
+function findAppTabIds(tabs) {
+  return (tabs || [])
+    .filter((tab) => tab && tab.id && isAppTabUrl(tab.url || ""))
+    .map((tab) => tab.id);
+}
+
+function injectLightResult(tabId, result) {
+  if (!tabId || !chrome.scripting || !chrome.scripting.executeScript) return;
+  const light = {
+    kind: result.kind || RESULT_KIND,
+    sampleId: result.sampleId || "",
+    sample_code: result.sample_code || "",
+    qr_code: result.qr_code || "",
+    filledAt: result.filledAt || Date.now(),
+    pdfName: result.pdfName || "",
+    pdfBase64: "",
+  };
+  void settle(
+    chrome.scripting.executeScript({
+      target: { tabId },
+      func: (payload) => {
+        try {
+          window.postMessage({ type: "QE_MANAK_RESULT", result: payload }, "*");
+          window.dispatchEvent(new CustomEvent("qe-manak-sample-result", { detail: payload }));
+        } catch {
+          /* ignore */
+        }
+      },
+      args: [light],
+    }),
+  );
+}
 
 function rememberPortal(userId, password) {
   lastPortal = {
@@ -346,7 +631,8 @@ async function findLoggedInManakTab() {
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message || typeof message.type !== "string") return;
 
-  if (message.type === "QE_IS_CODE_PING") {
+  if (message.type === "QE_IS_CODE_PING" || message.type === "QE_MANAK_APP_HELLO") {
+    if (sender && sender.tab && sender.tab.id) rememberAppTab(sender.tab.id);
     sendResponse({ ok: true, extension: "QE Consultancy" });
     return true;
   }
@@ -509,7 +795,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === "QE_MANAK_OPEN_TR") {
+    if (sender && sender.tab && sender.tab.id) {
+      rememberAppTab(sender.tab.id);
+    } else {
+      chrome.tabs.query({}, (tabs) => {
+        const appId = findAppTabIds(tabs)[0];
+        if (appId) rememberAppTab(appId);
+      });
+    }
     const payload = message.payload || null;
+    rememberManakReturn(payload);
     const portalUserId = String(message.portalUserId || payload?.portalUserId || "").trim();
     const portalPassword = String(message.portalPassword || payload?.portalPassword || "").trim();
     rememberPortal(portalUserId, portalPassword);
@@ -601,11 +896,39 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "QE_MANAK_PDF_START") {
+    incomingManakPdf.set(message.id, {
+      meta: message.meta || {},
+      parts: [],
+      total: Number(message.total) || 0,
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message.type === "QE_MANAK_PDF_PART") {
+    const entry = incomingManakPdf.get(message.id);
+    if (entry) {
+      entry.parts[Number(message.index) || 0] = message.chunk || "";
+      const have = entry.parts.filter((part) => typeof part === "string").length;
+      if (entry.total && have >= entry.total) {
+        incomingManakPdf.delete(message.id);
+        storePdfResult({
+          ...entry.meta,
+          pdfBase64: entry.parts.join(""),
+        });
+      }
+    }
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (message.type === "QE_IS_CODE_FETCH") {
     const appTabId = sender && sender.tab && sender.tab.id;
     lastIsCodeAppTabId = appTabId || lastIsCodeAppTabId;
     const isNumber = String(message.isNumber || "").trim();
-    void runIsCodeFetch(appTabId, isNumber)
+    const sites = Array.isArray(message.sites) ? message.sites : null;
+    void runIsCodeFetch(appTabId, isNumber, sites)
       .then(() => sendResponse({ ok: true }))
       .catch((error) => sendResponse({ ok: false, error: String(error) }));
     return true;
@@ -865,7 +1188,22 @@ function limsUrl(isNumber) {
   return q.toString();
 }
 
-async function runIsCodeFetch(appTabId, isNumber) {
+async function findConsultancyAppTabId() {
+  if (lastIsCodeAppTabId) return lastIsCodeAppTabId;
+  try {
+    const tabs = await chrome.tabs.query({});
+    const hit = tabs.find((tab) =>
+      /localhost:\d+|qengineering\.in|consultancy-production/i.test(tab.url || ""),
+    );
+    return hit && hit.id ? hit.id : null;
+  } catch {
+    return null;
+  }
+}
+
+async function runIsCodeFetch(appTabId, isNumber, onlySites) {
+  if (!appTabId) appTabId = await findConsultancyAppTabId();
+  lastIsCodeAppTabId = appTabId || lastIsCodeAppTabId;
   if (!isNumber) {
     notifyIsCodeApp(appTabId, "QE_IS_CODE_FILL", {
       payload: { notes: ["Type an IS Number first."] },
@@ -888,7 +1226,7 @@ async function runIsCodeFetch(appTabId, isNumber) {
     [limsUrl(isNumber), "lims"],
     ["https://www.manakonline.in/MANAK/knowfees", "knowfees"],
     ["https://standardsbis.bsbedge.com/BIS_Login", "bsbedge"],
-  ];
+  ].filter(([, site]) => !onlySites || onlySites.includes(site));
   isCodeFetchActive = true;
   try {
     for (const [url, site] of jobs) {
@@ -929,21 +1267,16 @@ async function runIsCodeFetch(appTabId, isNumber) {
 
 if (hasDownloads) {
   chrome.downloads.onCreated.addListener((item) => {
-    if (!isCodeFetchActive) return;
     const blob = `${item.url || ""} ${item.finalUrl || ""} ${item.filename || ""}`;
+    if (isManakPdfDownload(item)) {
+      askManakTabsForPdf(item.url || item.finalUrl || "", item.filename || "");
+      return;
+    }
+    if (!isCodeFetchActive) return;
     if (!/bsbedge|standards\.bis\.gov|product.manual|oraclecloud|bis\.gov\.in|manakonline/i.test(blob)) {
       return;
     }
-    try {
-      chrome.downloads.cancel(item.id, () => {
-        void chrome.runtime.lastError;
-        chrome.downloads.erase({ id: item.id }, () => {
-          void chrome.runtime.lastError;
-        });
-      });
-    } catch {
-      /* ignore */
-    }
+    cancelBrowserDownload(item.id);
   });
   chrome.downloads.onChanged.addListener((delta) => {
     if (!delta.state || delta.state.current !== "complete") return;
@@ -988,27 +1321,33 @@ if (hasDownloads) {
           }
         }
       }
-      if (!/manakonline\.in/i.test(blob) || !/pdf/i.test(blob)) return;
+      if (!isManakPdfDownload(item)) return;
+      askManakTabsForPdf(item.url || item.finalUrl || "", item.filename || "");
+      let captured = false;
       try {
-        const res = await fetch(item.url);
+        const res = await fetch(item.finalUrl || item.url, { credentials: "include" });
         const buf = await res.arrayBuffer();
-        if (buf.byteLength < 80) return;
-        chrome.tabs.query({ url: ["https://www.manakonline.in/*", "https://manakonline.in/*"] }, (tabs) => {
-          (tabs || []).forEach((tab) => {
-            if (!tab.id) return;
-            void safeSendTab(tab.id, {
-              type: "QE_MANAK_FETCH_PDF",
-              url: item.url,
-              filename: (item.filename || "Test_Request.pdf").split(/[/\\]/).pop(),
-            });
+        const head = String.fromCharCode.apply(null, new Uint8Array(buf.slice(0, 5)));
+        if (buf.byteLength >= 80 && head === "%PDF-") {
+          storePdfResult({
+            pdfName: (item.filename || "Test_Request.pdf").split(/[/\\]/).pop(),
+            pdfBase64: arrayBufferToBase64(buf),
           });
-        });
-        storePdfResult({
-          pdfName: (item.filename || "Test_Request.pdf").split(/[/\\]/).pop(),
-          pdfBase64: arrayBufferToBase64(buf),
-        });
+          captured = true;
+        }
       } catch {
         /* page-side capture is the fallback */
+      }
+      if (!captured) return;
+      try {
+        await chrome.downloads.removeFile(item.id);
+      } catch {
+        /* ignore */
+      }
+      try {
+        await chrome.downloads.erase({ id: item.id });
+      } catch {
+        /* ignore */
       }
     });
   });

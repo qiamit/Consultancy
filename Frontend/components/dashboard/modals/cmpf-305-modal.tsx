@@ -12,12 +12,14 @@ import {
 import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
 
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
-import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
+import {
+  iframeSizeForPrintSettings,
+  type ManufacturingScopeDeclarationData,
+} from "@backend/modules/print/manufacturing-scope-declaration";
 import {
   buildCmpf305Html,
   cmpf305PrintPageCount,
   defaultCmpf305PrintSettings,
-  iframeSizeForCmpf305PrintSettings,
   type Cmpf305LetterData,
   type Cmpf305PrintAssets,
 } from "@backend/modules/print/cmpf-305";
@@ -117,7 +119,7 @@ export function Cmpf305Modal({
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
   const [saving, startSave] = useTransition();
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const pageIframeRefs = useRef<Array<HTMLIFrameElement | null>>([]);
   const importFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -224,35 +226,38 @@ export function Cmpf305Modal({
     topManagement,
   ]);
 
-  const refreshPreview = useCallback(() => {
-    const iframe = iframeRef.current;
-    const doc = iframe?.contentDocument;
-    if (!iframe || !doc) return;
-    const html = buildCmpf305Html(previewData, printSettings, printAssets);
-    doc.open();
-    doc.write(html);
-    doc.close();
-    requestAnimationFrame(() => syncPrintPreviewIframe(iframe));
-  }, [previewData, printSettings, printAssets]);
-
-  useEffect(() => {
-    refreshPreview();
-  }, [refreshPreview]);
-
-  useEffect(() => {
-    if (showPrintPreview) {
-      refreshPreview();
-    }
-  }, [showPrintPreview, refreshPreview]);
-
   const previewPageCount = useMemo(
     () => cmpf305PrintPageCount(previewData, printSettings),
     [previewData, printSettings],
   );
-  const iframeSize = iframeSizeForCmpf305PrintSettings(
-    printSettings,
-    previewPageCount,
+  const pageSize = useMemo(
+    () => iframeSizeForPrintSettings(printSettings),
+    [printSettings],
   );
+
+  const refreshPreview = useCallback(() => {
+    const heightMm = pageSize.heightMm;
+    for (let i = 0; i < previewPageCount; i += 1) {
+      const iframe = pageIframeRefs.current[i];
+      const doc = iframe?.contentDocument;
+      if (!iframe || !doc) continue;
+      const html = buildCmpf305Html(previewData, printSettings, printAssets, {
+        onlyPage: i + 1,
+      });
+      doc.open();
+      doc.write(html);
+      doc.close();
+      requestAnimationFrame(() =>
+        syncPrintPreviewIframe(iframe, { minHeightMm: heightMm }),
+      );
+    }
+  }, [previewData, printSettings, printAssets, previewPageCount, pageSize.heightMm]);
+
+  useEffect(() => {
+    if (!showPrintPreview) return;
+    const id = window.requestAnimationFrame(() => refreshPreview());
+    return () => window.cancelAnimationFrame(id);
+  }, [showPrintPreview, refreshPreview, previewPageCount]);
 
   function patchPrintSettings(patch: Partial<PrintSettings>) {
     setPrintSettings((prev) => ({
@@ -272,8 +277,13 @@ export function Cmpf305Modal({
   }
 
   function handlePrint() {
-    iframeRef.current?.contentWindow?.focus();
-    iframeRef.current?.contentWindow?.print();
+    const html = buildCmpf305Html(previewData, printSettings, printAssets);
+    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   }
 
   function handleDownloadWord() {
@@ -489,13 +499,23 @@ export function Cmpf305Modal({
                 </p>
               </div>
               <div className="flex-1 overflow-y-auto p-3 sm:p-6">
-                <iframe
-                  ref={iframeRef}
-                  title="CMPF 305 print preview"
-                  className="mx-auto max-w-full border-0 bg-white shadow-2xl"
-                  scrolling="no"
-                  style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
-                />
+                <div
+                  className="mx-auto flex flex-col items-center"
+                  style={{ gap: "3mm" }}
+                >
+                  {Array.from({ length: previewPageCount }, (_, index) => (
+                    <iframe
+                      key={`cmpf-305-page-${index + 1}-${pageSize.widthMm}x${pageSize.heightMm}`}
+                      ref={(el) => {
+                        pageIframeRefs.current[index] = el;
+                      }}
+                      title={`CMPF 305 page ${index + 1} of ${previewPageCount}`}
+                      className="max-w-full border-0 bg-white shadow-2xl"
+                      scrolling="no"
+                      style={printPreviewIframeStyle(pageSize.widthMm, pageSize.heightMm)}
+                    />
+                  ))}
+                </div>
               </div>
             </div>
           )}

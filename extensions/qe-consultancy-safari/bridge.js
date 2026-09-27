@@ -48,6 +48,7 @@
   }
 
   let lastPublishedKey = "";
+  const pdfChunks = new Map();
 
   function resultKey(result) {
     if (!result) return "";
@@ -70,12 +71,64 @@
     window.dispatchEvent(new CustomEvent("qe-manak-sample-result", { detail: result }));
   }
 
+  function acceptPdfChunk(msg) {
+    if (!msg || !msg.id || typeof msg.chunk !== "string") return;
+    let entry = pdfChunks.get(msg.id);
+    if (!entry) {
+      entry = { parts: [], total: Number(msg.total) || 0, meta: msg.meta || {} };
+      pdfChunks.set(msg.id, entry);
+    }
+    entry.parts[Number(msg.index) || 0] = msg.chunk;
+    const have = entry.parts.filter((part) => typeof part === "string").length;
+    if (!entry.total || have < entry.total) return;
+    const pdfBase64 = entry.parts.join("");
+    pdfChunks.delete(msg.id);
+    publish(
+      {
+        kind: "QE_MANAK_TR_RESULT_V1",
+        sampleId: entry.meta.sampleId || "",
+        sample_code: entry.meta.sample_code || "",
+        qr_code: entry.meta.qr_code || "",
+        pdfName: entry.meta.pdfName || "Test_Request.pdf",
+        filledAt: entry.meta.filledAt || Date.now(),
+        pdfBase64,
+      },
+      true,
+    );
+  }
+
   function pullStoredResult(force) {
     if (!storageOk()) return;
     try {
-      chrome.storage.local.get(["manakResult"], (data) => {
+      chrome.storage.local.get(null, (data) => {
         void chrome.runtime.lastError;
-        if (data && data.manakResult) publish(data.manakResult, force);
+        const light = data && data.manakResult;
+        const meta = data && data.manakPdfMeta;
+        if (meta && Number(meta.total) > 0) {
+          const parts = [];
+          for (let i = 0; i < Number(meta.total); i += 1) {
+            const chunk = data[`manakPdf_${i}`];
+            if (typeof chunk !== "string") {
+              if (light) publish(light, force);
+              return;
+            }
+            parts.push(chunk);
+          }
+          publish(
+            {
+              kind: "QE_MANAK_TR_RESULT_V1",
+              sampleId: (light && light.sampleId) || meta.sampleId || "",
+              sample_code: (light && light.sample_code) || meta.sample_code || "",
+              qr_code: (light && light.qr_code) || meta.qr_code || "",
+              pdfName: meta.pdfName || "Test_Request.pdf",
+              filledAt: (light && light.filledAt) || meta.filledAt || Date.now(),
+              pdfBase64: parts.join(""),
+            },
+            true,
+          );
+          return;
+        }
+        if (light) publish(light, force);
       });
     } catch {
       /* extension context invalidated after Reload */
@@ -125,12 +178,16 @@
   });
 
   if (runtimeOk()) {
+    sendRuntime({ type: "QE_MANAK_APP_HELLO" });
     sendRuntime({ type: "QE_IS_CODE_PING" });
     try {
       chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         if (!msg || typeof msg !== "object") return;
         if ((msg.type === "QE_MANAK_RESULT" || msg.type === "QE_MANAK_PDF") && msg.result) {
           publish(msg.result, true);
+        }
+        if (msg.type === "QE_MANAK_PDF_CHUNK") {
+          acceptPdfChunk(msg);
         }
         if (msg.type === "QE_IS_CODE_PROGRESS") {
           window.postMessage({ type: "QE_IS_CODE_PROGRESS", message: msg.message || "" }, "*");
@@ -167,8 +224,10 @@
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
       if (!storageOk()) return;
-      if (area !== "local" || !changes.manakResult) return;
-      publish(changes.manakResult.newValue, true);
+      if (area !== "local") return;
+      if (changes.manakResult || changes.manakPdfMeta || changes.manakPdf_0) {
+        pullStoredResult(true);
+      }
     });
   } catch {
     /* extension context invalidated after Reload */
@@ -179,7 +238,7 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") pullStoredResult(true);
   });
-  [800, 2500, 6000].forEach((ms) => {
+  [800, 2500, 6000, 12000, 20000].forEach((ms) => {
     window.setTimeout(() => pullStoredResult(true), ms);
   });
 })();

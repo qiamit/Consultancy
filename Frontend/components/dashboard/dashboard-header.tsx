@@ -13,9 +13,8 @@ export async function DashboardHeader() {
   const isAdmin = Boolean(
     access?.isAdmin || (user && isSuperAdminEmail(user.email)),
   );
-  const canAccessEmail = Boolean(
-    isAdmin || access?.modules.includes("email"),
-  );
+  const canAccessEmail = isAdmin;
+  const canAccessCms = Boolean(isAdmin || access?.modules.includes("cms"));
   const unreadEmailCount = canAccessEmail ? await fetchUnreadEmailCount() : 0;
 
   return (
@@ -28,6 +27,7 @@ export async function DashboardHeader() {
       userEmail={user?.email ?? ""}
       isAdmin={isAdmin}
       canAccessEmail={canAccessEmail}
+      canAccessCms={canAccessCms}
       unreadEmailCount={unreadEmailCount}
     />
   );

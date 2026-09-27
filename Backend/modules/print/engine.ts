@@ -32,7 +32,7 @@ function pageSizeCss(s: PrintSettings): string {
 }
 
 export function buildLetterheadHtml(c: PrintCompanyInfo, s: PrintSettings): string {
-  if (!s.show_letterhead) return "";
+  if (!c || !s?.show_letterhead) return "";
 
   // logo-na = text letterhead from company info (applicant). Do not override with image banners.
   if (c.letterhead_upper_url && s.letterhead_layout !== "logo-na") {
