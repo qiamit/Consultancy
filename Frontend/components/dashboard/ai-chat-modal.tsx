@@ -61,6 +61,8 @@ export function AiChatModal({
   overlayZIndexClass = "z-[200]",
   onCustomSend,
   beforeInput,
+  beforeMessages,
+  size = "default",
   inputPlaceholder,
   onModelChange,
 }: {
@@ -76,7 +78,9 @@ export function AiChatModal({
     messages: ChatMessage[],
     modelId: string | undefined,
   ) => Promise<{ reply: string; refreshPage?: boolean } | null>;
-  beforeInput?: React.ReactNode;
+  beforeInput?: ReactNode;
+  beforeMessages?: ReactNode;
+  size?: "default" | "wide";
   inputPlaceholder?: string;
   onModelChange?: (modelId: string) => void;
 }) {
@@ -232,7 +236,11 @@ export function AiChatModal({
       <div
         role="dialog"
         aria-modal="true"
-        className="flex h-[70vh] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 sm:h-[55vh] sm:max-h-[560px]"
+        className={`flex w-full flex-col overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900 ${
+          size === "wide"
+            ? "h-[84vh] max-w-2xl sm:h-[80vh] sm:max-h-[780px]"
+            : "h-[76vh] max-w-xl sm:h-[70vh] sm:max-h-[680px]"
+        }`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* ── Header ────────────────────────────────────────────────────────── */}
@@ -244,9 +252,12 @@ export function AiChatModal({
               </svg>
             </div>
             <div className="min-w-0 flex-1">
-              <div className="flex items-baseline gap-1.5">
-                <h2 className="shrink-0 text-sm font-bold text-zinc-900 dark:text-zinc-100">{title}</h2>
-              </div>
+              <h2 className="truncate text-sm font-bold text-zinc-900 dark:text-zinc-100">{title}</h2>
+              {subtitle ? (
+                <p className="mt-0.5 truncate text-[11px] text-zinc-500 dark:text-zinc-400">
+                  {subtitle}
+                </p>
+              ) : null}
             </div>
             {/* Model selector */}
             {models.length > 0 && (
@@ -271,26 +282,40 @@ export function AiChatModal({
         </div>
 
         {/* ── Messages ──────────────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 space-y-4">
+          {beforeMessages}
+
           {messages.length === 0 && (
-            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-              <div className={`rounded-2xl p-4 ${accent.icon}`}>
-                <svg className={`h-8 w-8 ${accent.iconText}`} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Ask QE Assistant</p>
-                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{subtitle}</p>
-              </div>
-              <div className="flex flex-wrap justify-center gap-2 mt-1">
-                {starterQuestions.map((q) => (
-                  <button key={q} type="button" onClick={() => setInput(q)}
-                    className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${accent.badge}`}>
-                    {q}
-                  </button>
-                ))}
-              </div>
+            <div
+              className={
+                beforeMessages
+                  ? "space-y-3"
+                  : "flex h-full flex-col items-center justify-center gap-3 text-center"
+              }
+            >
+              {!beforeMessages && (
+                <>
+                  <div className={`rounded-2xl p-4 ${accent.icon}`}>
+                    <svg className={`h-8 w-8 ${accent.iconText}`} fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Ask QE Assistant</p>
+                    <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{subtitle}</p>
+                  </div>
+                </>
+              )}
+              {starterQuestions.length > 0 && (
+                <div className={`flex flex-wrap gap-2 ${beforeMessages ? "" : "mt-1 justify-center"}`}>
+                  {starterQuestions.map((q) => (
+                    <button key={q} type="button" onClick={() => setInput(q)}
+                      className={`rounded-full border px-3 py-1 text-xs font-medium transition-colors ${accent.badge}`}>
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

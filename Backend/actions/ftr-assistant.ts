@@ -86,7 +86,7 @@ function buildReportContext(
     `IS Title: ${isTitle || "—"}`,
     `Sample: ${report.sample_label || "—"}`,
     `Product Title: ${report.product_title || "—"}`,
-    `Sample Description: ${report.grade_type || "—"}`,
+    `Grade / Type / Variety: ${report.grade_type || "—"}`,
     `Batch / Heat: ${report.batch_heat_number || "—"}`,
     `Testing: ${report.date_of_testing_start || "—"} to ${report.date_of_testing_completion || "—"}`,
     "",

@@ -97,19 +97,25 @@ function buildScopeContext(payload: {
     "Current license scope:",
   ];
 
-  if (payload.format === "table") {
+  if (payload.format === "plain" || payload.format === "plain_table") {
+    lines.push(payload.plainScope.trim() || "(empty text)");
+  }
+  if (payload.format === "table" || payload.format === "plain_table") {
     const rows = payload.tableRows.filter(
       (r) => r.component.trim() || r.value.trim(),
     );
     if (rows.length === 0) {
-      lines.push("(empty — no rows yet)");
+      lines.push("(empty — no column rows yet)");
     } else {
       for (const row of rows) {
-        lines.push(`- ${row.component.trim() || "—"} | ${row.value.trim() || "—"}`);
+        const extra = Array.isArray((row as { extra?: string[] }).extra)
+          ? (row as { extra?: string[] }).extra!.filter((c) => c.trim())
+          : [];
+        lines.push(
+          `- ${[row.component.trim() || "—", row.value.trim() || "—", ...extra].join(" | ")}`,
+        );
       }
     }
-  } else {
-    lines.push(payload.plainScope.trim() || "(empty)");
   }
 
   return lines.join("\n");

@@ -5,7 +5,14 @@ import {
   type LicenseScopeTableRow,
 } from "@backend/modules/bis/application-checklist-notes";
 import {
-  editorRowsToStored,
+  LICENSE_SCOPE_DEFAULT_COLUMNS,
+  clampLicenseScopeColumnCount,
+  licenseScopeRowHasContent,
+  licenseScopeUsesPlain,
+  licenseScopeUsesTable,
+  parseLicenseScopeColumnHeaders,
+  parseLicenseScopeFormat,
+  parseStoredLicenseScopeRows,
   plainTextToValueScopeRows,
   serializeLicenseScopeText,
   storedRowsToEditorRows,
@@ -13,6 +20,8 @@ import {
 
 export type BisProjectScopeFormState = {
   scopeType: LicenseScopeFormat;
+  columnCount: number;
+  columnHeaders: string[];
   plainText: string;
   rows: LicenseScopeTableRow[];
 };
@@ -22,7 +31,13 @@ export function parseBisProjectLicenseScopeNotes(
 ): BisProjectScopeFormState {
   const raw = (notes ?? "").trim();
   if (!raw) {
-    return { scopeType: "plain", plainText: "", rows: [] };
+    return {
+      scopeType: "plain",
+      columnCount: LICENSE_SCOPE_DEFAULT_COLUMNS,
+      columnHeaders: [],
+      plainText: "",
+      rows: [],
+    };
   }
 
   if (raw.startsWith("{")) {
@@ -31,6 +46,9 @@ export function parseBisProjectLicenseScopeNotes(
         type?: string;
         format?: string;
         license_scope?: string;
+        license_scope_format?: string;
+        license_scope_column_count?: unknown;
+        license_scope_column_headers?: unknown;
         license_scope_rows?: unknown;
       };
 
@@ -38,19 +56,28 @@ export function parseBisProjectLicenseScopeNotes(
         const checklist = parseApplicationChecklistNotes(raw);
         return {
           scopeType: checklist.licenseScopeFormat,
-          plainText:
-            checklist.licenseScopeFormat === "plain" ? checklist.licenseScope : "",
+          columnCount: checklist.licenseScopeColumnCount,
+          columnHeaders: checklist.licenseScopeColumnHeaders,
+          plainText: licenseScopeUsesPlain(checklist.licenseScopeFormat)
+            ? checklist.licenseScope
+            : "",
           rows: checklist.licenseScopeRows,
         };
       }
 
       if (parsed.type === "bis_license_scope") {
-        const rows = parseStoredRows(parsed.license_scope_rows);
-        const format: LicenseScopeFormat =
-          parsed.format === "table" ? "table" : "plain";
+        const rows = parseStoredLicenseScopeRows(parsed.license_scope_rows);
+        const format = parseLicenseScopeFormat(parsed.format ?? parsed.license_scope_format);
         return {
           scopeType: format,
-          plainText: format === "plain" ? (parsed.license_scope ?? "").trim() : "",
+          columnCount: clampLicenseScopeColumnCount(parsed.license_scope_column_count),
+          columnHeaders: parseLicenseScopeColumnHeaders(
+            parsed.license_scope_column_headers,
+            parsed.license_scope_column_count,
+          ),
+          plainText: licenseScopeUsesPlain(format)
+            ? (parsed.license_scope ?? "").trim()
+            : "",
           rows,
         };
       }
@@ -59,25 +86,17 @@ export function parseBisProjectLicenseScopeNotes(
     }
   }
 
-  return { scopeType: "plain", plainText: raw, rows: [] };
-}
-
-function parseStoredRows(raw: unknown): LicenseScopeTableRow[] {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((row) => {
-      if (!row || typeof row !== "object") return null;
-      const r = row as Record<string, unknown>;
-      return {
-        component: String(r.component ?? "").trim(),
-        value: String(r.value ?? "").trim(),
-      };
-    })
-    .filter((r): r is LicenseScopeTableRow => r !== null);
+  return {
+    scopeType: "plain",
+    columnCount: LICENSE_SCOPE_DEFAULT_COLUMNS,
+    columnHeaders: [],
+    plainText: raw,
+    rows: [],
+  };
 }
 
 function filteredRows(rows: LicenseScopeTableRow[]): LicenseScopeTableRow[] {
-  return rows.filter((r) => r.component.trim() || r.value.trim());
+  return rows.filter((r) => licenseScopeRowHasContent(r));
 }
 
 export function buildBisProjectLicenseScopeNotes(
@@ -90,7 +109,8 @@ export function buildBisProjectLicenseScopeNotes(
     input.plainText,
     editorRows,
   );
-  const rows = input.scopeType === "table" ? filteredRows(input.rows) : [];
+  const rows = licenseScopeUsesTable(input.scopeType) ? filteredRows(input.rows) : [];
+  const columnCount = clampLicenseScopeColumnCount(input.columnCount);
 
   const raw = (existingNotes ?? "").trim();
   if (raw.startsWith("{")) {
@@ -103,6 +123,8 @@ export function buildBisProjectLicenseScopeNotes(
           meta: checklist.meta,
           licenseScope: serialized,
           licenseScopeFormat: input.scopeType,
+          licenseScopeColumnCount: columnCount,
+          licenseScopeColumnHeaders: input.columnHeaders,
           licenseScopeRows: rows,
           oslSampleRequirements: checklist.oslSampleRequirements,
           piSampleRequirements: checklist.piSampleRequirements,
@@ -115,12 +137,15 @@ export function buildBisProjectLicenseScopeNotes(
     }
   }
 
-  if (input.scopeType === "table") {
+  if (licenseScopeUsesTable(input.scopeType)) {
     const payload: Record<string, unknown> = {
       type: "bis_license_scope",
-      format: "table",
+      format: input.scopeType,
       license_scope: serialized,
+      license_scope_column_count: columnCount,
     };
+    const headers = parseLicenseScopeColumnHeaders(input.columnHeaders, columnCount);
+    if (headers.some((h) => h.trim())) payload.license_scope_column_headers = headers;
     if (rows.length > 0) payload.license_scope_rows = rows;
     return JSON.stringify(payload);
   }
@@ -160,7 +185,7 @@ export function parseSourceLicenseIdFromNotes(
 
 /**
  * Merge inclusion scope into an existing license scope.
- * Prefers 2-column table when either side uses table format.
+ * Prefers table when either side uses columns.
  */
 export function mergeLicenseScopeStates(
   base: BisProjectScopeFormState,
@@ -180,25 +205,38 @@ export function mergeLicenseScopeStates(
   ).trim();
   if (!baseText) return addition;
 
-  if (base.scopeType === "table" || addition.scopeType === "table") {
-    const baseRows =
-      base.scopeType === "table"
-        ? filteredRows(base.rows)
-        : plainTextToValueScopeRows(base.plainText);
-    const addRows =
-      addition.scopeType === "table"
-        ? filteredRows(addition.rows)
-        : plainTextToValueScopeRows(addition.plainText);
+  if (licenseScopeUsesTable(base.scopeType) || licenseScopeUsesTable(addition.scopeType)) {
+    const baseRows = licenseScopeUsesTable(base.scopeType)
+      ? filteredRows(base.rows)
+      : plainTextToValueScopeRows(base.plainText);
+    const addRows = licenseScopeUsesTable(addition.scopeType)
+      ? filteredRows(addition.rows)
+      : plainTextToValueScopeRows(addition.plainText);
     const rows = [...baseRows, ...addRows];
+    const format: LicenseScopeFormat =
+      licenseScopeUsesPlain(base.scopeType) || licenseScopeUsesPlain(addition.scopeType)
+        ? "plain_table"
+        : "table";
+    const plainText =
+      format === "plain_table"
+        ? [base.plainText.trim(), addition.plainText.trim()].filter(Boolean).join("\n\n")
+        : "";
     return {
-      scopeType: "table",
-      plainText: "",
+      scopeType: format,
+      columnCount: Math.max(
+        clampLicenseScopeColumnCount(base.columnCount),
+        clampLicenseScopeColumnCount(addition.columnCount),
+      ),
+      columnHeaders: (base.columnHeaders?.length ? base.columnHeaders : addition.columnHeaders) ?? [],
+      plainText,
       rows,
     };
   }
 
   return {
     scopeType: "plain",
+    columnCount: LICENSE_SCOPE_DEFAULT_COLUMNS,
+    columnHeaders: [],
     plainText: `${baseText}\n\n${additionText}`,
     rows: [],
   };

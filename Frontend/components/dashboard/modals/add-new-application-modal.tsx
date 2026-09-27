@@ -33,6 +33,9 @@ import {
 import type { LicenseScopeFormat } from "@backend/modules/bis/application-checklist-notes";
 import { plainTextToScopeRows } from "@backend/modules/bis/bis-project-license-scope-notes";
 import {
+  LICENSE_SCOPE_DEFAULT_COLUMNS,
+  licenseScopeUsesPlain,
+  licenseScopeUsesTable,
   serializeLicenseScopeText,
   storedRowsToEditorRows,
 } from "@backend/modules/bis/license-scope-format";
@@ -156,6 +159,8 @@ export function AddNewApplicationModal({
   const [targetDate, setTargetDate] = useState("");
   const [isQeManaged, setIsQeManaged] = useState<"1" | "0">("1");
   const [scopeType, setScopeType] = useState<LicenseScopeFormat>("plain");
+  const [scopeColumnCount, setScopeColumnCount] = useState(LICENSE_SCOPE_DEFAULT_COLUMNS);
+  const [scopeColumnHeaders, setScopeColumnHeaders] = useState<string[]>([]);
   const [scopePlain, setScopePlain] = useState("");
   const [scopeRowsJson, setScopeRowsJson] = useState("[]");
   const [error, setError] = useState<string | null>(null);
@@ -275,30 +280,34 @@ export function AddNewApplicationModal({
 
   function handleScopeTypeChange(next: LicenseScopeFormat) {
     if (next === scopeType) return;
-    if (next === "table") {
+    if (licenseScopeUsesTable(next) && !licenseScopeUsesTable(scopeType)) {
       const rows = plainTextToScopeRows(scopePlain);
-      setScopeRowsJson(JSON.stringify(rows.length > 0 ? rows : []));
-      setScopeType(next);
-      return;
-    }
-    let tableRows = storedRowsToEditorRows([]);
-    try {
-      const parsed = JSON.parse(scopeRowsJson || "[]") as {
-        component?: string;
-        value?: string;
-      }[];
-      if (Array.isArray(parsed)) {
-        tableRows = storedRowsToEditorRows(
-          parsed.map((r) => ({
-            component: String(r.component ?? ""),
-            value: String(r.value ?? ""),
-          })),
-        );
+      if (rows.length > 0 && scopeRowsJson === "[]") {
+        setScopeRowsJson(JSON.stringify(rows));
       }
-    } catch {
-      // ignore
     }
-    setScopePlain(serializeLicenseScopeText("table", scopePlain, tableRows));
+    if (licenseScopeUsesPlain(next) && !licenseScopeUsesPlain(scopeType) && !scopePlain.trim()) {
+      let tableRows = storedRowsToEditorRows([]);
+      try {
+        const parsed = JSON.parse(scopeRowsJson || "[]") as {
+          component?: string;
+          value?: string;
+          extra?: string[];
+        }[];
+        if (Array.isArray(parsed)) {
+          tableRows = storedRowsToEditorRows(
+            parsed.map((r) => ({
+              component: String(r.component ?? ""),
+              value: String(r.value ?? ""),
+              extra: Array.isArray(r.extra) ? r.extra : undefined,
+            })),
+          );
+        }
+      } catch {
+        // ignore
+      }
+      setScopePlain(serializeLicenseScopeText("table", "", tableRows));
+    }
     setScopeType(next);
   }
 
@@ -318,6 +327,8 @@ export function AddNewApplicationModal({
         billingAmount,
         billingFrequency,
         licenseScopeFormat: scopeType,
+        licenseScopeColumnCount: scopeColumnCount,
+        licenseScopeColumnHeaders: scopeColumnHeaders,
         licenseScopePlain: scopePlain,
         licenseScopeRowsJson: scopeRowsJson,
         isQeManaged: isQeManaged === "1",
@@ -622,7 +633,9 @@ export function AddNewApplicationModal({
                     <ScopeTypeSelect
                       hideLabel
                       value={scopeType}
+                      columnCount={scopeColumnCount}
                       onChange={handleScopeTypeChange}
+                      onColumnCountChange={setScopeColumnCount}
                     />
                   </div>
                 </div>
@@ -630,10 +643,13 @@ export function AddNewApplicationModal({
             </div>
 
             <LicenseScopeField
-              key={scopeType}
+              key={`${scopeType}-${scopeColumnCount}`}
               scopeType={scopeType}
               plainText={scopePlain}
               rowsJson={scopeRowsJson}
+              columnCount={scopeColumnCount}
+              columnHeaders={scopeColumnHeaders}
+              onColumnHeadersChange={setScopeColumnHeaders}
               onPlainTextChange={setScopePlain}
               onRowsJsonChange={setScopeRowsJson}
               isCodeId={isCodeId}

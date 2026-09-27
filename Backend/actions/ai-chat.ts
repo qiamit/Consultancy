@@ -5,11 +5,61 @@ import { compatibleChatBaseUrl } from "@backend/modules/ai/compatible-chat";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 
+export type SendAiOptions = {
+  /** DeepSeek V4 / Grok reasoning. Extraction should disable thinking so JSON is not empty. */
+  thinking?: "enabled" | "disabled";
+  jsonObject?: boolean;
+};
+
+function assistantTextFromMessage(message: unknown): string {
+  if (!message || typeof message !== "object") return "";
+  const row = message as Record<string, unknown>;
+  const content = row.content;
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === "string") return part;
+        if (part && typeof part === "object" && "text" in part) {
+          return String((part as { text?: unknown }).text ?? "");
+        }
+        return "";
+      })
+      .join("");
+  }
+  return "";
+}
+
+function compatibleChatBody(
+  modelId: string,
+  systemPrompt: string,
+  messages: ChatMessage[],
+  maxTokens: number,
+  options?: SendAiOptions,
+) {
+  const body: Record<string, unknown> = {
+    model: modelId,
+    max_tokens: maxTokens,
+    messages: [
+      { role: "system", content: systemPrompt },
+      ...messages.map((m) => ({ role: m.role, content: m.content })),
+    ],
+  };
+  if (options?.thinking) {
+    body.thinking = { type: options.thinking };
+  }
+  if (options?.jsonObject) {
+    body.response_format = { type: "json_object" };
+  }
+  return body;
+}
+
 export async function sendAiMessage(
   messages: ChatMessage[],
   systemPrompt: string,
   selectedModelId?: string,
   maxTokens = 1024,
+  options?: SendAiOptions,
 ): Promise<{ ok: true; reply: string } | { ok: false; error: string }> {
   const supabase = await createClient();
 
@@ -119,32 +169,68 @@ export async function sendAiMessage(
     // ── Mistral / DeepSeek / OpenAI-compatible ────────────────────────────────
     const baseUrl = compatibleChatBaseUrl(provider);
 
-    const res = await fetch(`${baseUrl}/chat/completions`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${api_key}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: model_id,
-        max_tokens: maxTokens,
-        messages: [
-          { role: "system", content: systemPrompt },
-          ...messages.map((m) => ({ role: m.role, content: m.content })),
-        ],
-      }),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
+    const postCompatible = async (body: Record<string, unknown>) => {
+      const res = await fetch(`${baseUrl}/chat/completions`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${api_key}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: { message?: string };
+        choices?: { finish_reason?: string; message?: unknown }[];
+      };
+      if (!res.ok) {
+        return {
+          ok: false as const,
+          error: data.error?.message ?? `API error ${res.status}`,
+        };
+      }
+      const reply = assistantTextFromMessage(data.choices?.[0]?.message);
+      return {
+        ok: true as const,
+        reply,
+        finishReason: data.choices?.[0]?.finish_reason ?? "",
+      };
+    };
+
+    const first = await postCompatible(
+      compatibleChatBody(model_id, systemPrompt, messages, maxTokens, options),
+    );
+    if (!first.ok) return first;
+
+    let reply = first.reply.trim();
+    // DeepSeek V4 Pro defaults to thinking-on. Reasoning eats max_tokens and content stays empty.
+    if (!reply && options?.thinking !== "enabled") {
+      const retry = await postCompatible(
+        compatibleChatBody(model_id, systemPrompt, messages, Math.max(maxTokens, 4096), {
+          ...options,
+          thinking: "disabled",
+        }),
+      );
+      if (!retry.ok) return retry;
+      reply = retry.reply.trim();
+      if (!reply) {
+        return {
+          ok: false,
+          error:
+            "QE Assistant finished reasoning but returned no text. Disable thinking on the model, or raise max tokens, then try again.",
+        };
+      }
+      return { ok: true, reply };
+    }
+
+    if (!reply) {
       return {
         ok: false,
         error:
-          (err as { error?: { message?: string } }).error?.message ??
-          `API error ${res.status}`,
+          first.finishReason === "length"
+            ? "QE Assistant used the full token budget on reasoning and returned an empty extract. Try again."
+            : "QE Assistant returned an empty reply.",
       };
     }
-    const data = await res.json() as { choices?: { message?: { content?: string } }[] };
-    const reply = data.choices?.[0]?.message?.content ?? "";
     return { ok: true, reply };
 
   } catch (e) {

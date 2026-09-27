@@ -12,15 +12,13 @@ import {
 import {
   DEFAULT_OSL_SAMPLE_TABLE_COLUMNS,
   normalizeOslSampleTableColumns,
+  oslSampleColumnCellText,
+  oslSampleRowHasPrintableContent,
   OSL_SAMPLE_TABLE_COLUMN_OPTIONS,
   type OslSampleTableColumnKey,
 } from "@backend/modules/print/osl-sample-table-columns";
 import type { OslSampleRequirementStored } from "@backend/modules/bis/osl-sample-requirements";
-import {
-  isSampleIncludedInPrint,
-  parseSampleFor,
-  sampleForLabel,
-} from "@backend/modules/bis/osl-sample-requirements";
+import { isSampleIncludedInPrint } from "@backend/modules/bis/osl-sample-requirements";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
@@ -63,12 +61,6 @@ function formatApplicationNo(raw: string): string {
   return formatApplicationNumberDisplay(v);
 }
 
-function formatDateDisplay(ymd: string): string {
-  const raw = (ymd ?? "").trim();
-  if (!raw) return "—";
-  return esc(formatDisplayDate(raw, "—"));
-}
-
 function formatIsStandardRef(isNumber: string, isTitle: string): string {
   const num = (isNumber ?? "").trim();
   const title = (isTitle ?? "").trim();
@@ -78,60 +70,14 @@ function formatIsStandardRef(isNumber: string, isTitle: string): string {
   return "";
 }
 
-function laboratoryInitials(name: string): string {
-  const trimmed = (name ?? "").trim();
-  if (!trimmed) return "—";
-  const initials = trimmed
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-  return initials || "—";
-}
-
 function cellForColumn(
   key: OslSampleTableColumnKey,
   row: OslSampleRequirementStored,
   rowIndex: number,
 ): string {
-  switch (key) {
-    case "sr_no":
-      return String(rowIndex + 1).padStart(2, "0");
-    case "sample_description":
-      return esc(row.sample_description) || "—";
-    case "declared_value":
-      return esc(row.declared_value) || "—";
-    case "batch_no":
-      return esc(row.batch_number) || "—";
-    case "dom":
-      return formatDateDisplay(row.date_of_manufacturing);
-    case "sample_quantity":
-      return esc(row.sample_quantity) || "—";
-    case "sample_code":
-      return esc(row.sample_code) || "—";
-    case "qr_code":
-      return esc(row.qr_code) || "—";
-    case "batch_quantity":
-      return esc(row.batch_quantity) || "—";
-    case "sample_type":
-      return esc(row.sample_type) || "—";
-    case "priority":
-      return esc(row.priority) || "Priority";
-    case "laboratory":
-      return esc(laboratoryInitials(row.laboratory_name));
-    case "shelf_life":
-      return esc(row.shelf_life) || "—";
-    case "mode_of_disposal":
-      return esc(row.mode_of_disposal) || "—";
-    case "testing_charges":
-      return esc(row.testing_charges) || "—";
-    case "test_required":
-      return esc(row.test_required) || "—";
-    case "sample_for":
-      return esc(sampleForLabel(parseSampleFor(row.sample_for)));
-    default:
-      return "—";
-  }
+  const text = oslSampleColumnCellText(key, row, rowIndex);
+  if (key === "dom" || key === "payment_date") return esc(text);
+  return text === "—" ? "—" : esc(text);
 }
 
 function buildSampleTableHtml(
@@ -139,22 +85,7 @@ function buildSampleTableHtml(
   visibleColumns?: OslSampleTableColumnKey[],
 ): string {
   const visible = rows.filter(
-    (r) =>
-      isSampleIncludedInPrint(r) &&
-      (r.sample_description.trim() ||
-        r.declared_value.trim() ||
-        r.batch_number.trim() ||
-        r.date_of_manufacturing.trim() ||
-        r.sample_quantity.trim() ||
-        r.batch_quantity.trim() ||
-        r.sample_code.trim() ||
-        r.qr_code.trim() ||
-        r.sample_type.trim() ||
-        r.laboratory_name.trim() ||
-        r.shelf_life.trim() ||
-        r.mode_of_disposal.trim() ||
-        r.testing_charges.trim() ||
-        r.test_required.trim()),
+    (r) => isSampleIncludedInPrint(r) && oslSampleRowHasPrintableContent(r),
   );
 
   if (visible.length === 0) {

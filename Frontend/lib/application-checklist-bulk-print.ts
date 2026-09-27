@@ -39,6 +39,8 @@ import {
   type FtrContext,
 } from "@backend/modules/bis/factory-test-report";
 import {
+  LICENSE_SCOPE_DEFAULT_COLUMNS,
+  licenseScopeUsesTable,
   serializeLicenseScopeText,
   storedRowsToEditorRows,
 } from "@backend/modules/bis/license-scope-format";
@@ -315,6 +317,8 @@ export type ChecklistBulkPrintContext = {
   piSampleRequirements: OslSampleRequirementStored[];
   licenseScope: string;
   licenseScopeFormat: LicenseScopeFormat;
+  licenseScopeColumnCount?: number;
+  licenseScopeColumnHeaders?: string[];
   licenseScopeRows: LicenseScopeTableRow[];
   cmpf305Machinery: Cmpf305MachineryStored[];
   cmpf306: Cmpf306Stored;
@@ -1224,23 +1228,19 @@ function buildSingleChecklistDocHtml(
     }
     case "license_scope": {
       const settings = withBulkLetterhead(defaultManufacturingScopePrintSettings());
-      const scopeRows = storedRowsToEditorRows(ctx.licenseScopeRows);
-      const effectiveScopeText = serializeLicenseScopeText(
-        ctx.licenseScopeFormat,
-        ctx.licenseScope,
-        scopeRows,
-      );
       const data = withDocumentSignatureImage(
         {
           ...letter,
           signatoryName,
           signatoryDesignation,
-          licenseScope: effectiveScopeText,
+          licenseScope: ctx.licenseScope,
           licenseScopeFormat: ctx.licenseScopeFormat,
-          licenseScopeRows:
-            ctx.licenseScopeFormat === "table"
-              ? ctx.licenseScopeRows.map(({ component, value }) => ({ component, value }))
-              : undefined,
+          licenseScopeColumnCount:
+            ctx.licenseScopeColumnCount ?? LICENSE_SCOPE_DEFAULT_COLUMNS,
+          licenseScopeColumnHeaders: ctx.licenseScopeColumnHeaders,
+          licenseScopeRows: licenseScopeUsesTable(ctx.licenseScopeFormat)
+            ? ctx.licenseScopeRows
+            : undefined,
         },
         topManagement,
       );

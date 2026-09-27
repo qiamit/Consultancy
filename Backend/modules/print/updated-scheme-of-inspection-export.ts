@@ -1,10 +1,12 @@
 import {
   AlignmentType,
   BorderStyle,
+  convertMillimetersToTwip,
   Document,
   Footer,
   ImageRun,
   Packer,
+  PageBreak,
   PageNumber,
   Paragraph,
   Table,
@@ -17,6 +19,7 @@ import {
 import { buildWorkbookBuffer } from "@backend/shared/spreadsheet/excel";
 import {
   buildUpdatedSchemeOfInspectionCompany,
+  paginateUsitForPrint,
   updatedSchemeOfInspectionLetterheadSettings,
   type UpdatedSchemeOfInspectionLetterData,
   type UpdatedSchemeOfInspectionPrintAssets,
@@ -31,10 +34,6 @@ import {
   pageSizeTwipFromSettings,
 } from "@backend/modules/print/docx-letterhead";
 import type { SitTestRow } from "@backend/modules/bis/updated-scheme-of-inspection";
-import {
-  USIT_ANNEX_SECTIONS,
-  USIT_NOTE_SECTIONS,
-} from "@backend/modules/bis/updated-scheme-of-inspection";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 
@@ -469,84 +468,101 @@ async function buildUpdatedSitDocx(
   const titleSize = size + 4;
   const subtitleSize = size + 2;
 
-  const page1: (Paragraph | Table)[] = [
-    ...letterheadBlocks,
-    metaHeaderTable(data, size),
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 80 },
-      children: [
-        new TextRun({
-          text: "ANNEX C",
-          font: DOCX_FONT,
-          size: titleSize,
-          bold: true,
-        }),
-      ],
-    }),
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { after: 160 },
-      children: [
-        new TextRun({
-          text: "Scheme of Inspection and Testing",
-          font: DOCX_FONT,
-          size: subtitleSize,
-          bold: true,
-          underline: {},
-        }),
-      ],
-    }),
-    ...USIT_ANNEX_SECTIONS.flatMap((section, i) =>
-      annexSectionParagraphs(section.header, doc[section.key] ?? "", size, i + 1),
-    ),
-    ...(doc.annex_extra_rows ?? []).flatMap((row, i) =>
-      annexSectionParagraphs(
-        row.header,
-        row.text,
-        size,
-        USIT_ANNEX_SECTIONS.length + i + 1,
-      ),
-    ),
-    ...(await signatoryBlocks(data, size)),
-  ];
+  const pages = paginateUsitForPrint(doc, {
+    ...letterheadSettings,
+    show_letterhead: true,
+  });
+  const children: (Paragraph | Table)[] = [];
+  const signatory = await signatoryBlocks(data, size);
 
-  const page2: (Paragraph | Table)[] = [
-    ...letterheadBlocks,
-    metaHeaderTable(data, size),
-    new Paragraph({
-      alignment: AlignmentType.CENTER,
-      spacing: { before: 80, after: 80 },
-      children: [bodyRun("TABLE 1", true)],
-    }),
-    buildSitTable(doc.test_rows, size, contentW),
-    ...USIT_NOTE_SECTIONS.flatMap((section) =>
-      annexSectionParagraphs(section.header, doc[section.key] ?? "", size),
-    ),
-    ...(doc.note_extra_rows ?? []).flatMap((row) =>
-      annexSectionParagraphs(row.header, row.text, size),
-    ),
-    ...(await signatoryBlocks(data, size)),
-    ...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)),
-  ];
+  for (let i = 0; i < pages.length; i += 1) {
+    const page = pages[i]!;
+    if (i > 0) {
+      children.push(new Paragraph({ spacing: { after: 0 }, children: [new PageBreak()] }));
+    }
+    children.push(...letterheadBlocks);
+    children.push(metaHeaderTable(data, size));
+    if (page.kind === "annex") {
+      if (page.showTitle !== false) {
+        children.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 80 },
+            children: [
+              new TextRun({
+                text: "ANNEX C",
+                font: DOCX_FONT,
+                size: titleSize,
+                bold: true,
+              }),
+            ],
+          }),
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 160 },
+            children: [
+              new TextRun({
+                text: "Scheme of Inspection and Testing",
+                font: DOCX_FONT,
+                size: subtitleSize,
+                bold: true,
+                underline: {},
+              }),
+            ],
+          }),
+        );
+      }
+      for (const slot of page.slots) {
+        if (slot.kind === "annex") {
+          children.push(
+            ...annexSectionParagraphs(slot.header, slot.text, size, slot.index),
+          );
+        }
+      }
+    } else {
+      const tableRows = page.slots
+        .filter((slot) => slot.kind === "table_row")
+        .map((slot) => (slot.kind === "table_row" ? slot.row : null))
+        .filter((row): row is SitTestRow => row != null);
+      if (tableRows.length > 0) {
+        children.push(
+          new Paragraph({
+            alignment: AlignmentType.CENTER,
+            spacing: { before: 80, after: 80 },
+            children: [bodyRun("TABLE 1", true)],
+          }),
+          buildSitTable(tableRows, size, contentW),
+        );
+      }
+      for (const slot of page.slots) {
+        if (slot.kind === "note") {
+          children.push(...annexSectionParagraphs(slot.header, slot.text, size));
+        }
+      }
+    }
+    if (page.showSignatory === true || i === pages.length - 1) {
+      children.push(...signatory);
+    }
+  }
+
+  children.push(...(await buildLetterheadLowerParagraphs(letterheadSettings, assets)));
 
   const footer = pageFooter(size);
-  const pageProps = {
-    size: pageSizeTwipFromSettings(letterheadSettings),
-    margin: pageMarginsFromSettings(letterheadSettings),
-  };
 
   return new Document({
     sections: [
       {
-        properties: { page: pageProps },
+        properties: {
+          page: {
+            size: pageSizeTwipFromSettings(letterheadSettings),
+            margin: {
+              ...pageMarginsFromSettings(letterheadSettings),
+              footer: convertMillimetersToTwip(5),
+            },
+          },
+        },
         footers: { default: footer },
-        children: page1,
-      },
-      {
-        properties: { page: pageProps },
-        footers: { default: footer },
-        children: page2,
+        children,
       },
     ],
   });

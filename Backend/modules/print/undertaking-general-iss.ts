@@ -6,7 +6,10 @@ import {
   type ManufacturingScopeDeclarationData,
 } from "@backend/modules/print/manufacturing-scope-declaration";
 import type { UndertakingGeneralIssStored } from "@backend/modules/bis/undertaking-general-iss";
-import { formatWeeklyOffForUndertaking } from "@backend/modules/bis/undertaking-general-iss";
+import {
+  formatWeeklyOffForUndertaking,
+  syncUndertakingClausePoints,
+} from "@backend/modules/bis/undertaking-general-iss";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
 import type { PrintCompanyInfo, PrintSettings } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
@@ -305,6 +308,10 @@ export function resolveUndertakingGeneralIssPoints(
   const stored = data.document.undertaking_points
     .map((p) => p.trim())
     .filter((p) => p.length > 0);
-  if (stored.length > 0) return stored;
-  return undertakingGeneralIssPointTexts(data);
+  const base = stored.length > 0 ? stored : undertakingGeneralIssPointTexts(data);
+  return syncUndertakingClausePoints(base, {
+    markingClause: data.markingClause,
+    packagingClause: data.packagingClause,
+    isNumber: data.isNumber ?? "",
+  });
 }

@@ -30,6 +30,15 @@ import {
 } from "@backend/modules/print/docx-letterhead";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
+import {
+  LICENSE_SCOPE_DEFAULT_COLUMNS,
+  clampLicenseScopeColumnCount,
+  licenseScopeRowCells,
+  resolveLicenseScopeHeaders,
+  licenseScopeRowHasContent,
+  licenseScopeUsesPlain,
+  licenseScopeUsesTable,
+} from "@backend/modules/bis/license-scope-format";
 
 const DOCX_FONT = "Times New Roman";
 const DOCX_BODY_SIZE = 24; // half-points → 12pt
@@ -185,20 +194,24 @@ function multilineParagraphs(text: string): Paragraph[] {
   );
 }
 
-/** Matches Print Preview: Sr No | Component | Value with slate borders. */
+/** Matches Print Preview: Sr No + N data columns. */
 function buildLicenseScopeInnerTable(
-  rows: { component: string; value: string }[],
+  rows: { component: string; value: string; extra?: string[] }[],
   widthTwip: number,
+  columnCount = LICENSE_SCOPE_DEFAULT_COLUMNS,
+  customHeaders?: string[] | null,
 ): Table {
-  const srW = Math.round(widthTwip * 0.12);
-  const rem = widthTwip - srW;
-  const compW = Math.round(rem / 2);
-  const valW = rem - compW;
-  const widths = [srW, compW, valW];
+  const count = clampLicenseScopeColumnCount(columnCount);
+  const headers = resolveLicenseScopeHeaders(count, customHeaders);
+  const widths = Array.from({ length: count }, (_, i) =>
+    i === count - 1
+      ? widthTwip - Math.round(widthTwip / count) * (count - 1)
+      : Math.round(widthTwip / count),
+  );
 
   const header = new TableRow({
     tableHeader: true,
-    children: ["Sr No", "Component", "Value"].map(
+    children: headers.map(
       (label, i) =>
         new TableCell({
           width: { size: widths[i]!, type: WidthType.DXA },
@@ -208,7 +221,7 @@ function buildLicenseScopeInnerTable(
           children: [
             tableCellParagraph(label, {
               bold: true,
-              center: i === 0,
+              center: true,
               size: DOCX_TABLE_SIZE,
             }),
           ],
@@ -216,46 +229,34 @@ function buildLicenseScopeInnerTable(
     ),
   });
 
-  const filled = rows.filter((r) => r.component.trim() || r.value.trim());
+  const filled = rows.filter((r) => licenseScopeRowHasContent(r));
   const bodyRows =
     filled.length === 0
       ? [
           new TableRow({
             children: widths.map(
-              (w, i) =>
+              (w) =>
                 new TableCell({
                   width: { size: w, type: WidthType.DXA },
                   borders: CELL_BORDERS,
-                  children: [
-                    tableCellParagraph("—", { center: i === 0 }),
-                  ],
+                  children: [tableCellParagraph("—", { center: true })],
                 }),
             ),
           }),
         ]
-      : filled.map(
-          (r, idx) =>
-            new TableRow({
-              children: [
+      : filled.map((r) => {
+          const cells = licenseScopeRowCells(r, count);
+          return new TableRow({
+            children: cells.map(
+              (cell, i) =>
                 new TableCell({
-                  width: { size: srW, type: WidthType.DXA },
+                  width: { size: widths[i]!, type: WidthType.DXA },
                   borders: CELL_BORDERS,
-                  verticalAlign: VerticalAlign.CENTER,
-                  children: [tableCellParagraph(String(idx + 1), { center: true })],
+                  children: [tableCellParagraph(cell.trim() || "—", { center: true })],
                 }),
-                new TableCell({
-                  width: { size: compW, type: WidthType.DXA },
-                  borders: CELL_BORDERS,
-                  children: [tableCellParagraph(r.component.trim() || "—")],
-                }),
-                new TableCell({
-                  width: { size: valW, type: WidthType.DXA },
-                  borders: CELL_BORDERS,
-                  children: [tableCellParagraph(r.value.trim() || "—")],
-                }),
-              ],
-            }),
-        );
+            ),
+          });
+        });
 
   return new Table({
     width: { size: widthTwip, type: WidthType.DXA },
@@ -271,17 +272,31 @@ function buildLicenseScopeBox(
 ): Table {
   const boxPad = 100;
   const innerWidth = Math.max(1200, widthTwip - boxPad * 2);
+  const format = data.licenseScopeFormat ?? "plain";
   const useTable =
-    data.licenseScopeFormat === "table" && (data.licenseScopeRows?.length ?? 0) > 0;
+    licenseScopeUsesTable(format) && (data.licenseScopeRows?.length ?? 0) > 0;
+  const usePlain = licenseScopeUsesPlain(format);
 
   const innerChildren: (Paragraph | Table)[] = [
     new Paragraph({
       spacing: { after: 80 },
       children: [smallLabelRun("License Scope")],
     }),
+    ...(usePlain && data.licenseScope.trim()
+      ? multilineParagraphs(data.licenseScope)
+      : !useTable
+        ? multilineParagraphs("—")
+        : []),
     ...(useTable
-      ? [buildLicenseScopeInnerTable(data.licenseScopeRows ?? [], innerWidth)]
-      : multilineParagraphs(data.licenseScope.trim() || "—")),
+      ? [
+          buildLicenseScopeInnerTable(
+            data.licenseScopeRows ?? [],
+            innerWidth,
+            data.licenseScopeColumnCount,
+            data.licenseScopeColumnHeaders,
+          ),
+        ]
+      : []),
   ];
 
   return new Table({
@@ -567,13 +582,18 @@ export async function downloadManufacturingScopeDeclarationExcel(
   rows.push([]);
   rows.push(["License Scope"]);
 
-  if (data.licenseScopeFormat === "table" && data.licenseScopeRows?.length) {
-    rows.push(["Component", "Value"]);
+  if (licenseScopeUsesPlain(data.licenseScopeFormat ?? "plain")) {
+    rows.push([data.licenseScope.trim() || "—"]);
+  }
+  if (licenseScopeUsesTable(data.licenseScopeFormat ?? "plain") && data.licenseScopeRows?.length) {
+    const count = clampLicenseScopeColumnCount(data.licenseScopeColumnCount);
+    rows.push(resolveLicenseScopeHeaders(count, data.licenseScopeColumnHeaders));
     for (const r of data.licenseScopeRows) {
-      if (!r.component.trim() && !r.value.trim()) continue;
-      rows.push([r.component, r.value]);
+      if (!licenseScopeRowHasContent(r)) continue;
+      rows.push(licenseScopeRowCells(r, count));
     }
-  } else {
+  }
+  if (rows[rows.length - 1]?.[0] === "License Scope") {
     rows.push([data.licenseScope.trim() || "—"]);
   }
 

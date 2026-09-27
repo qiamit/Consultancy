@@ -2,6 +2,7 @@
 
 import type { PrintSettings } from "@backend/modules/print/types";
 import {
+  oslSampleColumnPickerLabel,
   OSL_SAMPLE_TABLE_COLUMN_OPTIONS,
   toggleOslSampleTableColumn,
   type OslSampleTableColumnKey,
@@ -26,6 +27,35 @@ function Field({
     <div className="space-y-1.5">
       <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{label}</label>
       {children}
+    </div>
+  );
+}
+
+function OslTableColumnPicker({
+  columns,
+  onChange,
+}: {
+  columns: OslSampleTableColumnKey[];
+  onChange: (columns: OslSampleTableColumnKey[]) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">
+        Sample table fields
+      </p>
+      <p className="text-xs text-zinc-500 dark:text-zinc-400">
+        Choose columns from the sample form. Grade / Type / Variety is the default description field.
+      </p>
+      <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+        {OSL_SAMPLE_TABLE_COLUMN_OPTIONS.map(({ key, label }) => (
+          <CheckboxField
+            key={key}
+            label={oslSampleColumnPickerLabel(key, label)}
+            checked={columns.includes(key)}
+            onChange={() => onChange(toggleOslSampleTableColumn(columns, key))}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -148,6 +178,14 @@ export function DocumentPrintSettingsPanel({
             )}
           </div>
         </div>
+        {oslTableColumns && onOslTableColumnsChange ? (
+          <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
+            <OslTableColumnPicker
+              columns={oslTableColumns}
+              onChange={onOslTableColumnsChange}
+            />
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -335,21 +373,10 @@ export function DocumentPrintSettingsPanel({
       <div className="space-y-3 border-t border-zinc-200 pt-4 dark:border-zinc-700">
         <p className="text-sm font-semibold text-zinc-800 dark:text-zinc-100">Table</p>
         {oslTableColumns && onOslTableColumnsChange ? (
-          <div className="space-y-2">
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Choose which columns appear in the OSL sample table.
-            </p>
-            {OSL_SAMPLE_TABLE_COLUMN_OPTIONS.map(({ key, label }) => (
-              <CheckboxField
-                key={key}
-                label={key === "dom" ? "DOM (Date of Manufacturing)" : key === "laboratory" ? "Laboratory (initials)" : label}
-                checked={oslTableColumns.includes(key)}
-                onChange={() =>
-                  onOslTableColumnsChange(toggleOslSampleTableColumn(oslTableColumns, key))
-                }
-              />
-            ))}
-          </div>
+          <OslTableColumnPicker
+            columns={oslTableColumns}
+            onChange={onOslTableColumnsChange}
+          />
         ) : topMgmtTableColumns && onTopMgmtTableColumnsChange ? (
           <div className="space-y-3">
             <div className="space-y-2">

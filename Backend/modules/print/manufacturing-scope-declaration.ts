@@ -1,7 +1,10 @@
 import { buildPrintDocument } from "@backend/modules/print/engine";
 import { openPrintPreview } from "@backend/modules/print/preview";
 import {
+  LICENSE_SCOPE_DEFAULT_COLUMNS,
   buildLicenseScopeTableHtml,
+  licenseScopeUsesPlain,
+  licenseScopeUsesTable,
   type LicenseScopeFormat,
   type LicenseScopeRow,
 } from "@backend/modules/bis/license-scope-format";
@@ -26,7 +29,9 @@ export type ManufacturingScopeDeclarationData = {
   isTitle: string;
   licenseScope: string;
   licenseScopeFormat?: LicenseScopeFormat;
-  licenseScopeRows?: Pick<LicenseScopeRow, "component" | "value">[];
+  licenseScopeColumnCount?: number;
+  licenseScopeColumnHeaders?: string[];
+  licenseScopeRows?: Pick<LicenseScopeRow, "component" | "value" | "extra">[];
   bisBranchName: string;
   bisBranchState: string;
   bisBranchCountry: string;
@@ -74,16 +79,32 @@ function nl2br(s: string): string {
 }
 
 function buildLicenseScopeContent(data: ManufacturingScopeDeclarationData): string {
-  if (data.licenseScopeFormat === "table" && data.licenseScopeRows?.length) {
+  const format = data.licenseScopeFormat ?? "plain";
+  const columnCount = data.licenseScopeColumnCount ?? LICENSE_SCOPE_DEFAULT_COLUMNS;
+  const parts: string[] = [];
+  if (licenseScopeUsesPlain(format)) {
+    const scopeText = data.licenseScope.trim();
+    if (scopeText || !licenseScopeUsesTable(format)) {
+      parts.push(
+        `<div style="font-size:12px;line-height:1.65;">${nl2br(scopeText || "—")}</div>`,
+      );
+    }
+  }
+  if (licenseScopeUsesTable(format) && data.licenseScopeRows?.length) {
     const rows = data.licenseScopeRows.map((r, i) => ({
       id: String(i),
       component: r.component,
       value: r.value,
+      extra: r.extra,
     }));
-    return buildLicenseScopeTableHtml(rows);
+    parts.push(
+      buildLicenseScopeTableHtml(rows, columnCount, data.licenseScopeColumnHeaders),
+    );
   }
-  const scopeText = data.licenseScope.trim() || "—";
-  return `<div style="font-size:12px;line-height:1.65;">${nl2br(scopeText)}</div>`;
+  if (parts.length === 0) {
+    return `<div style="font-size:12px;line-height:1.65;">—</div>`;
+  }
+  return parts.join(`<div style="height:10px;"></div>`);
 }
 
 function formatIsStandardRef(isNumber: string, isTitle: string): string {
@@ -250,6 +271,7 @@ export function buildManufacturingScopeDeclarationHtml(
     bodyHtml: buildDeclarationBody(data),
     settings: manufacturingScopeLetterheadSettings(settings),
     company: buildManufacturingScopeCompany(data, assets),
+    extraStyles: `.license-scope-table th, .license-scope-table td { text-transform: none; letter-spacing: normal; text-align: center; }`,
   });
 }
 
@@ -287,6 +309,7 @@ export function openManufacturingScopeDeclarationPreview(
         bodyHtml: buildDeclarationBody(data),
         settings: { ...settings, ...s },
         company: c,
+        extraStyles: `.license-scope-table th, .license-scope-table td { text-transform: none; letter-spacing: normal; text-align: center; }`,
       }),
     initialSettings: settings,
     company,

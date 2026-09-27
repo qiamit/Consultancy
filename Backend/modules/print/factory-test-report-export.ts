@@ -211,7 +211,7 @@ function buildReportSheetAoa(
     ":-",
     productTitleAsPerIsCode(report.product_title, report.is_code),
   ]);
-  rows.push(["Sample Description", ":-", report.grade_type]);
+  rows.push(["Grade / Type / Variety", ":-", report.grade_type]);
   rows.push(["Declared Values, if any", ":-", report.declared_values]);
   rows.push([
     "Batch / Heat Number",
@@ -543,7 +543,7 @@ function buildMetaTableDocx(report: FactoryTestReportStored, totalWidth: number)
         "Specification",
         productTitleAsPerIsCode(report.product_title, report.is_code),
       ),
-      metaFullRow(widths, "Sample Description", report.grade_type),
+      metaFullRow(widths, "Grade / Type / Variety", report.grade_type),
       metaFullRow(widths, "Declared Values, if any", report.declared_values),
       metaPairRow(
         widths,

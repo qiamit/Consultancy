@@ -8,6 +8,12 @@ import type {
   LicenseScopeTableRow,
 } from "@backend/modules/bis/application-checklist-notes";
 import {
+  LICENSE_SCOPE_DEFAULT_COLUMNS,
+  licenseScopeRowHasContent,
+  licenseScopeUsesPlain,
+  licenseScopeUsesTable,
+} from "@backend/modules/bis/license-scope-format";
+import {
   isApplicationProjectKind,
   isInclusionProjectKind,
 } from "@backend/modules/bis/bis-project-kind";
@@ -85,6 +91,8 @@ export function StartInclusionFromLicenseModal({
   const [startDate, setStartDate] = useState(todayYmd);
   const [endDate, setEndDate] = useState("");
   const [scopeType, setScopeType] = useState<LicenseScopeFormat>("plain");
+  const [scopeColumnCount, setScopeColumnCount] = useState(LICENSE_SCOPE_DEFAULT_COLUMNS);
+  const [scopeColumnHeaders, setScopeColumnHeaders] = useState<string[]>([]);
   const [scopePlain, setScopePlain] = useState("");
   const [scopeRowsJson, setScopeRowsJson] = useState("[]");
   const [error, setError] = useState<string | null>(null);
@@ -284,11 +292,11 @@ export function StartInclusionFromLicenseModal({
     }
 
     let scopeRows: LicenseScopeTableRow[] = [];
-    if (scopeType === "table") {
+    if (licenseScopeUsesTable(scopeType)) {
       try {
         const parsed = JSON.parse(scopeRowsJson || "[]") as LicenseScopeTableRow[];
         scopeRows = Array.isArray(parsed)
-          ? parsed.filter((r) => r.component?.trim() || r.value?.trim())
+          ? parsed.filter((r) => licenseScopeRowHasContent(r))
           : [];
       } catch {
         scopeRows = [];
@@ -297,7 +305,8 @@ export function StartInclusionFromLicenseModal({
         setError("Enter at least one Inclusion Scope row.");
         return;
       }
-    } else if (!scopePlain.trim()) {
+    }
+    if (licenseScopeUsesPlain(scopeType) && !scopePlain.trim()) {
       setError("Enter Inclusion Scope.");
       return;
     }
@@ -309,6 +318,8 @@ export function StartInclusionFromLicenseModal({
         startDate,
         endDate,
         inclusionScopeFormat: scopeType,
+        inclusionScopeColumnCount: scopeColumnCount,
+        inclusionScopeColumnHeaders: scopeColumnHeaders,
         inclusionScopePlain: scopePlain,
         inclusionScopeRows: scopeRows,
       });
@@ -398,14 +409,20 @@ export function StartInclusionFromLicenseModal({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <ScopeTypeSelect
               value={scopeType}
+              columnCount={scopeColumnCount}
               onChange={(next) => {
                 setScopeType(next);
-                if (next === "table" && scopePlain.trim() && scopeRowsJson === "[]") {
+                if (
+                  licenseScopeUsesTable(next) &&
+                  scopePlain.trim() &&
+                  scopeRowsJson === "[]"
+                ) {
                   setScopeRowsJson(
                     JSON.stringify([{ component: "", value: scopePlain.trim() }]),
                   );
                 }
               }}
+              onColumnCountChange={setScopeColumnCount}
             />
 
             <div>
@@ -450,10 +467,13 @@ export function StartInclusionFromLicenseModal({
 
           <div className="grid grid-cols-1 gap-4">
             <LicenseScopeField
-              key={scopeType}
+              key={`${scopeType}-${scopeColumnCount}`}
               scopeType={scopeType}
               plainText={scopePlain}
               rowsJson={scopeRowsJson}
+              columnCount={scopeColumnCount}
+              columnHeaders={scopeColumnHeaders}
+              onColumnHeadersChange={setScopeColumnHeaders}
               onPlainTextChange={setScopePlain}
               onRowsJsonChange={setScopeRowsJson}
               label="Inclusion Scope"

@@ -12,6 +12,18 @@ import {
 } from "@backend/modules/bis/bis-project-license-scope-notes";
 import type { LicenseScopeTableRow } from "@backend/modules/bis/application-checklist-notes";
 import {
+  clampLicenseScopeColumnCount,
+  licenseScopeRowHasContent,
+  licenseScopeUsesPlain,
+  licenseScopeUsesTable,
+  parseLicenseScopeColumnHeaders,
+  parseLicenseScopeFormat,
+  parseStoredLicenseScopeRows,
+  serializeLicenseScopeText,
+  storedRowsToEditorRows,
+  type LicenseScopeFormat,
+} from "@backend/modules/bis/license-scope-format";
+import {
   DROPDOWN_KEY_BIS_BILLING_FREQUENCY,
   DROPDOWN_KEY_BIS_PROJECT_KIND,
 } from "@backend/shared/dropdown-keys";
@@ -214,25 +226,16 @@ export async function saveBisProjectMaster(formData: FormData) {
     redirect(`${listPath}?error=${encodeURIComponent("status")}`);
 
   const notes = await (async () => {
-    const scopeFormat = str(formData, "license_scope_format") === "table" ? "table" : "plain";
+    const scopeFormat = parseLicenseScopeFormat(str(formData, "license_scope_format"));
+    const scopeColumnCount = clampLicenseScopeColumnCount(
+      str(formData, "license_scope_column_count"),
+    );
     const scopePlain = str(formData, "license_scope_plain");
     let scopeRows: LicenseScopeTableRow[] = [];
     try {
       const rawRows = str(formData, "license_scope_rows");
       if (rawRows) {
-        const parsed = JSON.parse(rawRows) as unknown;
-        if (Array.isArray(parsed)) {
-          scopeRows = parsed
-            .map((row) => {
-              if (!row || typeof row !== "object") return null;
-              const r = row as Record<string, unknown>;
-              return {
-                component: String(r.component ?? "").trim(),
-                value: String(r.value ?? "").trim(),
-              };
-            })
-            .filter((r): r is LicenseScopeTableRow => r !== null);
-        }
+        scopeRows = parseStoredLicenseScopeRows(JSON.parse(rawRows) as unknown);
       }
     } catch {
       scopeRows = [];
@@ -248,8 +251,20 @@ export async function saveBisProjectMaster(formData: FormData) {
       existingNotes = existing?.notes ?? null;
     }
 
+    let scopeHeaders: string[] = [];
+    try {
+      scopeHeaders = parseLicenseScopeColumnHeaders(
+        JSON.parse(str(formData, "license_scope_column_headers") || "[]"),
+        scopeColumnCount,
+      );
+    } catch {
+      scopeHeaders = parseLicenseScopeColumnHeaders([], scopeColumnCount);
+    }
+
     const built = buildBisProjectLicenseScopeNotes(existingNotes, {
       scopeType: scopeFormat,
+      columnCount: scopeColumnCount,
+      columnHeaders: scopeHeaders,
       plainText: scopePlain,
       rows: scopeRows,
     });
@@ -1020,7 +1035,9 @@ export async function createPendingApplication(input: {
   caseReferredBy?: string | null;
   billingAmount?: string | number | null;
   billingFrequency?: string | null;
-  licenseScopeFormat?: "plain" | "table";
+  licenseScopeFormat?: LicenseScopeFormat;
+  licenseScopeColumnCount?: number;
+  licenseScopeColumnHeaders?: string[];
   licenseScopePlain?: string | null;
   licenseScopeRowsJson?: string | null;
   isQeManaged?: boolean;
@@ -1070,31 +1087,24 @@ export async function createPendingApplication(input: {
   const portal_user_id = String(input.portalUserId ?? "").trim() || null;
   const portal_password = String(input.portalPassword ?? "").trim() || null;
 
-  const scopeFormat =
-    input.licenseScopeFormat === "table" ? "table" : "plain";
+  const scopeFormat = parseLicenseScopeFormat(input.licenseScopeFormat);
+  const scopeColumnCount = clampLicenseScopeColumnCount(input.licenseScopeColumnCount);
   let scopeRows: LicenseScopeTableRow[] = [];
   try {
     const rawRows = String(input.licenseScopeRowsJson ?? "").trim();
     if (rawRows) {
-      const parsed = JSON.parse(rawRows) as unknown;
-      if (Array.isArray(parsed)) {
-        scopeRows = parsed
-          .map((row) => {
-            if (!row || typeof row !== "object") return null;
-            const r = row as Record<string, unknown>;
-            return {
-              component: String(r.component ?? "").trim(),
-              value: String(r.value ?? "").trim(),
-            };
-          })
-          .filter((r): r is LicenseScopeTableRow => r !== null);
-      }
+      scopeRows = parseStoredLicenseScopeRows(JSON.parse(rawRows) as unknown);
     }
   } catch {
     scopeRows = [];
   }
   const notesBuilt = buildBisProjectLicenseScopeNotes(null, {
     scopeType: scopeFormat,
+    columnCount: scopeColumnCount,
+    columnHeaders: parseLicenseScopeColumnHeaders(
+      input.licenseScopeColumnHeaders,
+      scopeColumnCount,
+    ),
     plainText: String(input.licenseScopePlain ?? ""),
     rows: scopeRows,
   });
@@ -1254,7 +1264,9 @@ export async function createInclusionFromLicense(
         licenseId: string;
         startDate?: string;
         endDate?: string;
-        inclusionScopeFormat?: "plain" | "table";
+        inclusionScopeFormat?: LicenseScopeFormat;
+        inclusionScopeColumnCount?: number;
+        inclusionScopeColumnHeaders?: string[];
         inclusionScopePlain?: string;
         inclusionScopeRows?: LicenseScopeTableRow[];
       },
@@ -1305,15 +1317,16 @@ export async function createInclusionFromLicense(
       ? opts.endDate.trim()
       : null;
 
-  const scopeFormat = opts.inclusionScopeFormat === "table" ? "table" : "plain";
+  const scopeFormat = parseLicenseScopeFormat(opts.inclusionScopeFormat);
+  const scopeColumnCount = clampLicenseScopeColumnCount(opts.inclusionScopeColumnCount);
   const scopePlain = (opts.inclusionScopePlain ?? "").trim();
-  const scopeRows = (opts.inclusionScopeRows ?? []).filter(
-    (r) => r.component.trim() || r.value.trim(),
+  const scopeRows = (opts.inclusionScopeRows ?? []).filter((r) =>
+    licenseScopeRowHasContent(r),
   );
-  if (scopeFormat === "plain" && !scopePlain) {
+  if (licenseScopeUsesPlain(scopeFormat) && !scopePlain) {
     return { ok: false, error: "Enter Inclusion Scope (plain text)." };
   }
-  if (scopeFormat === "table" && scopeRows.length === 0) {
+  if (licenseScopeUsesTable(scopeFormat) && scopeRows.length === 0) {
     return { ok: false, error: "Enter at least one Inclusion Scope row." };
   }
 
@@ -1347,18 +1360,21 @@ export async function createInclusionFromLicense(
       weekly_off: [],
     },
   };
-  if (scopeFormat === "table") {
-    notesPayload.license_scope_format = "table";
+  if (scopeFormat !== "plain") notesPayload.license_scope_format = scopeFormat;
+  if (licenseScopeUsesTable(scopeFormat)) {
     notesPayload.license_scope_rows = scopeRows;
-    notesPayload.license_scope = scopeRows
-      .map((r, i) => {
-        const c = r.component.trim();
-        const v = r.value.trim();
-        if (c && v) return `${i + 1}. ${c}: ${v}`;
-        if (c) return `${i + 1}. ${c}`;
-        return `${i + 1}. ${v}`;
-      })
-      .join("\n");
+    notesPayload.license_scope_column_count = scopeColumnCount;
+    notesPayload.license_scope_column_headers = parseLicenseScopeColumnHeaders(
+      opts.inclusionScopeColumnHeaders,
+      scopeColumnCount,
+    );
+    notesPayload.license_scope = licenseScopeUsesPlain(scopeFormat)
+      ? scopePlain
+      : serializeLicenseScopeText(
+          "table",
+          "",
+          storedRowsToEditorRows(scopeRows),
+        );
   } else {
     notesPayload.license_scope = scopePlain;
   }

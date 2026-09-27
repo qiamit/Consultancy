@@ -60,6 +60,10 @@ export function applyLicenseScopeUpdate(
     return;
   }
 
+  if (update.plain?.trim() && (format === "plain_table" || !update.rows?.length)) {
+    setDraftScope(update.plain.trim());
+  }
+
   if (update.rows?.length) {
     const filled = update.rows.filter((r) => r.component.trim() || r.value.trim());
     if (filled.length > 0) {

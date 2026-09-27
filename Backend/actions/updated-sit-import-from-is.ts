@@ -42,7 +42,9 @@ export type UsitExtractSuccess = {
 
 export type UsitExtractFailure = { ok: false; error: string };
 
-const TEXT_CAP = 120_000;
+const TEXT_CAP = 80_000;
+const SIT_FOCUS_RE =
+  /annex[\s-]*c|scheme of inspection|levels of control|table\s*1|labelling and marking|standard mark|rejections/i;
 
 const ANNEX_KEYS = [
   "laboratory_text",
@@ -179,7 +181,8 @@ Required keys (ALL must be non-empty strings when the manual has Annex C / Schem
 RULES:
 1. Fill EVERY annex field. Do not leave blanks if related content exists anywhere in the document.
 2. Preserve Product Manual wording where possible.
-3. Apply user instructions when they affect annex wording (laboratory / subcontracting / levels of control).`;
+3. Apply user instructions when they affect annex wording (laboratory / subcontracting / levels of control).
+4. If a manufacturing scope is provided, keep annex wording aligned to that scope.`;
 
 const TABLE_SYSTEM = `You extract Table 1 — Test Details from a BIS Product Manual / Scheme of Inspection.
 Return ONLY one JSON object. No markdown fences, no explanation.
@@ -200,10 +203,10 @@ Return ONLY one JSON object. No markdown fences, no explanation.
 }
 
 RULES:
-1. Extract ALL test rows from Levels of Control / Table 1 / test schedule. Prefer completeness over brevity.
+1. Extract test rows from Levels of Control / Table 1 / test schedule that apply to the given manufacturing scope. If no scope is given, extract all applicable rows.
 2. equipment_req: use "R" (in-house) or "S" (subcontracted) from the manual. Apply user instructions (e.g. mark Impact test as S / subcontract BIS-ISO 17025 labs) in equipment_req and remarks.
 3. row_kind is always "data" unless a clear section heading row is needed ("section" / "group").
-4. Never return an empty test_rows array if any tests exist in the document.`;
+4. Never return an empty test_rows array if any in-scope tests exist in the document.`;
 
 const NOTES_SYSTEM = `You extract Table 1 Notes (Note-1, Note-2, Note-3) from a BIS Product Manual / Scheme of Inspection.
 Return ONLY one JSON object. No markdown fences, no explanation.
@@ -220,20 +223,44 @@ RULES:
 3. Apply user instructions (e.g. subcontracting Impact test to BIS / ISO 17025 recognized laboratories) into the most relevant note (usually note_2 about subcontracting).
 4. Prefer non-empty strings for all three notes.`;
 
+function focusSitDocumentText(text: string): string {
+  const raw = text.trim();
+  if (!raw) return "";
+  const hit = raw.search(SIT_FOCUS_RE);
+  const from = hit >= 0 ? Math.max(0, hit - 600) : 0;
+  return raw.slice(from, from + TEXT_CAP);
+}
+
+function scopeBlock(scope: string): string {
+  const trimmed = scope.trim();
+  if (!trimmed) return "";
+  return `\nManufacturing / license scope (extract ONLY tests and clauses that apply to this scope; omit unrelated variants):\n${trimmed}\n`;
+}
+
 async function aiJson(
   system: string,
   user: string,
   modelId: string | undefined,
   maxTokens: number,
-): Promise<Record<string, unknown> | null> {
+): Promise<
+  { ok: true; data: Record<string, unknown> } | { ok: false; error: string }
+> {
   const res = await sendAiMessage(
     [{ role: "user", content: user }],
     system,
     modelId,
     maxTokens,
+    { thinking: "disabled", jsonObject: true },
   );
-  if (!res.ok) return null;
-  return parseJsonObject(res.reply);
+  if (!res.ok) return { ok: false, error: res.error };
+  const data = parseJsonObject(res.reply);
+  if (!data) {
+    return {
+      ok: false,
+      error: "QE Assistant returned text that is not valid JSON. Try Extract & Fill again.",
+    };
+  }
+  return { ok: true, data };
 }
 
 /** List IS code uploaded files for Product Manual picker (PDFs first). */
@@ -338,7 +365,7 @@ async function loadFileText(
     );
   }
 
-  return { text: text.slice(0, TEXT_CAP), fileName };
+  return { text: focusSitDocumentText(text), fileName };
 }
 
 function buildDocPreamble(opts: {
@@ -347,13 +374,14 @@ function buildDocPreamble(opts: {
   pmNumber: string;
   fileName: string;
   instruction: string;
+  manufacturingScope: string;
   documentText: string;
 }): string {
   return `Product IS: ${opts.isLabel}
 Title: ${opts.isTitle}
 Known Product Manual number (if any): ${opts.pmNumber || "(not set)"}
 Selected file: ${opts.fileName}
-${instructionBlock(opts.instruction)}
+${scopeBlock(opts.manufacturingScope)}${instructionBlock(opts.instruction)}
 Document text:
 ${opts.documentText}`;
 }
@@ -364,6 +392,7 @@ export async function extractUpdatedSitFromIsCodeFile(opts: {
   fileId: string;
   modelId?: string;
   instruction?: string;
+  manufacturingScope?: string;
 }): Promise<UsitExtractSuccess | UsitExtractFailure> {
   const isCodeId = (opts.isCodeId ?? "").trim();
   const fileId = (opts.fileId ?? "").trim();
@@ -408,6 +437,7 @@ export async function extractUpdatedSitFromIsCodeFile(opts: {
       "",
   ).trim();
   const instruction = (opts.instruction ?? "").trim();
+  const manufacturingScope = (opts.manufacturingScope ?? "").trim();
 
   const preamble = buildDocPreamble({
     isLabel,
@@ -415,10 +445,11 @@ export async function extractUpdatedSitFromIsCodeFile(opts: {
     pmNumber,
     fileName: doc.fileName,
     instruction,
+    manufacturingScope,
     documentText: doc.text,
   });
 
-  const [annexObj, tableObj, notesObj] = await Promise.all([
+  const [annexRes, tableRes, notesRes] = await Promise.all([
     aiJson(
       ANNEX_SYSTEM,
       `${preamble}
@@ -431,7 +462,7 @@ Extract COMPLETE Annex C fields as JSON. Every annex key must be filled.`,
       TABLE_SYSTEM,
       `${preamble}
 
-Extract COMPLETE Table 1 test_rows as JSON. Include every test from the Product Manual.`,
+Extract COMPLETE Table 1 test_rows as JSON. Include every in-scope test from the Product Manual.`,
       opts.modelId,
       8192,
     ),
@@ -441,9 +472,18 @@ Extract COMPLETE Table 1 test_rows as JSON. Include every test from the Product 
 
 Extract COMPLETE note_1, note_2, note_3 as JSON. All three notes must be filled.`,
       opts.modelId,
-      2048,
+      4096,
     ),
   ]);
+
+  const annexObj = annexRes.ok ? annexRes.data : null;
+  const tableObj = tableRes.ok ? tableRes.data : null;
+  const notesObj = notesRes.ok ? notesRes.data : null;
+  const firstAiError =
+    (!annexRes.ok && annexRes.error) ||
+    (!tableRes.ok && tableRes.error) ||
+    (!notesRes.ok && notesRes.error) ||
+    "";
 
   const annexPatch = emptyAnnexPatch();
   let pm_reference = pmNumber;
@@ -498,11 +538,11 @@ Extract COMPLETE note_1, note_2, note_3 as JSON. All three notes must be filled.
     return {
       ok: false,
       error:
-        "AI could not extract Annexure, Table, or Notes from this file. Select the Product Manual PDF and try again.",
+        firstAiError ||
+        "QE Assistant could not extract Annexure, Table, or Notes from this Product Manual. Try Extract & Fill again.",
     };
   }
 
-  // Soft retry for any missing part (sequential, focused)
   if (!filled.annex) {
     const retry = await aiJson(
       ANNEX_SYSTEM,
@@ -510,9 +550,9 @@ Extract COMPLETE note_1, note_2, note_3 as JSON. All three notes must be filled.
       opts.modelId,
       4096,
     );
-    if (retry) {
+    if (retry.ok) {
       for (const key of ANNEX_KEYS) {
-        const v = str(retry[key]);
+        const v = str(retry.data[key]);
         if (v) annexPatch[key] = v;
       }
       filled.annex = annexHasContent(annexPatch);
@@ -522,12 +562,14 @@ Extract COMPLETE note_1, note_2, note_3 as JSON. All three notes must be filled.
   if (!filled.table) {
     const retry = await aiJson(
       TABLE_SYSTEM,
-      `${preamble}\n\nRETRY: Previous attempt missed Table 1. Return full test_rows now.`,
+      `${preamble}\n\nRETRY: Previous attempt missed Table 1. Return full in-scope test_rows now.`,
       opts.modelId,
       8192,
     );
-    if (retry) {
-      const rows = parseSitRows(retry.test_rows ?? retry.table_rows ?? retry.rows);
+    if (retry.ok) {
+      const rows = parseSitRows(
+        retry.data.test_rows ?? retry.data.table_rows ?? retry.data.rows,
+      );
       if (tableHasContent(rows)) {
         testRows.splice(0, testRows.length, ...rows);
         filled.table = true;
@@ -540,18 +582,18 @@ Extract COMPLETE note_1, note_2, note_3 as JSON. All three notes must be filled.
       NOTES_SYSTEM,
       `${preamble}\n\nRETRY: Previous attempt missed Notes. Return note_1, note_2, note_3 now. Apply user subcontracting instructions into note_2 if relevant.`,
       opts.modelId,
-      2048,
+      4096,
     );
-    if (retry) {
+    if (retry.ok) {
       for (const key of NOTE_KEYS) {
-        const v = str(retry[key]);
+        const v = str(retry.data[key]);
         if (v) annexPatch[key] = v;
       }
       filled.notes = notesHaveContent(annexPatch);
     }
   }
 
-  if (!filled.annex || !filled.table || !filled.notes) {
+  if (!filled.annex && !filled.table && !filled.notes) {
     const missing = [
       !filled.annex ? "Annexure" : null,
       !filled.table ? "Table" : null,
@@ -559,13 +601,10 @@ Extract COMPLETE note_1, note_2, note_3 as JSON. All three notes must be filled.
     ]
       .filter(Boolean)
       .join(", ");
-    // Still return partial success if anything filled — frontend will warn
-    if (!filled.annex && !filled.table && !filled.notes) {
-      return {
-        ok: false,
-        error: `Could not fill ${missing}. Try again or pick another Product Manual PDF.`,
-      };
-    }
+    return {
+      ok: false,
+      error: `Could not fill ${missing}. Try again or pick another Product Manual PDF.`,
+    };
   }
 
   return {

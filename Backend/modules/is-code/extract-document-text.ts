@@ -20,7 +20,11 @@ function extensionOf(fileName: string): string {
 type PdfParseFn = (data: Buffer) => Promise<{ text: string }>;
 
 async function loadPdfParse(): Promise<PdfParseFn> {
-  const mod = (await import("pdf-parse")) as PdfParseFn | { default: PdfParseFn };
+  // Import the implementation file. `pdf-parse` index.js runs debug I/O when
+  // `module.parent` is missing (ESM / some bundlers).
+  const mod = (await import("pdf-parse/lib/pdf-parse.js")) as
+    | PdfParseFn
+    | { default: PdfParseFn };
   if (typeof mod === "function") return mod;
   return mod.default;
 }

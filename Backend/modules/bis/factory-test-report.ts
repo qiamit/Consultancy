@@ -1,5 +1,6 @@
 import {
   parseSampleFor,
+  resolveGradeAndDescription,
   rowHasContent as oslRowHasContent,
   type OslSampleRequirementStored,
 } from "@backend/modules/bis/osl-sample-requirements";
@@ -233,10 +234,14 @@ function sampleSourceKey(source: FtrSampleSource, index: number): string {
   return `${source}:${index}`;
 }
 
+function sampleGradeType(sample: OslSampleRequirementStored): string {
+  return resolveGradeAndDescription(sample).grade_type_variety;
+}
+
 function sampleLabel(source: FtrSampleSource, index: number, sample: OslSampleRequirementStored): string {
   const prefix = ftrSourceTag(source);
-  const desc = sample.sample_description.trim();
-  return desc ? `${prefix} — ${desc}` : `${prefix} Sample ${String(index + 1).padStart(2, "0")}`;
+  const grade = sampleGradeType(sample);
+  return grade ? `${prefix} — ${grade}` : `${prefix} Sample ${String(index + 1).padStart(2, "0")}`;
 }
 
 function ftrSourceFromOslSample(sample: OslSampleRequirementStored): FtrSampleSource {
@@ -257,7 +262,7 @@ function buildReportFromSample(
     application_number: ctx.applicationNumber,
     licence_number: ctx.licenceNumber,
     product_title: ctx.productTitle,
-    grade_type: sample.sample_description.trim(),
+    grade_type: sampleGradeType(sample),
     declared_values: sample.declared_value.trim(),
     other_information: defaultOtherInformation(),
     is_code: ctx.isCode,
@@ -623,7 +628,7 @@ export function refreshReportHeadersFromSample(
     application_number: ctx.applicationNumber,
     licence_number: ctx.licenceNumber,
     product_title: ctx.productTitle,
-    grade_type: sample.sample_description.trim(),
+    grade_type: sampleGradeType(sample),
     declared_values: sample.declared_value.trim(),
     is_code: ctx.isCode,
     batch_heat_number: sample.batch_number.trim(),

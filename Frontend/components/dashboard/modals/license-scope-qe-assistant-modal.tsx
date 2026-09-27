@@ -60,12 +60,15 @@ export function LicenseScopeQeAssistantModal({
     };
   }, [isCodeId]);
 
+  const tableCount = tableRows.filter((r) => r.component.trim() || r.value.trim()).length;
   const scopePreview =
     licenseScopeFormat === "plain"
       ? plainScope.trim() || "(empty)"
-      : tableRows.filter((r) => r.component.trim() || r.value.trim()).length > 0
-        ? `${tableRows.filter((r) => r.component.trim() || r.value.trim()).length} table row(s)`
-        : "(empty)";
+      : licenseScopeFormat === "plain_table"
+        ? `${plainScope.trim() ? "Text + " : ""}${tableCount} column row(s)`
+        : tableCount > 0
+          ? `${tableCount} column row(s)`
+          : "(empty)";
 
   const handleCustomSend = useCallback(
     async (text: string, messages: ChatMessage[], modelId: string | undefined) => {
@@ -122,7 +125,14 @@ export function LicenseScopeQeAssistantModal({
             {isTitle ? ` · ${isTitle}` : ""}
           </p>
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-amber-800/90 dark:text-amber-300/90">
-            <span>Format: {licenseScopeFormat === "table" ? "Table" : "Plain text"}</span>
+            <span>
+              Format:{" "}
+              {licenseScopeFormat === "table"
+                ? "Only Column"
+                : licenseScopeFormat === "plain_table"
+                  ? "Plain Text with Column"
+                  : "Only Plain Text"}
+            </span>
             <span>
               IS files:{" "}
               {fileStatus.loading

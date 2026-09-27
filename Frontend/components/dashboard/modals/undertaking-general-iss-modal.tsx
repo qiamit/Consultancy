@@ -28,6 +28,7 @@ import {
   documentHasContent as undertakingGeneralIssHasContent,
   mergeUndertakingGeneralIssWithDefaults,
   resolveUndertakingGeneralIssDocument,
+  syncUndertakingClausePoints,
   type UndertakingGeneralIssStored,
 } from "@backend/modules/bis/undertaking-general-iss";
 import { withDocumentSignatureImage, type TopManagementStored } from "@backend/modules/bis/top-management";
@@ -146,6 +147,19 @@ export function UndertakingGeneralIssModal({
       ),
     );
   }, [storedDocument, resolvedDefaults]);
+
+  useEffect(() => {
+    const isNumber = letterData.isNumber ?? "";
+    setDocument((prev) => {
+      const nextPoints = syncUndertakingClausePoints(prev.undertaking_points, {
+        markingClause,
+        packagingClause,
+        isNumber,
+      });
+      if (nextPoints === prev.undertaking_points) return prev;
+      return { ...prev, undertaking_points: nextPoints };
+    });
+  }, [markingClause, packagingClause, letterData.isNumber]);
 
   const [printSettings, setPrintSettings] = useState<PrintSettings>(() =>
     defaultUndertakingGeneralIssPrintSettings(),

@@ -250,7 +250,9 @@ export async function handleProcessDescriptionQeAssistantMessage(
       : m,
   );
 
-  return sendAiMessage(augmented, PROCESS_DESCRIPTION_QE_SYSTEM, modelId, 4096);
+  return sendAiMessage(augmented, PROCESS_DESCRIPTION_QE_SYSTEM, modelId, 4096, {
+    thinking: "disabled",
+  });
 }
 
 export async function autoGenerateProcessDescriptionPoints(payload: {
@@ -277,6 +279,7 @@ export async function autoGenerateProcessDescriptionPoints(payload: {
     AUTO_GENERATE_SYSTEM,
     undefined,
     4096,
+    { thinking: "disabled", jsonObject: true },
   );
 
   if (!result.ok) return result;

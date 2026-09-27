@@ -17,12 +17,15 @@ import { IsCodeCombobox, type IsCodeComboboxOption } from "./is-code-combobox";
 import { LicenseScopeField, ScopeTypeSelect } from "./license-scope-field";
 import type { LicenseScopeFormat } from "@backend/modules/bis/application-checklist-notes";
 import {
-  plainTextToScopeRows,
-} from "@backend/modules/bis/bis-project-license-scope-notes";
-import {
+  clampLicenseScopeColumnCount,
+  licenseScopeUsesPlain,
+  licenseScopeUsesTable,
+  parseLicenseScopeColumnHeaders,
+  parseLicenseScopeFormat,
   serializeLicenseScopeText,
   storedRowsToEditorRows,
 } from "@backend/modules/bis/license-scope-format";
+import { plainTextToScopeRows } from "@backend/modules/bis/bis-project-license-scope-notes";
 
 const fieldInputRowShellClass =
   "flex overflow-hidden rounded-lg border border-zinc-300 bg-white shadow-sm focus-within:border-sky-500 focus-within:ring-2 focus-within:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950";
@@ -182,34 +185,53 @@ export function BisProjectsMasterForm({
     formValues.license_validity_date,
     formValues.status,
   );
-  const scopeType = (formValues.scope_type === "table" ? "table" : "plain") as LicenseScopeFormat;
+  const scopeType = parseLicenseScopeFormat(formValues.scope_type);
+  const scopeColumnCount = clampLicenseScopeColumnCount(
+    formValues.license_scope_column_count,
+  );
+  const scopeColumnHeaders = parseLicenseScopeColumnHeaders(
+    (() => {
+      try {
+        return JSON.parse(formValues.license_scope_column_headers || "[]");
+      } catch {
+        return [];
+      }
+    })(),
+    scopeColumnCount,
+  );
 
   function handleScopeTypeChange(next: LicenseScopeFormat) {
     if (next === scopeType) return;
-    if (next === "table") {
+    if (licenseScopeUsesTable(next) && !licenseScopeUsesTable(scopeType)) {
       const rows = plainTextToScopeRows(formValues.notes);
-      onUpdateField("license_scope_rows", JSON.stringify(rows.length > 0 ? rows : []));
-      onUpdateField("scope_type", next);
-      return;
-    }
-    let tableRows = storedRowsToEditorRows([]);
-    try {
-      const parsed = JSON.parse(formValues.license_scope_rows || "[]") as {
-        component?: string;
-        value?: string;
-      }[];
-      if (Array.isArray(parsed)) {
-        tableRows = storedRowsToEditorRows(
-          parsed.map((r) => ({
-            component: String(r.component ?? ""),
-            value: String(r.value ?? ""),
-          })),
-        );
+      if (rows.length > 0 && formValues.license_scope_rows === "[]") {
+        onUpdateField("license_scope_rows", JSON.stringify(rows));
       }
-    } catch {
-      // ignore
     }
-    onUpdateField("notes", serializeLicenseScopeText("table", formValues.notes, tableRows));
+    if (licenseScopeUsesPlain(next) && !licenseScopeUsesPlain(scopeType)) {
+      let tableRows = storedRowsToEditorRows([]);
+      try {
+        const parsed = JSON.parse(formValues.license_scope_rows || "[]") as {
+          component?: string;
+          value?: string;
+          extra?: string[];
+        }[];
+        if (Array.isArray(parsed)) {
+          tableRows = storedRowsToEditorRows(
+            parsed.map((r) => ({
+              component: String(r.component ?? ""),
+              value: String(r.value ?? ""),
+              extra: Array.isArray(r.extra) ? r.extra : undefined,
+            })),
+          );
+        }
+      } catch {
+        // ignore
+      }
+      if (!formValues.notes.trim()) {
+        onUpdateField("notes", serializeLicenseScopeText("table", "", tableRows));
+      }
+    }
     onUpdateField("scope_type", next);
   }
 
@@ -565,7 +587,11 @@ export function BisProjectsMasterForm({
                 <ScopeTypeSelect
                   hideLabel
                   value={scopeType}
+                  columnCount={scopeColumnCount}
                   onChange={handleScopeTypeChange}
+                  onColumnCountChange={(count) =>
+                    onUpdateField("license_scope_column_count", String(count))
+                  }
                 />
               </div>
             </div>
@@ -573,10 +599,15 @@ export function BisProjectsMasterForm({
         </div>
 
         <LicenseScopeField
-          key={`${formValues.id}-${scopeType}`}
+          key={`${formValues.id}-${scopeType}-${scopeColumnCount}`}
           scopeType={scopeType}
           plainText={formValues.notes}
           rowsJson={formValues.license_scope_rows}
+          columnCount={scopeColumnCount}
+          columnHeaders={scopeColumnHeaders}
+          onColumnHeadersChange={(headers) =>
+            onUpdateField("license_scope_column_headers", JSON.stringify(headers))
+          }
           onPlainTextChange={(v) => onUpdateField("notes", v)}
           onRowsJsonChange={(v) => onUpdateField("license_scope_rows", v)}
           isCodeId={formValues.is_code_id}

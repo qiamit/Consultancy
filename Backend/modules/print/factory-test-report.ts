@@ -217,7 +217,7 @@ function buildMetaTableHtml(report: FactoryTestReportStored): string {
           "Specification",
           productTitleAsPerIsCode(report.product_title, report.is_code),
         )}
-        ${fieldRow("Sample Description", report.grade_type)}
+        ${fieldRow("Grade / Type / Variety", report.grade_type)}
         ${fieldRow("Declared Values, if any", report.declared_values)}
         ${fieldRowPair(
           "Batch / Heat Number",

@@ -72,6 +72,63 @@ export function mergeUndertakingGeneralIssWithDefaults(
   };
 }
 
+function withClauseRef(text: string, clause: string, isCode: string): string {
+  const ref = clause.trim();
+  const is = isCode.trim() || "________________";
+  if (!ref) return text;
+  const trimmed = text.trim();
+  const ending = /[.。]$/.test(trimmed) ? trimmed.slice(-1) : "";
+  const body = ending ? trimmed.slice(0, -1).trimEnd() : trimmed;
+  if (/as per\s+/i.test(body)) {
+    return `${body.replace(/as per\s+.+$/i, `as per ${ref} of ${is}`)}${ending}`;
+  }
+  return `${body} as per ${ref} of ${is}${ending}`;
+}
+
+function pointsEqual(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((p, i) => p === b[i]);
+}
+
+/** Keep Marking / Packaging undertaking rows aligned with the clause fields. */
+export function syncUndertakingClausePoints(
+  points: string[],
+  opts: { markingClause: string; packagingClause: string; isNumber: string },
+): string[] {
+  const isCode = (opts.isNumber ?? "").trim() || "________________";
+  const markingRef = (opts.markingClause ?? "").trim();
+  const packagingRef = (opts.packagingClause ?? "").trim();
+  const next = [...points];
+
+  const apply = (
+    matcher: RegExp,
+    ref: string,
+    fallback: string,
+  ) => {
+    if (!ref) return;
+    const idx = next.findIndex((p) => matcher.test(p));
+    if (idx >= 0) {
+      next[idx] = withClauseRef(next[idx]!, ref, isCode);
+      return;
+    }
+    if (next.some((p) => p.trim())) {
+      next.push(fallback);
+    }
+  };
+
+  apply(
+    /marking\s+clause/i,
+    markingRef,
+    `We will Follow Marking Clause as per ${markingRef} of ${isCode}`,
+  );
+  apply(
+    /packaging\s+clause/i,
+    packagingRef,
+    `We will Follow Packaging Clause as per ${packagingRef} of ${isCode}`,
+  );
+
+  return pointsEqual(points, next) ? points : next;
+}
+
 export function formatWeeklyOffForUndertaking(days: string[]): {
   closeOn: string;
   holidayPhrase: string;

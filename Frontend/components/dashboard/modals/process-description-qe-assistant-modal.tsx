@@ -72,12 +72,22 @@ export function ProcessDescriptionQeAssistantModal({
     processFlowChart.outline_items?.filter((item) => item.text.trim()).length ??
     processFlowChart.shapes.filter((s) => s.type === "rectangle" && s.label.trim()).length;
 
-  const scopePreview =
+  const scopeText =
     licenseScopeFormat === "plain"
-      ? plainScope.trim() || "(empty)"
-      : tableRows.filter((r) => r.component.trim() || r.value.trim()).length > 0
-        ? `${tableRows.filter((r) => r.component.trim() || r.value.trim()).length} table row(s)`
-        : "(empty)";
+      ? plainScope.trim()
+      : tableRows
+          .filter((r) => r.component.trim() || r.value.trim())
+          .map((r) =>
+            r.component.trim() && r.value.trim()
+              ? `${r.component.trim()}: ${r.value.trim()}`
+              : r.component.trim() || r.value.trim(),
+          )
+          .join("; ");
+  const scopePreview = scopeText
+    ? scopeText.length > 140
+      ? `${scopeText.slice(0, 137)}…`
+      : scopeText
+    : "(empty)";
 
   const currentPointsPreview =
     document.description_points.filter((p) => p.trim()).length > 0
@@ -151,37 +161,49 @@ export function ProcessDescriptionQeAssistantModal({
       starterQuestions={PROCESS_DESCRIPTION_QE_STARTERS}
       accentColor="amber"
       overlayZIndexClass="z-[500]"
+      size="wide"
       onClose={onClose}
       onCustomSend={handleCustomSend}
       inputPlaceholder="Ask to generate, rewrite, or update process description points…"
-      beforeInput={
-        <div className="mb-3 space-y-2 rounded-lg border border-amber-200/60 bg-amber-50/80 px-3 py-2.5 text-xs dark:border-amber-900/50 dark:bg-amber-950/20">
-          <p className="font-semibold text-amber-900 dark:text-amber-200">
+      beforeMessages={
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-3 text-xs dark:border-amber-900/50 dark:bg-amber-950/30">
+          <p className="font-semibold leading-snug text-amber-950 dark:text-amber-100">
             {isReference !== "—" ? isReference : "IS code not linked"}
             {isTitle ? ` · ${isTitle}` : ""}
           </p>
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-amber-800/90 dark:text-amber-300/90">
-            <span>
-              IS files:{" "}
-              {fileStatus.loading
-                ? "Loading…"
-                : fileStatus.hasFiles
-                  ? `${fileStatus.fileCount} uploaded${fileStatus.fileName ? ` (${fileStatus.fileName})` : ""}`
-                  : "None — upload in IS Code Master"}
-            </span>
-            <span>License scope: {scopePreview}</span>
-            <span>Flow chart steps: {flowSteps > 0 ? flowSteps : "(empty)"}</span>
-            <span>Current points: {currentPointsPreview}</span>
-          </div>
-          <p className="text-[11px] text-amber-700/80 dark:text-amber-400/80">
-            QE Assistant reads the IS document, your license scope, and process flow chart to draft
-            numbered process description points and apply them to the editor.
-          </p>
+          <dl className="mt-2 grid grid-cols-1 gap-1.5 text-amber-900/90 dark:text-amber-200/90 sm:grid-cols-2">
+            <div>
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-amber-700/70 dark:text-amber-400/70">
+                IS file
+              </dt>
+              <dd className="truncate">
+                {fileStatus.loading
+                  ? "Loading…"
+                  : fileStatus.hasFiles
+                    ? `${fileStatus.fileCount} uploaded${fileStatus.fileName ? ` · ${fileStatus.fileName}` : ""}`
+                    : "None — upload in IS Code Master"}
+              </dd>
+            </div>
+            <div>
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-amber-700/70 dark:text-amber-400/70">
+                Flow chart / points
+              </dt>
+              <dd>
+                {flowSteps > 0 ? `${flowSteps} steps` : "No flow steps"} · {currentPointsPreview}
+              </dd>
+            </div>
+            <div className="sm:col-span-2">
+              <dt className="text-[10px] font-semibold uppercase tracking-wide text-amber-700/70 dark:text-amber-400/70">
+                License scope
+              </dt>
+              <dd className="leading-relaxed">{scopePreview}</dd>
+            </div>
+          </dl>
           <button
             type="button"
             onClick={handleAutoGenerate}
             disabled={generating}
-            className="w-full rounded-lg border border-amber-600/50 bg-amber-500/20 px-3 py-2 text-xs font-semibold text-amber-100 hover:bg-amber-500/30 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-3 w-full rounded-lg bg-amber-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-amber-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-amber-500 dark:hover:bg-amber-400"
           >
             {generating ? "Generating points…" : "Auto-generate process description points"}
           </button>

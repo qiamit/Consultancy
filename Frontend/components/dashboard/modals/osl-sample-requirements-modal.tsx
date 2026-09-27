@@ -1367,10 +1367,8 @@ export function OslSampleRequirementsModal({
                 mode={settingsPanel}
                 settings={printSettings}
                 onChange={patchPrintSettings}
-                oslTableColumns={settingsPanel === "print" ? tableColumns : undefined}
-                onOslTableColumnsChange={
-                  settingsPanel === "print" ? setTableColumns : undefined
-                }
+                oslTableColumns={tableColumns}
+                onOslTableColumnsChange={setTableColumns}
                 hideLetterheadLogo
               />
             </div>

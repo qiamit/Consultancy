@@ -22,6 +22,8 @@ import {
 } from "@backend/modules/print/osl-sample-requirements";
 import {
   normalizeOslSampleTableColumns,
+  oslSampleColumnCellText,
+  oslSampleRowHasPrintableContent,
   OSL_SAMPLE_TABLE_COLUMN_OPTIONS,
   type OslSampleTableColumnKey,
 } from "@backend/modules/print/osl-sample-table-columns";
@@ -107,12 +109,6 @@ function formatApplicationNo(raw: string): string {
   return formatApplicationNumberDisplay(v);
 }
 
-function formatDateDisplay(ymd: string): string {
-  const raw = (ymd ?? "").trim();
-  if (!raw) return "—";
-  return formatDisplayDate(raw, "—");
-}
-
 function bisBranchLine(data: OslSampleOfferLetterData): string {
   return [
     data.bisBranchName.trim() || "________________",
@@ -130,31 +126,9 @@ function isStandardRef(data: OslSampleOfferLetterData): string {
   return "";
 }
 
-function laboratoryInitials(name: string): string {
-  const trimmed = (name ?? "").trim();
-  if (!trimmed) return "—";
-  const initials = trimmed
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("");
-  return initials || "—";
-}
-
 function visibleSampleRows(rows: OslSampleRequirementStored[]): OslSampleRequirementStored[] {
   return rows.filter(
-    (r) =>
-      isSampleIncludedInPrint(r) &&
-      (r.sample_description.trim() ||
-        r.declared_value.trim() ||
-        r.batch_number.trim() ||
-        r.date_of_manufacturing.trim() ||
-        r.sample_quantity.trim() ||
-        r.batch_quantity.trim() ||
-        r.sample_code.trim() ||
-        r.qr_code.trim() ||
-        r.sample_type.trim() ||
-        r.laboratory_name.trim()),
+    (r) => isSampleIncludedInPrint(r) && oslSampleRowHasPrintableContent(r),
   );
 }
 
@@ -163,34 +137,7 @@ function cellPlainText(
   row: OslSampleRequirementStored,
   rowIndex: number,
 ): string {
-  switch (key) {
-    case "sr_no":
-      return String(rowIndex + 1).padStart(2, "0");
-    case "sample_description":
-      return row.sample_description.trim() || "—";
-    case "declared_value":
-      return row.declared_value.trim() || "—";
-    case "batch_no":
-      return row.batch_number.trim() || "—";
-    case "dom":
-      return formatDateDisplay(row.date_of_manufacturing);
-    case "sample_quantity":
-      return row.sample_quantity.trim() || "—";
-    case "sample_code":
-      return row.sample_code.trim() || "—";
-    case "qr_code":
-      return row.qr_code.trim() || "—";
-    case "batch_quantity":
-      return row.batch_quantity.trim() || "—";
-    case "sample_type":
-      return row.sample_type.trim() || "—";
-    case "priority":
-      return row.priority.trim() || "Priority";
-    case "laboratory":
-      return laboratoryInitials(row.laboratory_name);
-    default:
-      return "—";
-  }
+  return oslSampleColumnCellText(key, row, rowIndex);
 }
 
 function exportFilenameBase(

@@ -276,6 +276,10 @@ import {
   parseSourceLicenseIdFromNotes,
 } from "@backend/modules/bis/bis-project-license-scope-notes";
 import {
+  LICENSE_SCOPE_DEFAULT_COLUMNS,
+  licenseScopeUsesPlain,
+} from "@backend/modules/bis/license-scope-format";
+import {
   rowHasContent as oslSampleRowHasContent,
   combineOslAndPiSamples,
   splitOslAndPiSamples,
@@ -1093,12 +1097,20 @@ function ApplicationFormModal({
     setPortalReady(true);
   }, []);
   const [licenseScope, setLicenseScope] = useState(() =>
-    initialScope.scopeType === "plain"
+    licenseScopeUsesPlain(initialScope.scopeType)
       ? initialScope.plainText || initialNotes.licenseScope
       : initialNotes.licenseScope,
   );
   const [licenseScopeFormat, setLicenseScopeFormat] = useState<LicenseScopeFormat>(
     initialScope.scopeType,
+  );
+  const [licenseScopeColumnCount, setLicenseScopeColumnCount] = useState(
+    initialScope.columnCount || initialNotes.licenseScopeColumnCount || LICENSE_SCOPE_DEFAULT_COLUMNS,
+  );
+  const [licenseScopeColumnHeaders, setLicenseScopeColumnHeaders] = useState<string[]>(
+    initialScope.columnHeaders?.length
+      ? initialScope.columnHeaders
+      : initialNotes.licenseScopeColumnHeaders ?? [],
   );
   const [licenseScopeRows, setLicenseScopeRows] = useState<LicenseScopeTableRow[]>(
     initialScope.rows.length > 0 ? initialScope.rows : initialNotes.licenseScopeRows,
@@ -1190,6 +1202,8 @@ function ApplicationFormModal({
     meta?: ApplicationMeta;
     licenseScope?: string;
     licenseScopeFormat?: LicenseScopeFormat;
+    licenseScopeColumnCount?: number;
+    licenseScopeColumnHeaders?: string[];
     licenseScopeRows?: LicenseScopeTableRow[];
     oslSampleRequirements?: OslSampleRequirementStored[];
     piSampleRequirements?: OslSampleRequirementStored[];
@@ -1224,6 +1238,8 @@ function ApplicationFormModal({
     items,
     licenseScope,
     licenseScopeFormat,
+    licenseScopeColumnCount,
+    licenseScopeColumnHeaders,
     licenseScopeRows,
     oslSampleRequirements,
     piSampleRequirements,
@@ -1256,6 +1272,8 @@ function ApplicationFormModal({
     items,
     licenseScope,
     licenseScopeFormat,
+    licenseScopeColumnCount,
+    licenseScopeColumnHeaders,
     licenseScopeRows,
     oslSampleRequirements,
     piSampleRequirements,
@@ -1300,6 +1318,10 @@ function ApplicationFormModal({
         items: overrides.items ?? state.items,
         licenseScope: overrides.licenseScope ?? state.licenseScope,
         licenseScopeFormat: overrides.licenseScopeFormat ?? state.licenseScopeFormat,
+        licenseScopeColumnCount:
+          overrides.licenseScopeColumnCount ?? state.licenseScopeColumnCount,
+        licenseScopeColumnHeaders:
+          overrides.licenseScopeColumnHeaders ?? state.licenseScopeColumnHeaders,
         licenseScopeRows: overrides.licenseScopeRows ?? state.licenseScopeRows,
         oslSampleRequirements: overrides.oslSampleRequirements ?? state.oslSampleRequirements,
         piSampleRequirements: overrides.piSampleRequirements ?? state.piSampleRequirements,
@@ -1484,6 +1506,8 @@ function ApplicationFormModal({
       meta?: ApplicationMeta;
       licenseScope?: string;
       licenseScopeFormat?: LicenseScopeFormat;
+      licenseScopeColumnCount?: number;
+      licenseScopeColumnHeaders?: string[];
       licenseScopeRows?: LicenseScopeTableRow[];
       oslSampleRequirements?: OslSampleRequirementStored[];
       piSampleRequirements?: OslSampleRequirementStored[];
@@ -1520,6 +1544,12 @@ function ApplicationFormModal({
         if (overrides.licenseScope !== undefined) live.licenseScope = overrides.licenseScope;
         if (overrides.licenseScopeFormat !== undefined) {
           live.licenseScopeFormat = overrides.licenseScopeFormat;
+        }
+        if (overrides.licenseScopeColumnCount !== undefined) {
+          live.licenseScopeColumnCount = overrides.licenseScopeColumnCount;
+        }
+        if (overrides.licenseScopeColumnHeaders !== undefined) {
+          live.licenseScopeColumnHeaders = overrides.licenseScopeColumnHeaders;
         }
         if (overrides.licenseScopeRows !== undefined) {
           live.licenseScopeRows = overrides.licenseScopeRows;
@@ -1728,9 +1758,19 @@ function ApplicationFormModal({
               }),
             );
             setLicenseScope(
-              scope.scopeType === "plain" ? scope.plainText || parsed.licenseScope : parsed.licenseScope,
+              licenseScopeUsesPlain(scope.scopeType)
+                ? scope.plainText || parsed.licenseScope
+                : parsed.licenseScope,
             );
             setLicenseScopeFormat(scope.scopeType);
+            setLicenseScopeColumnCount(
+              scope.columnCount || parsed.licenseScopeColumnCount || LICENSE_SCOPE_DEFAULT_COLUMNS,
+            );
+            setLicenseScopeColumnHeaders(
+              scope.columnHeaders?.length
+                ? scope.columnHeaders
+                : parsed.licenseScopeColumnHeaders ?? [],
+            );
             setLicenseScopeRows(scope.rows.length > 0 ? scope.rows : parsed.licenseScopeRows);
             const pending = pendingNotesSaveRef.current;
             setOslSampleRequirements((prev) =>
@@ -2154,10 +2194,14 @@ function ApplicationFormModal({
   function saveLicenseScope(payload: LicenseScopeSavePayload) {
     setLicenseScope(payload.licenseScope);
     setLicenseScopeFormat(payload.format);
+    setLicenseScopeColumnCount(payload.columnCount);
+    setLicenseScopeColumnHeaders(payload.columnHeaders);
     setLicenseScopeRows(payload.rows);
     saveNotesNow({
       licenseScope: payload.licenseScope,
       licenseScopeFormat: payload.format,
+      licenseScopeColumnCount: payload.columnCount,
+      licenseScopeColumnHeaders: payload.columnHeaders,
       licenseScopeRows: payload.rows,
     });
   }
@@ -2450,6 +2494,8 @@ function ApplicationFormModal({
       piSampleRequirements,
       licenseScope,
       licenseScopeFormat,
+      licenseScopeColumnCount,
+      licenseScopeColumnHeaders,
       licenseScopeRows,
       cmpf305Machinery,
       cmpf306,
@@ -3000,6 +3046,8 @@ function ApplicationFormModal({
           topManagement={topManagement}
           licenseScope={licenseScope}
           licenseScopeFormat={licenseScopeFormat}
+          licenseScopeColumnCount={licenseScopeColumnCount}
+          licenseScopeColumnHeaders={licenseScopeColumnHeaders}
           licenseScopeRows={licenseScopeRows}
           isCodeId={row.is_code_id}
           isNumber={isCode?.is_number ?? row.is_number}
@@ -3424,6 +3472,11 @@ function ApplicationFormModal({
           isCodeId={row.is_code_id}
           applicationNumber={applicationMeta.application_number}
           dateOfApplication={applicationMeta.date_of_application}
+          manufacturingScope={serializeLicenseScopeText(
+            licenseScopeFormat,
+            licenseScope,
+            storedRowsToEditorRows(licenseScopeRows),
+          )}
           topManagement={topManagement}
           storedDocument={updatedSchemeOfInspection}
           onSave={saveUpdatedSchemeOfInspection}

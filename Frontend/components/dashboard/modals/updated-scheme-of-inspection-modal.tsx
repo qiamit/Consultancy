@@ -13,11 +13,13 @@ import {
 import { downloadPrintHtmlAsPdf, safePdfFilenamePart } from "@/lib/download-print-pdf";
 
 import { splitModalSettingsPaneClass } from "@/components/dashboard/modals/split-modal-layout";
-import type { ManufacturingScopeDeclarationData } from "@backend/modules/print/manufacturing-scope-declaration";
+import {
+  iframeSizeForPrintSettings,
+  type ManufacturingScopeDeclarationData,
+} from "@backend/modules/print/manufacturing-scope-declaration";
 import {
   buildUpdatedSchemeOfInspectionHtml,
   defaultUpdatedSchemeOfInspectionPrintSettings,
-  iframeSizeForUpdatedSchemeOfInspectionPrintSettings,
   usitPrintPageCount,
   type UpdatedSchemeOfInspectionLetterData,
   type UpdatedSchemeOfInspectionPrintAssets,
@@ -73,6 +75,7 @@ export function UpdatedSchemeOfInspectionModal({
   isCodeId = null,
   applicationNumber = "",
   dateOfApplication = "",
+  manufacturingScope = "",
   topManagement = [],
   storedDocument,
   onSave,
@@ -86,6 +89,7 @@ export function UpdatedSchemeOfInspectionModal({
   isCodeId?: string | null;
   applicationNumber?: string;
   dateOfApplication?: string;
+  manufacturingScope?: string;
   topManagement?: TopManagementStored[];
   storedDocument: UpdatedSchemeOfInspectionStored;
   onSave: (document: UpdatedSchemeOfInspectionStored) => void;
@@ -122,7 +126,7 @@ export function UpdatedSchemeOfInspectionModal({
   const [aiFilesLoading, setAiFilesLoading] = useState(false);
   const [aiExtracting, setAiExtracting] = useState(false);
   const [aiStatus, setAiStatus] = useState<string | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const pageIframeRefs = useRef<Array<HTMLIFrameElement | null>>([]);
 
   useEffect(() => {
     setDocument((prev) =>
@@ -221,27 +225,45 @@ export function UpdatedSchemeOfInspectionModal({
     topManagement,
   ]);
 
-  const iframeSize = iframeSizeForUpdatedSchemeOfInspectionPrintSettings(printSettings);
-  const previewPageCount = usitPrintPageCount();
+  const pageSize = useMemo(
+    () =>
+      iframeSizeForPrintSettings({
+        ...printSettings,
+        orientation: "portrait",
+      }),
+    [printSettings],
+  );
+  const previewPageCount = useMemo(
+    () => usitPrintPageCount(previewData, printSettings),
+    [previewData, printSettings],
+  );
 
   const refreshPreview = useCallback(() => {
-    const iframe = iframeRef.current;
-    const doc = iframe?.contentDocument;
-    if (!iframe || !doc) return;
-    const html = buildUpdatedSchemeOfInspectionHtml(previewData, printSettings, printAssets);
-    doc.open();
-    doc.write(html);
-    doc.close();
-    requestAnimationFrame(() =>
-      syncPrintPreviewIframe(iframe, { minHeightMm: iframeSize.heightMm }),
-    );
-  }, [previewData, printSettings, printAssets, iframeSize.heightMm]);
+    const heightMm = pageSize.heightMm;
+    for (let i = 0; i < previewPageCount; i += 1) {
+      const iframe = pageIframeRefs.current[i];
+      const doc = iframe?.contentDocument;
+      if (!iframe || !doc) continue;
+      const html = buildUpdatedSchemeOfInspectionHtml(
+        previewData,
+        printSettings,
+        printAssets,
+        { onlyPage: i + 1 },
+      );
+      doc.open();
+      doc.write(html);
+      doc.close();
+      requestAnimationFrame(() =>
+        syncPrintPreviewIframe(iframe, { minHeightMm: heightMm }),
+      );
+    }
+  }, [previewData, printSettings, printAssets, previewPageCount, pageSize.heightMm]);
 
   useEffect(() => {
-    if (showPrintPreview) {
-      refreshPreview();
-    }
-  }, [showPrintPreview, refreshPreview]);
+    if (!showPrintPreview) return;
+    const id = window.requestAnimationFrame(() => refreshPreview());
+    return () => window.cancelAnimationFrame(id);
+  }, [showPrintPreview, refreshPreview, previewPageCount]);
 
   function patchDocument(patch: Partial<UpdatedSchemeOfInspectionStored>) {
     setDocument((prev) => ({ ...prev, ...patch }));
@@ -305,6 +327,7 @@ export function UpdatedSchemeOfInspectionModal({
         isCodeId,
         fileId: aiSelectedFileId,
         instruction: aiInstruction,
+        manufacturingScope,
       });
       if (!res.ok) {
         window.alert(res.error);
@@ -379,8 +402,17 @@ export function UpdatedSchemeOfInspectionModal({
   }
 
   function handlePrint() {
-    iframeRef.current?.contentWindow?.focus();
-    iframeRef.current?.contentWindow?.print();
+    const html = buildUpdatedSchemeOfInspectionHtml(
+      previewData,
+      printSettings,
+      printAssets,
+    );
+    const printWindow = window.open("", "_blank", "noopener,noreferrer,width=900,height=700");
+    if (!printWindow) return;
+    printWindow.document.write(html);
+    printWindow.document.close();
+    printWindow.focus();
+    printWindow.print();
   }
 
   function handleDownloadWord() {
@@ -653,20 +685,27 @@ export function UpdatedSchemeOfInspectionModal({
           >
             <div className="border-b border-zinc-700/80 px-4 py-2">
               <p className="text-xs font-semibold uppercase tracking-wide text-zinc-200">
-                Form Preview — Updated Scheme of Inspection &amp; Testing ({previewPageCount} pages)
-                <span className="ml-2 font-normal normal-case text-zinc-400">
-                  Page 1 &amp; Page 2 portrait (Annex C · Table 1 + Notes)
-                </span>
+                Print Preview
               </p>
             </div>
             <div className="flex-1 overflow-y-auto p-3 sm:p-6">
-              <iframe
-                ref={iframeRef}
-                title="Updated Scheme of Inspection and Testing preview"
-                className="mx-auto max-w-full border-0 bg-zinc-600 shadow-none"
-                scrolling="no"
-                style={printPreviewIframeStyle(iframeSize.widthMm, iframeSize.heightMm)}
-              />
+              <div
+                className="mx-auto flex flex-col items-center"
+                style={{ gap: "3mm" }}
+              >
+                {Array.from({ length: previewPageCount }, (_, index) => (
+                  <iframe
+                    key={`usit-page-${index + 1}-${pageSize.widthMm}x${pageSize.heightMm}`}
+                    ref={(el) => {
+                      pageIframeRefs.current[index] = el;
+                    }}
+                    title={`Updated Scheme of Inspection page ${index + 1} of ${previewPageCount}`}
+                    className="max-w-full border-0 bg-white shadow-2xl"
+                    scrolling="no"
+                    style={printPreviewIframeStyle(pageSize.widthMm, pageSize.heightMm)}
+                  />
+                ))}
+              </div>
             </div>
           </div>
         )}

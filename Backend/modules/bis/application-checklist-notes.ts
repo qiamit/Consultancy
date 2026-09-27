@@ -1,3 +1,13 @@
+import {
+  clampLicenseScopeColumnCount,
+  licenseScopeRowHasContent,
+  licenseScopeUsesTable,
+  parseLicenseScopeColumnHeaders,
+  parseLicenseScopeFormat,
+  parseStoredLicenseScopeRows,
+  type LicenseScopeFormat,
+  type LicenseScopeTableRow,
+} from "@backend/modules/bis/license-scope-format";
 import type { FactoryTestReportStored } from "@backend/modules/bis/factory-test-report";
 import { parseFactoryTestReports, ftrReportHasContent } from "@backend/modules/bis/factory-test-report";
 import { parseOslSampleRequirements, rowHasContent } from "@backend/modules/bis/osl-sample-requirements";
@@ -151,12 +161,7 @@ export const DEFAULT_WEEKLY_OFF: ApplicationWeekday[] = ["Sunday"];
 
 export type ApplicationProcedure = "Normal" | "Simplified";
 
-export type LicenseScopeFormat = "plain" | "table";
-
-export type LicenseScopeTableRow = {
-  component: string;
-  value: string;
-};
+export type { LicenseScopeFormat, LicenseScopeTableRow } from "@backend/modules/bis/license-scope-format";
 
 export type ApplicationMeta = {
   application_procedure: ApplicationProcedure;
@@ -366,6 +371,8 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
   items: unknown[];
   licenseScope: string;
   licenseScopeFormat: LicenseScopeFormat;
+  licenseScopeColumnCount: number;
+  licenseScopeColumnHeaders: string[];
   licenseScopeRows: LicenseScopeTableRow[];
   oslSampleRequirements: OslSampleRequirementStored[];
   piSampleRequirements: OslSampleRequirementStored[];
@@ -401,6 +408,8 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       items: [],
       licenseScope: raw,
       licenseScopeFormat: "plain",
+      licenseScopeColumnCount: 2,
+      licenseScopeColumnHeaders: [],
       licenseScopeRows: [],
       oslSampleRequirements: [],
       piSampleRequirements: [],
@@ -437,6 +446,8 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       items?: unknown[];
       license_scope?: string;
       license_scope_format?: string;
+      license_scope_column_count?: unknown;
+      license_scope_column_headers?: unknown;
       license_scope_rows?: unknown;
       osl_sample_requirements?: unknown;
       pi_sample_requirements?: unknown;
@@ -471,6 +482,8 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
         items: [],
         licenseScope: raw,
         licenseScopeFormat: "plain",
+        licenseScopeColumnCount: 2,
+        licenseScopeColumnHeaders: [],
         licenseScopeRows: [],
         oslSampleRequirements: [],
         piSampleRequirements: [],
@@ -501,22 +514,18 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
         meta: defaultApplicationMeta(),
       };
     }
-    const rows = Array.isArray(parsed.license_scope_rows)
-      ? parsed.license_scope_rows
-          .map((row) => {
-            if (!row || typeof row !== "object") return null;
-            const r = row as Record<string, unknown>;
-            return {
-              component: String(r.component ?? "").trim(),
-              value: String(r.value ?? "").trim(),
-            };
-          })
-          .filter((r): r is LicenseScopeTableRow => r !== null)
-      : [];
+    const rows = parseStoredLicenseScopeRows(parsed.license_scope_rows);
     return {
       items: Array.isArray(parsed.items) ? parsed.items : [],
       licenseScope: (parsed.license_scope ?? "").trim(),
-      licenseScopeFormat: parsed.license_scope_format === "table" ? "table" : "plain",
+      licenseScopeFormat: parseLicenseScopeFormat(parsed.license_scope_format),
+      licenseScopeColumnCount: clampLicenseScopeColumnCount(
+        parsed.license_scope_column_count,
+      ),
+      licenseScopeColumnHeaders: parseLicenseScopeColumnHeaders(
+        parsed.license_scope_column_headers,
+        parsed.license_scope_column_count,
+      ),
       licenseScopeRows: rows,
       oslSampleRequirements: parseOslSampleRequirements(parsed.osl_sample_requirements, "osl"),
       piSampleRequirements: parseOslSampleRequirements(parsed.pi_sample_requirements, "it"),
@@ -561,6 +570,8 @@ export function parseApplicationChecklistNotes(notes: string | null | undefined)
       items: [],
       licenseScope: raw,
       licenseScopeFormat: "plain",
+      licenseScopeColumnCount: 2,
+      licenseScopeColumnHeaders: [],
       licenseScopeRows: [],
       oslSampleRequirements: [],
       piSampleRequirements: [],
@@ -751,6 +762,8 @@ export function buildApplicationChecklistPayload(input: {
   items: unknown[];
   licenseScope?: string;
   licenseScopeFormat?: LicenseScopeFormat;
+  licenseScopeColumnCount?: number;
+  licenseScopeColumnHeaders?: string[];
   licenseScopeRows?: LicenseScopeTableRow[];
   oslSampleRequirements?: OslSampleRequirementStored[];
   piSampleRequirements?: OslSampleRequirementStored[];
@@ -791,13 +804,19 @@ export function buildApplicationChecklistPayload(input: {
   if (sourceLicenseId) payload.source_license_id = sourceLicenseId;
   const scope = (input.licenseScope ?? "").trim();
   if (scope) payload.license_scope = scope;
-  const format = input.licenseScopeFormat ?? "plain";
-  if (format === "table") {
-    payload.license_scope_format = "table";
-    const rows = (input.licenseScopeRows ?? []).filter(
-      (r) => r.component.trim() || r.value.trim(),
-    );
+  const format = parseLicenseScopeFormat(input.licenseScopeFormat);
+  if (format !== "plain") payload.license_scope_format = format;
+  if (licenseScopeUsesTable(format)) {
+    const rows = (input.licenseScopeRows ?? []).filter(licenseScopeRowHasContent);
     if (rows.length > 0) payload.license_scope_rows = rows;
+    payload.license_scope_column_count = clampLicenseScopeColumnCount(
+      input.licenseScopeColumnCount,
+    );
+    const headers = parseLicenseScopeColumnHeaders(
+      input.licenseScopeColumnHeaders,
+      input.licenseScopeColumnCount,
+    );
+    if (headers.some((h) => h.trim())) payload.license_scope_column_headers = headers;
   }
   const oslRows = nonEmptySampleRows(input.oslSampleRequirements);
   if (oslRows.length > 0) payload.osl_sample_requirements = oslRows;

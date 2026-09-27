@@ -18,8 +18,16 @@ import {
 } from "@/components/dashboard/modals/split-modal-layout";
 import type { LicenseScopeFormat } from "@backend/modules/bis/application-checklist-notes";
 import {
+  LICENSE_SCOPE_DEFAULT_COLUMNS,
+  LICENSE_SCOPE_MAX_COLUMNS,
+  LICENSE_SCOPE_MIN_COLUMNS,
+  clampLicenseScopeColumnCount,
   defaultLicenseScopeRows,
   editorRowsToStored,
+  licenseScopeUsesPlain,
+  licenseScopeUsesTable,
+  parseLicenseScopeColumnHeaders,
+  parseLicenseScopeFormat,
   parsePlainTextToRows,
   serializeLicenseScopeText,
   storedRowsToEditorRows,
@@ -53,14 +61,16 @@ import {
 export type LicenseScopeSavePayload = {
   licenseScope: string;
   format: LicenseScopeFormat;
-  rows: { component: string; value: string }[];
+  columnCount: number;
+  columnHeaders: string[];
+  rows: { component: string; value: string; extra?: string[] }[];
 };
 
 function initialTableRows(
   format: LicenseScopeFormat,
-  rows: { component: string; value: string }[],
+  rows: { component: string; value: string; extra?: string[] }[],
 ): LicenseScopeRow[] {
-  if (format === "table" && rows.length > 0) {
+  if (licenseScopeUsesTable(format) && rows.length > 0) {
     return storedRowsToEditorRows(rows);
   }
   return defaultLicenseScopeRows();
@@ -71,6 +81,8 @@ export function LicenseScopeEditorModal({
   topManagement,
   licenseScope,
   licenseScopeFormat,
+  licenseScopeColumnCount = LICENSE_SCOPE_DEFAULT_COLUMNS,
+  licenseScopeColumnHeaders,
   licenseScopeRows,
   isCodeId,
   isNumber,
@@ -85,16 +97,26 @@ export function LicenseScopeEditorModal({
   topManagement: TopManagementStored[];
   licenseScope: string;
   licenseScopeFormat: LicenseScopeFormat;
-  licenseScopeRows: { component: string; value: string }[];
+  licenseScopeColumnCount?: number;
+  licenseScopeColumnHeaders?: string[];
+  licenseScopeRows: { component: string; value: string; extra?: string[] }[];
   isCodeId: string | null;
   isNumber: string | null;
   revisionYear: number | null;
   onSave: (payload: LicenseScopeSavePayload) => void;
   onClose: () => void;
 }) {
-  const [format, setFormat] = useState<LicenseScopeFormat>(licenseScopeFormat);
+  const [format, setFormat] = useState<LicenseScopeFormat>(
+    parseLicenseScopeFormat(licenseScopeFormat),
+  );
+  const [columnCount, setColumnCount] = useState(
+    clampLicenseScopeColumnCount(licenseScopeColumnCount),
+  );
+  const [columnHeaders, setColumnHeaders] = useState<string[]>(() =>
+    parseLicenseScopeColumnHeaders(licenseScopeColumnHeaders, licenseScopeColumnCount),
+  );
   const [draftScope, setDraftScope] = useState(
-    licenseScopeFormat === "plain" ? licenseScope : "",
+    licenseScopeUsesPlain(licenseScopeFormat) ? licenseScope : "",
   );
   const [tableRows, setTableRows] = useState<LicenseScopeRow[]>(() =>
     initialTableRows(licenseScopeFormat, licenseScopeRows),
@@ -171,13 +193,17 @@ export function LicenseScopeEditorModal({
     }));
   }, []);
 
-  const scopeKey = `${licenseScopeFormat}:${JSON.stringify(licenseScopeRows)}:${licenseScope}`;
+  const scopeKey = `${licenseScopeFormat}:${licenseScopeColumnCount}:${JSON.stringify(licenseScopeColumnHeaders)}:${JSON.stringify(licenseScopeRows)}:${licenseScope}`;
   const [appliedScopeKey, setAppliedScopeKey] = useState(scopeKey);
 
   if (scopeKey !== appliedScopeKey) {
     setAppliedScopeKey(scopeKey);
-    setFormat(licenseScopeFormat);
-    setDraftScope(licenseScopeFormat === "plain" ? licenseScope : "");
+    setFormat(parseLicenseScopeFormat(licenseScopeFormat));
+    setColumnCount(clampLicenseScopeColumnCount(licenseScopeColumnCount));
+    setColumnHeaders(
+      parseLicenseScopeColumnHeaders(licenseScopeColumnHeaders, licenseScopeColumnCount),
+    );
+    setDraftScope(licenseScopeUsesPlain(licenseScopeFormat) ? licenseScope : "");
     setTableRows(initialTableRows(licenseScopeFormat, licenseScopeRows));
   }
 
@@ -206,10 +232,12 @@ export function LicenseScopeEditorModal({
           ...declarationData,
           signatoryName,
           signatoryDesignation,
-          licenseScope: effectiveScopeText,
+          licenseScope: licenseScopeUsesPlain(format) ? draftScope : effectiveScopeText,
           licenseScopeFormat: format,
+          licenseScopeColumnCount: columnCount,
+          licenseScopeColumnHeaders: columnHeaders,
           licenseScopeRows:
-            format === "table" ? editorRowsToStored(tableRows) : undefined,
+            licenseScopeUsesTable(format) ? editorRowsToStored(tableRows) : undefined,
         },
         topManagement,
       ),
@@ -219,6 +247,8 @@ export function LicenseScopeEditorModal({
       signatoryDesignation,
       effectiveScopeText,
       format,
+      columnCount,
+      columnHeaders,
       tableRows,
       topManagement,
     ],
@@ -260,9 +290,13 @@ export function LicenseScopeEditorModal({
     startSave(async () => {
       const storedRows = editorRowsToStored(tableRows);
       onSave({
-        licenseScope: serializeLicenseScopeText(format, draftScope, tableRows),
+        licenseScope: licenseScopeUsesPlain(format)
+          ? draftScope.trim()
+          : serializeLicenseScopeText("table", "", tableRows),
         format,
-        rows: format === "table" ? storedRows : [],
+        columnCount,
+        columnHeaders,
+        rows: licenseScopeUsesTable(format) ? storedRows : [],
       });
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2000);
@@ -321,16 +355,16 @@ export function LicenseScopeEditorModal({
 
   function handleFormatChange(next: LicenseScopeFormat) {
     if (next === format) return;
-    if (next === "table") {
-      if (draftScope.trim()) {
+    if (licenseScopeUsesTable(next) && !licenseScopeUsesTable(format)) {
+      if (draftScope.trim() && tableRows.every((r) => !r.component.trim() && !r.value.trim())) {
         setTableRows(parsePlainTextToRows(draftScope));
       } else if (tableRows.every((r) => !r.component.trim() && !r.value.trim())) {
         setTableRows(defaultLicenseScopeRows());
       }
-      setFormat(next);
-      return;
     }
-    setDraftScope(serializeLicenseScopeText("table", draftScope, tableRows));
+    if (licenseScopeUsesPlain(next) && !licenseScopeUsesPlain(format) && !draftScope.trim()) {
+      setDraftScope(serializeLicenseScopeText("table", "", tableRows));
+    }
     setFormat(next);
   }
 
@@ -436,55 +470,68 @@ export function LicenseScopeEditorModal({
             >
               <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-end gap-3">
-                  <div
-                    className="inline-flex shrink-0 overflow-hidden rounded-lg border border-zinc-600"
-                    role="group"
-                    aria-label="Scope format"
-                  >
-                    <button
-                      type="button"
-                      onClick={() => handleFormatChange("plain")}
-                      className={`px-2.5 py-1.5 text-xs font-semibold ${
-                        format === "plain"
-                          ? "bg-sky-600 text-white"
-                          : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                      }`}
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <select
+                      aria-label="Scope format"
+                      value={format}
+                      onChange={(e) =>
+                        handleFormatChange(parseLicenseScopeFormat(e.target.value))
+                      }
+                      className="rounded-lg border border-zinc-600 bg-zinc-800 px-2.5 py-1.5 text-xs font-semibold text-zinc-100 outline-none hover:bg-zinc-700 focus:border-sky-500"
                     >
-                      Plain Text
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleFormatChange("table")}
-                      className={`border-l border-zinc-600 px-2.5 py-1.5 text-xs font-semibold ${
-                        format === "table"
-                          ? "bg-sky-600 text-white"
-                          : "bg-zinc-800 text-zinc-100 hover:bg-zinc-700"
-                      }`}
-                    >
-                      2 Column
-                    </button>
+                      <option value="plain">Only Plain Text</option>
+                      <option value="table">Only Column</option>
+                      <option value="plain_table">Plain Text with Column</option>
+                    </select>
+                    {licenseScopeUsesTable(format) ? (
+                      <select
+                        aria-label="Number of columns"
+                        value={columnCount}
+                        onChange={(e) =>
+                          setColumnCount(clampLicenseScopeColumnCount(e.target.value))
+                        }
+                        className="rounded-lg border border-zinc-600 bg-zinc-800 px-2.5 py-1.5 text-xs font-semibold text-zinc-100 outline-none hover:bg-zinc-700 focus:border-sky-500"
+                      >
+                        {Array.from(
+                          { length: LICENSE_SCOPE_MAX_COLUMNS - LICENSE_SCOPE_MIN_COLUMNS + 1 },
+                          (_, i) => LICENSE_SCOPE_MIN_COLUMNS + i,
+                        ).map((n) => (
+                          <option key={n} value={n}>
+                            {n} Column{n === 1 ? "" : "s"}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                   </div>
                   <IsCodeFilesViewPicker isCodeId={isCodeId} />
                 </div>
               </div>
 
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
-                {format === "plain" ? (
-                  <textarea
-                    id="license_scope_editor"
-                    value={draftScope}
-                    onChange={(e) => setDraftScope(e.target.value)}
-                    placeholder="Enter manufacturing / license scope…"
-                    className="min-h-0 flex-1 resize-none rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm leading-relaxed text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40"
-                  />
-                ) : (
-                  <LicenseScopeTableEditor
-                    key={scopeKey}
-                    theme="dark"
-                    rows={tableRows}
-                    onChange={setTableRows}
-                  />
-                )}
+                <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto">
+                  {licenseScopeUsesPlain(format) ? (
+                    <textarea
+                      id="license_scope_editor"
+                      value={draftScope}
+                      onChange={(e) => setDraftScope(e.target.value)}
+                      placeholder="Enter manufacturing / license scope…"
+                      className={`${
+                        licenseScopeUsesTable(format) ? "min-h-[140px] shrink-0" : "min-h-0 flex-1"
+                      } resize-none rounded-lg border border-zinc-800 bg-zinc-950 px-4 py-3 text-sm leading-relaxed text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40`}
+                    />
+                  ) : null}
+                  {licenseScopeUsesTable(format) ? (
+                    <LicenseScopeTableEditor
+                      key={`${scopeKey}-${columnCount}`}
+                      theme="dark"
+                      rows={tableRows}
+                      columnCount={columnCount}
+                      columnHeaders={columnHeaders}
+                      onHeadersChange={setColumnHeaders}
+                      onChange={setTableRows}
+                    />
+                  ) : null}
+                </div>
                 <IsCodeRelatedFilesPanel isCodeId={isCodeId} theme="dark" />
               </div>
             </div>
