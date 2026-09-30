@@ -671,9 +671,18 @@ export function OslSampleRequirementsModal({
   }
 
   function handleCopySample(row: OslSampleRequirementRow) {
+    // Fresh identity only — never share Sample Code / QR / attached request-report
+    // files, or Manak can write the returned PDF onto the wrong card.
     const copy: OslSampleRequirementRow = {
       ...row,
-      id: createOslSampleRequirementRow().id,
+      id: createOslSampleRequirementRow(row.sample_for).id,
+      sample_code: "",
+      qr_code: "",
+      serial_number: "",
+      test_request_ref: "",
+      test_request_name: "",
+      test_report_ref: "",
+      test_report_name: "",
     };
     setRows((prev) => {
       const idx = prev.findIndex((r) => r.id === row.id);

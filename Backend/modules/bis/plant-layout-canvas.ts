@@ -221,10 +221,21 @@ function rectangleDisplayText(shape: Extract<PlantLayoutShape, { type: "rectangl
   return shape.label.trim();
 }
 
+/** Tall/narrow boxes get vertical text so labels stay readable. */
+function shouldRotateBoxLabel(width: number, height: number): boolean {
+  return height > width * 1.35 && width > 8 && height >= 40;
+}
+
+/** Keep label sizes visually even across the layout (not box-filling). */
+const BOX_LABEL_TARGET_FONT = 13;
+const BOX_LABEL_MAX_FONT = 15;
+const BOX_LABEL_MIN_FONT = 8;
+
 function measureWrappedLines(
   ctx: CanvasRenderingContext2D,
   text: string,
   maxWidth: number,
+  allowWordBreak: boolean,
 ): string[] {
   const lines: string[] = [];
   const paragraphs = text
@@ -239,8 +250,22 @@ function measureWrappedLines(
       const test = current ? `${current} ${word}` : word;
       if (ctx.measureText(test).width <= maxWidth) {
         current = test;
+        continue;
+      }
+      if (current) lines.push(current);
+      if (allowWordBreak && ctx.measureText(word).width > maxWidth) {
+        let chunk = "";
+        for (const ch of word) {
+          const next = chunk + ch;
+          if (chunk && ctx.measureText(next).width > maxWidth) {
+            lines.push(chunk);
+            chunk = ch;
+          } else {
+            chunk = next;
+          }
+        }
+        current = chunk;
       } else {
-        if (current) lines.push(current);
         current = word;
       }
     }
@@ -250,6 +275,18 @@ function measureWrappedLines(
   return lines;
 }
 
+function layoutFits(
+  ctx: CanvasRenderingContext2D,
+  lines: string[],
+  maxWidth: number,
+  maxInnerHeight: number,
+  lineHeight: number,
+): boolean {
+  if (lines.length === 0) return true;
+  if (lines.length * lineHeight > maxInnerHeight + 0.5) return false;
+  return !lines.some((line) => ctx.measureText(line).width > maxWidth + 0.5);
+}
+
 function fitFontSizeToRect(
   ctx: CanvasRenderingContext2D,
   text: string,
@@ -257,55 +294,58 @@ function fitFontSizeToRect(
   height: number,
   preferredFontSize: number,
 ): { fontSize: number; lines: string[]; lineHeight: number; padding: number } {
-  const padding = 8;
-  const maxWidth = Math.max(20, width - padding * 2);
-  const maxInnerHeight = Math.max(12, height - padding * 2);
-  let fontSize = Math.max(10, Math.min(28, Math.round(preferredFontSize)));
+  const padding = 6;
+  const maxWidth = Math.max(8, width - padding * 2);
+  const maxInnerHeight = Math.max(8, height - padding * 2);
+  // Cap by short layout side so tiny boxes shrink, large boxes stay near target.
+  const shortSide = Math.min(width, height);
+  const maxFont = Math.max(
+    BOX_LABEL_MIN_FONT,
+    Math.min(
+      BOX_LABEL_MAX_FONT,
+      preferredFontSize,
+      Math.floor(shortSide * 0.42),
+      Math.floor(maxInnerHeight),
+    ),
+  );
+  const startFont = Math.min(maxFont, BOX_LABEL_TARGET_FONT);
 
-  while (fontSize >= 10) {
+  for (let fontSize = startFont; fontSize >= BOX_LABEL_MIN_FONT; fontSize -= 1) {
     ctx.font = `600 ${fontSize}px Arial, Helvetica, sans-serif`;
     const lineHeight = fontSize * 1.2;
-    const lines = measureWrappedLines(ctx, text, maxWidth);
-    if (lines.length === 0 || lines.length * lineHeight <= maxInnerHeight + 0.5) {
+    const allowWordBreak = fontSize <= BOX_LABEL_MIN_FONT + 1;
+    const lines = measureWrappedLines(ctx, text, maxWidth, allowWordBreak);
+    if (layoutFits(ctx, lines, maxWidth, maxInnerHeight, lineHeight)) {
       return { fontSize, lines, lineHeight, padding };
     }
-    fontSize -= 1;
   }
 
-  ctx.font = `600 10px Arial, Helvetica, sans-serif`;
-  const lineHeight = 12;
-  const lines = measureWrappedLines(ctx, text, maxWidth);
+  // Last resort: mid-word break at minimum size.
+  ctx.font = `600 ${BOX_LABEL_MIN_FONT}px Arial, Helvetica, sans-serif`;
+  const lineHeight = BOX_LABEL_MIN_FONT * 1.2;
+  const lines = measureWrappedLines(ctx, text, maxWidth, true);
   const maxLines = Math.max(1, Math.floor(maxInnerHeight / lineHeight));
   return {
-    fontSize: 10,
+    fontSize: BOX_LABEL_MIN_FONT,
     lines: lines.slice(0, maxLines),
     lineHeight,
     padding,
   };
 }
 
-function wrapTextInRect(
+function drawFittedLinesInRect(
   ctx: CanvasRenderingContext2D,
-  text: string,
+  lines: string[],
   x: number,
   y: number,
   width: number,
   height: number,
-  preferredFontSize: number,
+  fontSize: number,
+  lineHeight: number,
+  padding: number,
 ) {
-  const trimmed = text.trim();
-  if (!trimmed) return;
-
-  const { fontSize, lines, lineHeight, padding } = fitFontSizeToRect(
-    ctx,
-    trimmed,
-    width,
-    height,
-    preferredFontSize,
-  );
   if (lines.length === 0) return;
-
-  const maxWidth = Math.max(20, width - padding * 2);
+  const maxWidth = Math.max(8, width - padding * 2);
   const totalHeight = lines.length * lineHeight;
   let drawY = y + Math.max(padding, (height - totalHeight) / 2);
   const bottom = y + height - padding;
@@ -325,6 +365,72 @@ function wrapTextInRect(
     ctx.fillText(drawLine, x + width / 2, drawY);
     drawY += lineHeight;
   }
+}
+
+function wrapTextInRect(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  preferredFontSize: number,
+) {
+  const trimmed = text.trim();
+  if (!trimmed || width < 4 || height < 4) return;
+
+  const rotate = shouldRotateBoxLabel(width, height);
+  // When rotated -90°, wrapping uses the long side as line length.
+  const layoutW = rotate ? height : width;
+  const layoutH = rotate ? width : height;
+  // Same target size for horizontal and vertical labels — only shrink to fit.
+  const preferred = Math.min(
+    BOX_LABEL_TARGET_FONT,
+    preferredFontSize > 0 ? preferredFontSize : BOX_LABEL_TARGET_FONT,
+  );
+
+  const { fontSize, lines, lineHeight, padding } = fitFontSizeToRect(
+    ctx,
+    trimmed,
+    layoutW,
+    layoutH,
+    preferred,
+  );
+  if (lines.length === 0) return;
+
+  if (!rotate) {
+    drawFittedLinesInRect(
+      ctx,
+      lines,
+      x,
+      y,
+      width,
+      height,
+      fontSize,
+      lineHeight,
+      padding,
+    );
+    return;
+  }
+
+  // -90° so text reads upward along tall narrow boxes.
+  const cx = x + width / 2;
+  const cy = y + height / 2;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(-Math.PI / 2);
+  drawFittedLinesInRect(
+    ctx,
+    lines,
+    -layoutW / 2,
+    -layoutH / 2,
+    layoutW,
+    layoutH,
+    fontSize,
+    lineHeight,
+    padding,
+  );
+  ctx.restore();
 }
 
 function drawArrow(
@@ -454,15 +560,14 @@ function drawShape(ctx: CanvasRenderingContext2D, shape: PlantLayoutShape) {
     const displayText = rectangleDisplayText(shape);
     if (displayText.trim()) {
       ctx.fillStyle = shape.strokeColor;
-      const autoSize = Math.max(
-        14,
-        Math.min(20, Math.floor(Math.min(shape.width, shape.height) / 3.2)),
-      );
+      // Explicit process-flow sizes stay near the shared band; plant layout is auto.
       const preferredFontSize =
         shape.fontSize && shape.fontSize > 0
-          ? Math.max(12, Math.min(28, Math.round(shape.fontSize)))
-          : autoSize;
-      // wrapTextInRect fits font so glyphs never leave the box
+          ? Math.max(
+              BOX_LABEL_MIN_FONT,
+              Math.min(BOX_LABEL_MAX_FONT, Math.round(shape.fontSize)),
+            )
+          : BOX_LABEL_TARGET_FONT;
       wrapTextInRect(
         ctx,
         displayText,

@@ -313,23 +313,33 @@ export function FactoryTestReportModal({
 
   const contextualReports = useMemo(() => {
     if (reports.length === 0) return reports;
-    const testingFallback = ftrTestingDateFallback(ftrContext.dateOfInspection);
     return reports.map((report) => {
       const sample = ftrSamplesForSource(report.source, oslSamples, piSamples)[
         report.source_index
       ];
       const patch = refreshReportHeadersFromSample(report, sample, ftrContext);
       const next = Object.keys(patch).length > 0 ? { ...report, ...patch } : report;
+      // Do not force Testing Start / Completion while editing — an empty
+      // intermediate value (typing / clearing) must not snap back to today.
       return {
         ...next,
-        date_of_testing_start: next.date_of_testing_start.trim() || testingFallback,
-        date_of_testing_completion:
-          next.date_of_testing_completion.trim() || testingFallback,
         witnessed_by: ftrContext.inspectionOfficerName,
         tested_by: ftrContext.qualityControlInchargeName,
       };
     });
   }, [reports, ftrContext, oslSamples, piSamples]);
+
+  function withTestingDateDefaults(
+    list: FactoryTestReportRow[],
+  ): FactoryTestReportRow[] {
+    const fallback = ftrTestingDateFallback(ftrContext.dateOfInspection);
+    return list.map((report) => ({
+      ...report,
+      date_of_testing_start: report.date_of_testing_start.trim() || fallback,
+      date_of_testing_completion:
+        report.date_of_testing_completion.trim() || fallback,
+    }));
+  }
 
   const activeReport =
     contextualReports.find((r) => r.id === activeReportId) ?? contextualReports[0] ?? null;
@@ -346,7 +356,9 @@ export function FactoryTestReportModal({
   }, [activeReport, oslSamples, piSamples]);
 
   const previewData = useMemo((): FactoryTestReportLetterData => {
-    const activeReports = activeReport ? storedReportsFromEditor([activeReport]) : [];
+    const activeReports = activeReport
+      ? storedReportsFromEditor(withTestingDateDefaults([activeReport]))
+      : [];
     return {
       ...letterData,
       city: letterData.city ?? "",
@@ -359,6 +371,7 @@ export function FactoryTestReportModal({
   }, [
     letterData,
     activeReport,
+    ftrContext.dateOfInspection,
     inspectionOfficerName,
     inspectionOfficerDesignation,
     qualityControlIncharge.name,
@@ -369,7 +382,7 @@ export function FactoryTestReportModal({
     return {
       ...letterData,
       city: letterData.city ?? "",
-      reports: storedReportsFromEditor(contextualReports),
+      reports: storedReportsFromEditor(withTestingDateDefaults(contextualReports)),
       inspectionOfficerName: inspectionOfficerName.trim(),
       inspectionOfficerDesignation: inspectionOfficerDesignation.trim(),
       qualityControlInchargeName: qualityControlIncharge.name,
@@ -378,6 +391,7 @@ export function FactoryTestReportModal({
   }, [
     letterData,
     contextualReports,
+    ftrContext.dateOfInspection,
     inspectionOfficerName,
     inspectionOfficerDesignation,
     qualityControlIncharge.name,
@@ -493,7 +507,9 @@ export function FactoryTestReportModal({
 
   function handleSave() {
     startSave(() => {
-      onSave(storedReportsFromEditor(contextualReports));
+      const toSave = withTestingDateDefaults(contextualReports);
+      setReports(toSave);
+      onSave(storedReportsFromEditor(toSave));
       setSavedFlash(true);
       window.setTimeout(() => setSavedFlash(false), 2000);
     });
@@ -693,14 +709,21 @@ export function FactoryTestReportModal({
                   <div className="flex shrink-0 flex-wrap items-end gap-2">
                     <HeaderField
                       label="Testing Start"
-                      value={activeReport.date_of_testing_start}
+                      value={
+                        reports.find((r) => r.id === activeReport.id)
+                          ?.date_of_testing_start ?? activeReport.date_of_testing_start
+                      }
                       onChange={(v) => updateActiveReport({ date_of_testing_start: v })}
                       type="date"
                       compact
                     />
                     <HeaderField
                       label="Testing Completion"
-                      value={activeReport.date_of_testing_completion}
+                      value={
+                        reports.find((r) => r.id === activeReport.id)
+                          ?.date_of_testing_completion ??
+                        activeReport.date_of_testing_completion
+                      }
                       onChange={(v) => updateActiveReport({ date_of_testing_completion: v })}
                       type="date"
                       compact

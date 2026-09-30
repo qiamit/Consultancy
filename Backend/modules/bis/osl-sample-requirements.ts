@@ -4,6 +4,11 @@ export type OslSamplePriority = "Priority" | "Non Priority";
 export type OslSampleFor = "osl" | "ft" | "it";
 
 export type OslSampleRequirementStored = {
+  /**
+   * Stable editor/Manak identity. Persist across save so duplicate/insert
+   * does not rematch results onto a different sample by array index.
+   */
+  id?: string;
   sample_description: string;
   /** Grade / Type / Variety / Size / Class / Rating. */
   grade_type_variety: string;
@@ -135,12 +140,16 @@ export function isSampleIncludedInPrint(
 
 let oslRowSeq = 0;
 
+function nextOslRowId(): string {
+  oslRowSeq += 1;
+  return `osl-row-${Date.now()}-${oslRowSeq}`;
+}
+
 export function createOslSampleRequirementRow(
   sampleFor: OslSampleFor = "osl",
 ): OslSampleRequirementRow {
-  oslRowSeq += 1;
   return {
-    id: `osl-row-${Date.now()}-${oslRowSeq}`,
+    id: nextOslRowId(),
     ...defaultOslSampleRequirement(sampleFor),
   };
 }
@@ -178,7 +187,9 @@ function mapRawSample(
     sample_description: String(r.sample_description ?? "").trim(),
     grade_type_variety: String(r.grade_type_variety ?? "").trim(),
   });
+  const id = String(r.id ?? r.row_id ?? "").trim();
   return {
+    ...(id ? { id } : {}),
     sample_description: resolved.sample_description,
     grade_type_variety: resolved.grade_type_variety,
     declared_value: String(r.declared_value ?? "").trim(),
@@ -259,27 +270,41 @@ export function editorRowsFromStored(
   stored: OslSampleRequirementStored[],
 ): OslSampleRequirementRow[] {
   if (stored.length === 0) return [];
-  return stored.map((row, index) => ({
-    id: `osl-row-${index}`,
-    ...row,
-    ...resolveGradeAndDescription(row),
-    priority: parsePriority(row.priority),
-    sample_for: parseSampleFor(row.sample_for),
-    include_in_print: row.include_in_print !== false,
-  }));
+  const used = new Set<string>();
+  return stored.map((row) => {
+    const resolved = resolveGradeAndDescription(row);
+    let id = String(row.id ?? "").trim();
+    if (!id || used.has(id) || /^osl-row-\d+$/.test(id)) {
+      // Index-only ids (legacy osl-row-0) are unstable after insert/duplicate.
+      id = nextOslRowId();
+    }
+    used.add(id);
+    return {
+      ...row,
+      ...resolved,
+      id,
+      priority: parsePriority(row.priority),
+      sample_for: parseSampleFor(row.sample_for),
+      include_in_print: row.include_in_print !== false,
+    };
+  });
 }
 
 export function storedFromEditor(
   rows: OslSampleRequirementRow[],
 ): OslSampleRequirementStored[] {
   return rows
-    .map(({ id: _id, ...rest }) => ({
-      ...rest,
-      ...resolveGradeAndDescription(rest),
-      priority: parsePriority(rest.priority),
-      sample_for: parseSampleFor(rest.sample_for),
-      include_in_print: rest.include_in_print !== false,
-    }))
+    .map((row) => {
+      const { id, ...rest } = row;
+      return {
+        ...rest,
+        ...resolveGradeAndDescription(rest),
+        id: String(id ?? "").trim() || nextOslRowId(),
+        priority: parsePriority(rest.priority),
+        sample_for: parseSampleFor(rest.sample_for),
+        include_in_print: rest.include_in_print !== false,
+      };
+    })
     .filter(rowHasContent);
 }
 

@@ -197,22 +197,29 @@ export function matchManakSampleRow<T extends ManakMatchRow>(
   const lastOpen = lastManakOpenSample();
   const byId = rows.find((row) => result.sampleId && row.id === result.sampleId);
   if (byId) return byId;
-  const byQr = rows.find(
-    (row) =>
-      Boolean(result.qr_code) &&
-      String(row.qr_code || "").trim() &&
-      String(row.qr_code || "").trim() === result.qr_code,
-  );
-  if (byQr) return byQr;
+  // Prefer the sample that opened Manak before QR fallback — duplicates can share a QR.
   const byLastId = rows.find((row) => lastOpen.sampleId && row.id === lastOpen.sampleId);
   if (byLastId) return byLastId;
-  const byLastQr = rows.find(
-    (row) =>
-      lastOpen.qr_code &&
-      String(row.qr_code || "").trim() &&
-      String(row.qr_code || "").trim() === lastOpen.qr_code,
-  );
-  if (byLastQr) return byLastQr;
+  const qr = String(result.qr_code || "").trim();
+  if (qr) {
+    const qrMatches = rows.filter((row) => String(row.qr_code || "").trim() === qr);
+    if (qrMatches.length === 1) return qrMatches[0];
+    if (qrMatches.length > 1 && lastOpen.sampleId) {
+      const preferred = qrMatches.find((row) => row.id === lastOpen.sampleId);
+      if (preferred) return preferred;
+    }
+  }
+  const lastQr = String(lastOpen.qr_code || "").trim();
+  if (lastQr) {
+    const lastQrMatches = rows.filter(
+      (row) => String(row.qr_code || "").trim() === lastQr,
+    );
+    if (lastQrMatches.length === 1) return lastQrMatches[0];
+    if (lastQrMatches.length > 1 && lastOpen.sampleId) {
+      const preferred = lastQrMatches.find((row) => row.id === lastOpen.sampleId);
+      if (preferred) return preferred;
+    }
+  }
   if (rows.length === 1) return rows[0];
   const emptyCode = rows.filter((row) => !String(row.sample_code || "").trim());
   return emptyCode.length === 1 ? emptyCode[0] : null;
