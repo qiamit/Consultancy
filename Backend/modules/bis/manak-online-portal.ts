@@ -16,6 +16,14 @@ export const MANAK_ONLINE_HOME_URL = "https://www.manakonline.in/MANAK/login";
 export const MANAK_ONLINE_TEST_REQUEST_URL =
   "https://www.manakonline.in/MANAK/testRequestGenerationForApplicant";
 
+/** [BIS Manakonline — Test Samples hub](https://www.manakonline.in/MANAK/ApplicantTestSample) */
+export const MANAK_ONLINE_TEST_SAMPLES_URL =
+  "https://www.manakonline.in/MANAK/ApplicantTestSample";
+
+/** [BIS Manakonline — Generate QR Codes](https://www.manakonline.in/MANAK/employeeQrCodeGeneration) */
+export const MANAK_ONLINE_GENERATE_QR_URL =
+  "https://www.manakonline.in/MANAK/employeeQrCodeGeneration";
+
 /**
  * [BIS Manakonline — Licences Under Suspension (ALL BRANCHES)](https://www.manakonline.in/MANAK/BisReportList/1018/...)
  * Requires an authenticated Manak browser session; anonymous server fetch often returns 404.

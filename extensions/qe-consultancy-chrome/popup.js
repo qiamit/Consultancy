@@ -1,6 +1,9 @@
 const statusEl = document.getElementById("status");
 const powerToggle = document.getElementById("powerToggle");
 const powerLabel = document.getElementById("powerLabel");
+const importQrToggle = document.getElementById("importQrToggle");
+const importQrLabel = document.getElementById("importQrLabel");
+const importQrStatus = document.getElementById("importQrStatus");
 const enableBypass = document.getElementById("enableBypass");
 const enableCtrlBypass = document.getElementById("enableCtrlBypass");
 const fieldNameInput = document.getElementById("fieldName");
@@ -19,14 +22,53 @@ function paintPower(on) {
   if (powerToggle) powerToggle.checked = on;
   if (powerLabel) {
     powerLabel.textContent = on
-      ? "ON — login → Test Request → save back to app"
-      : "OFF — app opens Manak page only (no auto-fill)";
+      ? "ON — login → Test Request → save back"
+      : "OFF — idle (auto-ON when you press 🧪)";
   }
 }
 
+function paintImportQr(on, waiting) {
+  document.body.classList.toggle("import-qr-off", !on && !waiting);
+  document.body.classList.toggle("import-qr-wait", Boolean(waiting));
+  if (importQrToggle) {
+    importQrToggle.checked = on;
+    importQrToggle.disabled = Boolean(waiting);
+  }
+  if (importQrLabel) {
+    if (waiting) {
+      importQrLabel.textContent = "Waiting for Manak Login… then Not Used QR import";
+    } else if (on) {
+      importQrLabel.textContent = "ON — collecting 12-digit Not Used QR Codes";
+    } else {
+      importQrLabel.textContent = "OFF — Import QR idle (enables after Login)";
+    }
+  }
+}
+
+function paintImportQrLast(result) {
+  if (!importQrStatus) return;
+  const codes = Array.isArray(result?.qr_codes) ? result.qr_codes.filter(Boolean) : [];
+  if (!codes.length) {
+    importQrStatus.textContent = "Last import: none yet. Only 12-digit Not Used Codes.";
+    return;
+  }
+  const preview = codes.slice(0, 4).join(", ");
+  const more = codes.length > 4 ? ` (+${codes.length - 4} more)` : "";
+  importQrStatus.textContent = `Last import: ${codes.length} code(s) — ${preview}${more}`;
+}
+
 async function loadPower() {
-  const data = await chrome.storage.local.get(["qeManakEnabled"]);
+  const data = await chrome.storage.local.get([
+    "qeManakEnabled",
+    "qeManakImportQrEnabled",
+    "qeManakImportQr",
+    "manakQrImport",
+  ]);
   paintPower(data.qeManakEnabled !== false);
+  const waiting = data.qeManakImportQr === true && data.qeManakImportQrEnabled !== true;
+  const on = data.qeManakImportQrEnabled === true;
+  paintImportQr(on, waiting);
+  paintImportQrLast(data.manakQrImport || null);
 }
 
 function init() {
@@ -48,15 +90,46 @@ function init() {
       qeManakArmed: next,
     });
     if (!next) {
-      await chrome.storage.local.remove(["pendingFill", "qeManakHomeReady", "qeManakPortal"]);
+      await chrome.storage.local.remove([
+        "pendingFill",
+        "qeManakHomeReady",
+        "qeManakPortal",
+      ]);
     }
     paintPower(next);
     setStatus(
       next
-        ? "ON — use Manak / Login in Consultancy Pro to start the full flow."
-        : "OFF — auto login / Test Request / save-back is paused.",
+        ? "ON — Generate Test Request from Consultancy Pro (login → fill → PDF → Sample Code)."
+        : "OFF — Manak pages work normally (Test Report download etc.). Auto Test Request paused.",
       false,
     );
+  });
+
+  importQrToggle.addEventListener("change", async () => {
+    const next = importQrToggle.checked;
+    await chrome.storage.local.set({ qeManakImportQrEnabled: next });
+    paintImportQr(next, false);
+    setStatus(
+      next
+        ? "Import QR ON — collecting Not Used codes when armed."
+        : "Import QR OFF.",
+      false,
+    );
+  });
+
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== "local") return;
+    if (changes.manakQrImport) {
+      paintImportQrLast(changes.manakQrImport.newValue || null);
+    }
+    if (
+      changes.qeManakEnabled ||
+      changes.qeManakArmed ||
+      changes.qeManakImportQrEnabled ||
+      changes.qeManakImportQr
+    ) {
+      void loadPower();
+    }
   });
 
   enableBypass.addEventListener("change", () => {

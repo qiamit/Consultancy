@@ -10,9 +10,11 @@ import {
   buildManakTestRequestPayload,
   cleanManakSampleCode,
   isLikelyManakSampleCode,
+  parseManakQrImportResult,
   parseManakTestRequestResult,
   stringifyManakTestRequestPayload,
   MANAK_TEST_REQUEST_RESULT_KIND,
+  type ManakQrImportResult,
   type ManakTestRequestPayload,
   type ManakTestRequestResult,
 } from "@backend/modules/bis/manak-test-request-payload";
@@ -83,6 +85,119 @@ export function openManakEbisLogin(
   portalPassword?: string | null,
 ): void {
   openManakUrl(manakOnlineEbisLoginHref(portalUserId, portalPassword));
+}
+
+/**
+ * Open Manak eBIS for Generate QR. Chrome extension (Auto flow ON) opens
+ * employeeQrCodeGeneration, scrapes Available / Not Used Codes (or generates new),
+ * then returns those QR numbers to the OSL sample list.
+ */
+export function openManakImportQr(portal?: {
+  portalUserId?: string | null;
+  portalPassword?: string | null;
+  /** How many new QR codes to generate (defaults to 1). */
+  qrCount?: number;
+}): boolean {
+  const portalUserId = (portal?.portalUserId ?? "").trim();
+  const portalPassword = (portal?.portalPassword ?? "").trim();
+  const qrCount = Math.max(1, Math.min(50, Number(portal?.qrCount) || 1));
+  const loginUrl =
+    portalUserId || portalPassword
+      ? manakOnlineEbisLoginHref(portalUserId, portalPassword)
+      : MANAK_ONLINE_EBIS_LOGIN_URL;
+
+  let acked = false;
+  function onAck(event: MessageEvent) {
+    if (event.source !== window) return;
+    if (event.data?.type !== "QE_MANAK_OPEN_ACK") return;
+    acked = true;
+    window.removeEventListener("message", onAck);
+  }
+  window.addEventListener("message", onAck);
+  window.postMessage(
+    {
+      type: "QE_MANAK_OPEN",
+      importQr: true,
+      qrCount,
+      payload: null,
+      // Always eBIS login — never /MANAK/login.
+      loginUrl,
+      homeUrl: MANAK_ONLINE_EBIS_LOGIN_URL,
+      portalUserId,
+      portalPassword,
+    },
+    "*",
+  );
+  window.setTimeout(() => {
+    window.removeEventListener("message", onAck);
+    if (acked) return;
+    openManakUrl(loginUrl);
+  }, 400);
+  return true;
+}
+
+export function subscribeManakQrImport(
+  onResult: (result: ManakQrImportResult) => void,
+): () => void {
+  function applyRaw(raw: string | null | undefined) {
+    const result = parseManakQrImportResult(raw);
+    if (result) onResult(result);
+  }
+
+  function onMessage(event: MessageEvent) {
+    if (event.source !== window) return;
+    const data = event.data;
+    if (!data || typeof data !== "object") return;
+    if (data.type === "QE_MANAK_QR_IMPORT" && data.result) {
+      const result = parseManakQrImportResult(JSON.stringify(data.result));
+      if (result) onResult(result);
+      return;
+    }
+    if (data.type === "QE_MANAK_RESULT" && data.result?.kind === "QE_MANAK_QR_IMPORT_V1") {
+      const result = parseManakQrImportResult(JSON.stringify(data.result));
+      if (result) onResult(result);
+    }
+  }
+
+  function onCustom(event: Event) {
+    const detail = (event as CustomEvent<ManakQrImportResult>).detail;
+    const result = parseManakQrImportResult(JSON.stringify(detail ?? null));
+    if (result) onResult(result);
+  }
+
+  async function pullClipboard() {
+    try {
+      const raw = await navigator.clipboard.readText();
+      applyRaw(raw);
+    } catch {
+      /* clipboard blocked until a gesture */
+    }
+  }
+
+  function onFocus() {
+    void pullClipboard();
+  }
+
+  function onVisibility() {
+    if (document.visibilityState === "visible") void pullClipboard();
+  }
+
+  window.addEventListener("message", onMessage);
+  window.addEventListener("qe-manak-qr-import", onCustom as EventListener);
+  window.addEventListener("focus", onFocus);
+  document.addEventListener("visibilitychange", onVisibility);
+  void pullClipboard();
+  const poll = window.setInterval(() => {
+    void pullClipboard();
+  }, 2500);
+
+  return () => {
+    window.clearInterval(poll);
+    window.removeEventListener("message", onMessage);
+    window.removeEventListener("qe-manak-qr-import", onCustom as EventListener);
+    window.removeEventListener("focus", onFocus);
+    document.removeEventListener("visibilitychange", onVisibility);
+  };
 }
 
 /**
@@ -250,25 +365,48 @@ function sanitizeManakResult(
   return { ...result, sample_code: okCode };
 }
 
+function manakResultSignature(result: ManakTestRequestResult): string {
+  return [
+    result.sampleId || "",
+    result.sample_code || "",
+    result.qr_code || "",
+    result.test_request_ref || "",
+    result.pdfName || "",
+    (result.pdfBase64 || "").slice(0, 80),
+  ].join("|");
+}
+
 export function subscribeManakTestRequestResult(
   onResult: (result: ManakTestRequestResult) => void,
 ): () => void {
+  let lastSig = "";
+  let inboxDoneForToken = "";
+
+  function emit(result: ManakTestRequestResult | undefined | null) {
+    const sanitized = sanitizeManakResult(result ?? undefined);
+    if (!sanitized) return;
+    if (!sanitized.sample_code && !sanitized.pdfBase64 && !sanitized.test_request_ref) {
+      return;
+    }
+    const sig = manakResultSignature(sanitized);
+    if (sig === lastSig) return;
+    lastSig = sig;
+    onResult(sanitized);
+  }
+
   function applyRaw(raw: string | null | undefined) {
-    const result = parseManakTestRequestResult(raw);
-    if (result) onResult(result);
+    emit(parseManakTestRequestResult(raw) ?? undefined);
   }
 
   function onMessage(event: MessageEvent) {
     if (event.source !== window) return;
     const data = event.data;
     if (!data || data.type !== "QE_MANAK_RESULT") return;
-    const result = sanitizeManakResult(data.result as ManakTestRequestResult | undefined);
-    if (result?.sample_code || result?.pdfBase64 || result?.test_request_ref) onResult(result);
+    emit(data.result as ManakTestRequestResult | undefined);
   }
 
   function onCustom(event: Event) {
-    const detail = sanitizeManakResult((event as CustomEvent<ManakTestRequestResult>).detail);
-    if (detail?.sample_code || detail?.pdfBase64 || detail?.test_request_ref) onResult(detail);
+    emit((event as CustomEvent<ManakTestRequestResult>).detail);
   }
 
   async function pullInbox() {
@@ -278,7 +416,7 @@ export function subscribeManakTestRequestResult(
     } catch {
       token = "";
     }
-    if (!token) return;
+    if (!token || token === inboxDoneForToken) return;
     try {
       const res = await fetch(`/api/osl/manak-pdf?token=${encodeURIComponent(token)}`, {
         credentials: "include",
@@ -291,7 +429,7 @@ export function subscribeManakTestRequestResult(
         pdfName?: string;
       };
       if (!data?.ready || !data.ref) return;
-      onResult({
+      emit({
         kind: MANAK_TEST_REQUEST_RESULT_KIND,
         sampleId: data.sampleId || lastOpenedManakSample.sampleId || "",
         sample_code: data.sample_code || "",
@@ -300,6 +438,12 @@ export function subscribeManakTestRequestResult(
         test_request_ref: data.ref,
         test_request_name: data.pdfName || "Test_Request.pdf",
       });
+      inboxDoneForToken = token;
+      try {
+        sessionStorage.removeItem("qeManakReturnToken");
+      } catch {
+        /* ignore */
+      }
     } catch {
       /* inbox not ready */
     }
@@ -332,7 +476,7 @@ export function subscribeManakTestRequestResult(
   const poll = window.setInterval(() => {
     window.postMessage({ type: "QE_MANAK_PULL_RESULT" }, "*");
     void pullInbox();
-  }, 2500);
+  }, 4000);
 
   return () => {
     window.clearInterval(poll);

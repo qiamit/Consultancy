@@ -63,12 +63,13 @@ import {
   isLikelyManakSampleCode,
 } from "@backend/modules/bis/manak-test-request-payload";
 import {
-  copyManakTestRequestPayload,
   manakPdfFileFromResult,
+  openManakImportQr,
   openManakTestRequest,
   lastManakOpenSample,
   matchManakSampleRow,
   releaseManakPdfAttachKey,
+  subscribeManakQrImport,
   subscribeManakTestRequestResult,
   takeManakPdfAttachKey,
 } from "@/components/modules/bis-projects/manak-test-request";
@@ -268,6 +269,8 @@ export function OslSampleRequirementsModal({
   const [sampleFormRow, setSampleFormRow] = useState<
     OslSampleRequirementRow | null | undefined
   >(undefined);
+  /** Prefill QR when opening Add Sample from Available QR list. */
+  const [sampleFormPrefillQr, setSampleFormPrefillQr] = useState("");
   const [clientRows, setClientRows] = useState<ClientPickerRow[]>([]);
   const [savedFlash, setSavedFlash] = useState(false);
   const [pdfDownloading, setPdfDownloading] = useState(false);
@@ -282,6 +285,51 @@ export function OslSampleRequirementsModal({
   const [saving, startSave] = useTransition();
   const [manakCopiedRowId, setManakCopiedRowId] = useState<string | null>(null);
   const [manakCodeFlash, setManakCodeFlash] = useState<string | null>(null);
+  const [manakQrFlash, setManakQrFlash] = useState<string | null>(null);
+  const [availableQrCodes, setAvailableQrCodes] = useState<string[]>([]);
+  /** QRs that already produced a Sample Code / Test Request — never return to Available. */
+  const [consumedQrCodes, setConsumedQrCodes] = useState<string[]>(() =>
+    Array.from(
+      new Set(
+        (initialStored ?? [])
+          .map((row) => {
+            const qr = String(row.qr_code ?? "").trim();
+            const code = String(row.sample_code ?? "").trim();
+            const hasRequest = Boolean(String(row.test_request_ref ?? "").trim());
+            if (/^\d{12}$/.test(qr) && (code || hasRequest)) return qr;
+            return "";
+          })
+          .filter(Boolean),
+      ),
+    ),
+  );
+  const [availableQrOpen, setAvailableQrOpen] = useState(false);
+  const availableQrWrapRef = useRef<HTMLDivElement>(null);
+  const rowsRef = useRef(rows);
+  const consumedQrRef = useRef(consumedQrCodes);
+  const onSaveRef = useRef(onSave);
+  onSaveRef.current = onSave;
+  rowsRef.current = rows;
+  consumedQrRef.current = consumedQrCodes;
+
+  function markQrConsumed(qr: string) {
+    const code = qr.trim();
+    if (!/^\d{12}$/.test(code)) return;
+    setConsumedQrCodes((prev) => (prev.includes(code) ? prev : [...prev, code]));
+    setAvailableQrCodes((pool) => pool.filter((item) => item !== code));
+  }
+
+  function canReturnQrToAvailable(qr: string): boolean {
+    const code = qr.trim();
+    if (!/^\d{12}$/.test(code)) return false;
+    if (consumedQrRef.current.includes(code)) return false;
+    return true;
+  }
+
+  const selectableAvailableQrCodes = useMemo(
+    () => availableQrCodes.filter((code) => !consumedQrCodes.includes(code)),
+    [availableQrCodes, consumedQrCodes],
+  );
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const courierIframeRef = useRef<HTMLIFrameElement>(null);
   const manakPdfAttachedRef = useRef("");
@@ -320,7 +368,84 @@ export function OslSampleRequirementsModal({
   }, [isCodeId]);
 
   useEffect(() => {
-    return subscribeManakTestRequestResult((result) => {
+    if (!availableQrOpen) return;
+    function onDocPointer(event: MouseEvent) {
+      const root = availableQrWrapRef.current;
+      if (!root) return;
+      if (event.target instanceof Node && !root.contains(event.target)) {
+        setAvailableQrOpen(false);
+      }
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setAvailableQrOpen(false);
+    }
+    document.addEventListener("mousedown", onDocPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [availableQrOpen]);
+
+  useEffect(() => {
+    return subscribeManakQrImport((result) => {
+      // Import → Available QR list only.
+      // Never create samples, never assign QR to rows, never start Test Request.
+      const codes = [
+        ...new Set(
+          result.qr_codes
+            .map((code) => code.trim())
+            .filter((code) => /^\d{12}$/.test(code)),
+        ),
+      ];
+      if (codes.length === 0) {
+        setManakQrFlash("No 12-digit Not Used QR codes found on Manak.");
+        window.setTimeout(() => {
+          setManakQrFlash((current) =>
+            current?.startsWith("No 12-digit") ? null : current,
+          );
+        }, 6000);
+        return;
+      }
+
+      setAvailableQrCodes((pool) => {
+        const usedOnSamples = new Set(
+          rowsRef.current.map((row) => row.qr_code.trim()).filter(Boolean),
+        );
+        const consumed = new Set(consumedQrRef.current);
+        const seen = new Set(pool);
+        const merged = [...pool];
+        for (const code of codes) {
+          // Never list QRs already on samples, or QRs that already got a Sample Code.
+          if (seen.has(code) || usedOnSamples.has(code) || consumed.has(code)) continue;
+          seen.add(code);
+          merged.push(code);
+        }
+        return merged;
+      });
+      setAvailableQrOpen(true);
+      const preview = codes.slice(0, 4).join(", ");
+      const more = codes.length > 4 ? ` +${codes.length - 4}` : "";
+      const msg = `${codes.length} QR in Available list: ${preview}${more}`;
+      setManakQrFlash(msg);
+      window.setTimeout(() => {
+        setManakQrFlash((current) => (current === msg ? null : current));
+      }, 8000);
+    });
+  }, []);
+
+  useEffect(() => {
+    let flashClearTimer = 0;
+    function flashOnce(message: string) {
+      setManakCodeFlash((current) => (current === message ? current : message));
+      if (flashClearTimer) window.clearTimeout(flashClearTimer);
+      flashClearTimer = window.setTimeout(() => {
+        setManakCodeFlash((current) => (current === message ? null : current));
+      }, 6000);
+    }
+
+    const unsubscribe = subscribeManakTestRequestResult((result) => {
+      let codeApplied = false;
       setRows((prev) => {
         const lastOpen = lastManakOpenSample();
         const match =
@@ -334,35 +459,35 @@ export function OslSampleRequirementsModal({
         const nextCode = isLikelyManakSampleCode(cleanedCode)
           ? cleanedCode
           : match.sample_code;
-        const nextQr = result.qr_code || match.qr_code;
-        if (match.sample_code.trim() === nextCode.trim() && match.qr_code.trim() === nextQr.trim()) {
+        // QR only comes from Add Sample / Available QR — never invent from Manak result.
+        if (match.sample_code.trim() === nextCode.trim()) {
           return prev;
         }
+        codeApplied = true;
         const next = prev.map((row) =>
           row.id === match.id
             ? {
                 ...row,
                 sample_code: nextCode,
-                qr_code: nextQr,
               }
             : row,
         );
-        window.setTimeout(() => onSave(storedFromEditor(next)), 0);
+        const usedQr = match.qr_code.trim();
+        if (/^\d{12}$/.test(usedQr)) {
+          window.setTimeout(() => markQrConsumed(usedQr), 0);
+        }
+        window.setTimeout(() => onSaveRef.current(storedFromEditor(next)), 0);
         return next;
       });
       const flashCode = cleanManakSampleCode(result.sample_code || "");
-      if (isLikelyManakSampleCode(flashCode)) {
-        setManakCodeFlash(flashCode);
-        window.setTimeout(() => {
-          setManakCodeFlash((current) =>
-            current === flashCode ? null : current,
-          );
-        }, 6000);
+      if (codeApplied && isLikelyManakSampleCode(flashCode)) {
+        flashOnce(flashCode);
       }
 
       if ((result.test_request_ref ?? "").trim()) {
         const inboxKey = `${result.sampleId}:${result.test_request_ref}`;
         if (!takeManakPdfAttachKey(inboxKey)) return;
+        let pdfApplied = false;
         setRows((prev) => {
           const lastOpen = lastManakOpenSample();
           const match = matchManakSampleRow(prev, result) ??
@@ -373,6 +498,11 @@ export function OslSampleRequirementsModal({
           if (!match || (match.test_request_ref ?? "").trim() === result.test_request_ref) {
             return prev;
           }
+          pdfApplied = true;
+          const usedQr = match.qr_code.trim();
+          if (/^\d{12}$/.test(usedQr)) {
+            window.setTimeout(() => markQrConsumed(usedQr), 0);
+          }
           const next = prev.map((row) =>
             row.id === match.id
               ? {
@@ -382,15 +512,10 @@ export function OslSampleRequirementsModal({
                 }
               : row,
           );
-          window.setTimeout(() => onSave(storedFromEditor(next)), 0);
+          window.setTimeout(() => onSaveRef.current(storedFromEditor(next)), 0);
           return next;
         });
-        setManakCodeFlash("PDF attached");
-        window.setTimeout(() => {
-          setManakCodeFlash((current) =>
-            current === "PDF attached" ? null : current,
-          );
-        }, 6000);
+        if (pdfApplied) flashOnce("PDF attached");
         return;
       }
 
@@ -416,6 +541,7 @@ export function OslSampleRequirementsModal({
           window.alert(`Test Request PDF attach failed: ${uploaded.error}`);
           return;
         }
+        let pdfApplied = false;
         setRows((prev) => {
           const lastOpen = lastManakOpenSample();
           const match = matchManakSampleRow(prev, result) ??
@@ -424,6 +550,12 @@ export function OslSampleRequirementsModal({
             prev.find((row) => row.sample_code.trim() && !(row.test_request_ref ?? "").trim()) ??
             null;
           if (!match) return prev;
+          if ((match.test_request_ref ?? "").trim() === uploaded.ref) return prev;
+          pdfApplied = true;
+          const usedQr = match.qr_code.trim();
+          if (/^\d{12}$/.test(usedQr)) {
+            window.setTimeout(() => markQrConsumed(usedQr), 0);
+          }
           const next = prev.map((row) =>
             row.id === match.id
               ? {
@@ -433,18 +565,17 @@ export function OslSampleRequirementsModal({
                 }
               : row,
           );
-          window.setTimeout(() => onSave(storedFromEditor(next)), 0);
+          window.setTimeout(() => onSaveRef.current(storedFromEditor(next)), 0);
           return next;
         });
-        setManakCodeFlash("PDF attached");
-        window.setTimeout(() => {
-          setManakCodeFlash((current) =>
-            current === "PDF attached" ? null : current,
-          );
-        }, 6000);
+        if (pdfApplied) flashOnce("PDF attached");
       })();
     });
-  }, [onSave, setRows]);
+    return () => {
+      if (flashClearTimer) window.clearTimeout(flashClearTimer);
+      unsubscribe();
+    };
+  }, [setRows]);
 
   useEffect(() => {
     let cancelled = false;
@@ -635,15 +766,40 @@ export function OslSampleRequirementsModal({
     });
   }
 
-  function openAddSampleForm() {
+  function openAddSampleForm(prefillQr?: string) {
+    setSampleFormPrefillQr((prefillQr || "").trim());
     setSampleFormRow(null);
   }
 
   function openEditSampleForm(row: OslSampleRequirementRow) {
+    setSampleFormPrefillQr("");
     setSampleFormRow(row);
   }
 
   function handleSampleFormSave(row: OslSampleRequirementRow) {
+    const previousQr = (sampleFormRow?.qr_code ?? "").trim();
+    const nextQr = row.qr_code.trim();
+    const previousHadSampleCode = Boolean((sampleFormRow?.sample_code ?? "").trim());
+    const previousHadRequest = Boolean((sampleFormRow?.test_request_ref ?? "").trim());
+    const nextHasSampleCode = Boolean(row.sample_code.trim());
+    const nextHasRequest = Boolean((row.test_request_ref ?? "").trim());
+    if (nextQr && (nextHasSampleCode || nextHasRequest)) {
+      markQrConsumed(nextQr);
+    }
+    setAvailableQrCodes((pool) => {
+      let next = pool.filter((code) => code !== nextQr);
+      const mayReturn =
+        previousQr &&
+        previousQr !== nextQr &&
+        canReturnQrToAvailable(previousQr) &&
+        !previousHadSampleCode &&
+        !previousHadRequest &&
+        !rows.some((r) => r.id !== row.id && r.qr_code.trim() === previousQr);
+      if (mayReturn && !next.includes(previousQr)) {
+        next = [...next, previousQr];
+      }
+      return next;
+    });
     setRows((prev) => {
       const idx = prev.findIndex((r) => r.id === row.id);
       if (idx >= 0) {
@@ -653,6 +809,7 @@ export function OslSampleRequirementsModal({
       }
       return [...prev, row];
     });
+    setSampleFormPrefillQr("");
     setSampleFormRow(undefined);
   }
 
@@ -667,6 +824,19 @@ export function OslSampleRequirementsModal({
   }
 
   function handleRemoveSample(row: OslSampleRequirementRow) {
+    const freed = row.qr_code.trim();
+    const usedForSampleCode =
+      Boolean(row.sample_code.trim()) || Boolean((row.test_request_ref ?? "").trim());
+    if (freed && /^\d{12}$/.test(freed)) {
+      if (usedForSampleCode) {
+        // Sample Code / Test Request already generated — QR is spent; do not return to Available.
+        markQrConsumed(freed);
+      } else if (canReturnQrToAvailable(freed)) {
+        setAvailableQrCodes((pool) =>
+          pool.includes(freed) ? pool : [...pool, freed],
+        );
+      }
+    }
     setRows((prev) => prev.filter((r) => r.id !== row.id));
   }
 
@@ -707,10 +877,13 @@ export function OslSampleRequirementsModal({
     };
   }
 
-  function handleCopyForManak(row: OslSampleRequirementRow) {
-    const ok = copyManakTestRequestPayload(row, manakApplicationContext());
+  function handleGenerateTestRequest(row: OslSampleRequirementRow) {
+    const ok = openManakTestRequest(row, manakApplicationContext(), {
+      portalUserId,
+      portalPassword,
+    });
     if (!ok) {
-      window.alert("Unable to copy sample details for Manak Test Request.");
+      window.alert("Unable to start Manak Test Request for this sample.");
       return;
     }
     setManakCopiedRowId(row.id);
@@ -719,18 +892,29 @@ export function OslSampleRequirementsModal({
     }, 1600);
   }
 
-  function handleOpenManak(row: OslSampleRequirementRow) {
-    const ok = openManakTestRequest(row, manakApplicationContext(), {
+  function handleImportQrCodes() {
+    // Fetch all Not Used codes into Available list only — no samples / no Test Request.
+    setAvailableQrOpen(false);
+    openManakImportQr({
       portalUserId,
       portalPassword,
+      qrCount: 50,
     });
-    if (!ok) {
-      window.alert("Unable to copy sample details for Manak Test Request.");
-    }
-    setManakCopiedRowId(row.id);
+    setManakQrFlash(
+      "Opening Manak login… After captcha & Login, QR codes fill Available list only. Add a sample yourself to select a QR.",
+    );
     window.setTimeout(() => {
-      setManakCopiedRowId((current) => (current === row.id ? null : current));
-    }, 1600);
+      setManakQrFlash((current) =>
+        current?.startsWith("Opening Manak") ? null : current,
+      );
+    }, 10000);
+  }
+
+  function handleSelectAvailableQr(code: string) {
+    const qr = code.trim();
+    if (!/^\d{12}$/.test(qr)) return;
+    setAvailableQrOpen(false);
+    openAddSampleForm(qr);
   }
 
   function handlePrint() {
@@ -1076,6 +1260,11 @@ export function OslSampleRequirementsModal({
                 : `Manak Sample Code ${manakCodeFlash} — Save to keep`}
             </span>
           ) : null}
+          {manakQrFlash ? (
+            <span className="text-xs font-semibold text-violet-300">
+              {manakQrFlash}
+            </span>
+          ) : null}
           {saving && <span className="text-xs text-zinc-400">Saving…</span>}
           <span
             className="hidden text-[11px] font-medium text-zinc-400 sm:inline"
@@ -1189,6 +1378,77 @@ export function OslSampleRequirementsModal({
                   </h2>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
                   <OslSampleAddButton theme="dark" onClick={openAddSampleForm} />
+                  <div ref={availableQrWrapRef} className="relative inline-flex shrink-0">
+                    <div className="inline-flex overflow-hidden rounded-lg border border-violet-500/60">
+                      <button
+                        type="button"
+                        onClick={handleImportQrCodes}
+                        title="Import QR codes from Manak into Available list only. Does not create samples or Test Request."
+                        className="inline-flex items-center gap-1.5 bg-violet-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-violet-500"
+                      >
+                        <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 4.5h4.5v4.5h-4.5V4.5zm0 10.5h4.5v4.5h-4.5V15zm10.5-10.5h4.5v4.5h-4.5V4.5zm0 6h1.5v1.5h-1.5V10.5zm3 0h1.5v1.5h-1.5V10.5zm-3 3h1.5v1.5h-1.5V13.5zm3 0h1.5v1.5h-1.5V13.5zm-3 3h1.5v1.5h-1.5V16.5zm3 0h1.5v1.5h-1.5V16.5z" />
+                        </svg>
+                        Import
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAvailableQrOpen((open) => !open)}
+                        title="Pick a QR to open Add Sample with that code selected"
+                        aria-expanded={availableQrOpen}
+                        aria-haspopup="listbox"
+                        className="inline-flex items-center gap-1 border-l border-violet-400/50 bg-violet-700 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-violet-600"
+                      >
+                        Available QR Code ({selectableAvailableQrCodes.length})
+                        <svg
+                          className={`h-3 w-3 shrink-0 transition-transform ${availableQrOpen ? "rotate-180" : ""}`}
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          viewBox="0 0 24 24"
+                          aria-hidden
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                        </svg>
+                      </button>
+                    </div>
+                    {availableQrOpen ? (
+                      <div
+                        role="listbox"
+                        aria-label="Available QR codes"
+                        className="absolute right-0 top-full z-50 mt-1 max-h-64 w-64 overflow-y-auto rounded-lg border border-zinc-700 bg-zinc-950 py-1 shadow-xl shadow-black/40"
+                      >
+                        {selectableAvailableQrCodes.length === 0 ? (
+                          <p className="px-3 py-2 text-[11px] leading-snug text-zinc-400">
+                            Empty. Press Import to load Not Used QR codes here.
+                            Click a code (or Add Sample) to put QR on a sample — only then it
+                            appears in the table. QRs with Sample Code never return here.
+                          </p>
+                        ) : (
+                          <>
+                            <p className="border-b border-zinc-800 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide text-violet-300/90">
+                              Click a QR → Add Sample (shows in table after save)
+                            </p>
+                            {selectableAvailableQrCodes.map((code) => (
+                              <button
+                                key={code}
+                                type="button"
+                                role="option"
+                                onClick={() => handleSelectAvailableQr(code)}
+                                className="flex w-full items-center justify-between gap-2 px-3 py-1.5 text-left text-xs font-medium text-zinc-100 hover:bg-violet-600/30"
+                                title={`Add sample with QR ${code}`}
+                              >
+                                <span className="font-mono tracking-wide">{code}</span>
+                                <span className="text-[10px] font-semibold uppercase text-violet-300">
+                                  Add
+                                </span>
+                              </button>
+                            ))}
+                          </>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
                   <button
                     type="button"
                     onClick={() => void handleDownloadCombinedPdfs("request")}
@@ -1257,15 +1517,14 @@ export function OslSampleRequirementsModal({
                   rows={rows}
                   onEdit={openEditSampleForm}
                   onCopy={handleCopySample}
-                  onCopyForManak={handleCopyForManak}
-                  onOpenManak={handleOpenManak}
+                  onGenerateTestRequest={handleGenerateTestRequest}
                   onViewSampleLabels={(row) => void handleViewCourierLabels(row)}
                   sampleLabelsLoading={courierLabelsLoading}
                   sampleLabelsRowId={courierFocusRowId}
                   onRemove={handleRemoveSample}
                   onUpdate={handleUpdateSample}
                   focusSampleIndex={initialFocusSampleIndex}
-                  manakCopiedRowId={manakCopiedRowId}
+                  manakGeneratedRowId={manakCopiedRowId}
                 />
               </div>
             </div>
@@ -1450,10 +1709,15 @@ export function OslSampleRequirementsModal({
       {sampleFormRow !== undefined ? (
         <OslSampleFormModal
           initial={sampleFormRow}
+          prefillQrCode={sampleFormRow ? "" : sampleFormPrefillQr}
+          availableQrCodes={selectableAvailableQrCodes}
           clientOptions={clientOptions}
           onClientsChanged={reloadClients}
           onSave={handleSampleFormSave}
-          onClose={() => setSampleFormRow(undefined)}
+          onClose={() => {
+            setSampleFormPrefillQr("");
+            setSampleFormRow(undefined);
+          }}
         />
       ) : null}
     </>

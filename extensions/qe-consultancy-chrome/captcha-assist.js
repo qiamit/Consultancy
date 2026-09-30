@@ -119,14 +119,13 @@
   }
 
   function silencePageAlerts() {
+    // Do not inject inline <script> — Manak CSP blocks it.
+    // page-hook.js (MAIN world) patches window.alert when this flag is set.
     try {
-      const script = document.createElement("script");
-      script.textContent =
-        "if(!window.__qeAlertQuiet){window.__qeAlertQuiet=true;window.alert=function(){};}";
-      (document.documentElement || document.head).appendChild(script);
-      script.remove();
+      document.documentElement.setAttribute("data-qe-silence-alert", "1");
+      document.dispatchEvent(new CustomEvent("qe-silence-alert", { bubbles: true }));
     } catch {
-      /* isolated world cannot always patch page alert */
+      /* ignore */
     }
   }
 

@@ -10,7 +10,11 @@ import {
   parseBisProjectLicenseScopeNotes,
   parseSourceLicenseIdFromNotes,
 } from "@backend/modules/bis/bis-project-license-scope-notes";
-import type { LicenseScopeTableRow } from "@backend/modules/bis/application-checklist-notes";
+import {
+  buildApplicationChecklistPayload,
+  parseApplicationChecklistNotes,
+  type LicenseScopeTableRow,
+} from "@backend/modules/bis/application-checklist-notes";
 import {
   clampLicenseScopeColumnCount,
   licenseScopeRowHasContent,
@@ -1148,6 +1152,170 @@ export async function createPendingApplication(input: {
   return { ok: true, id: data.id as string };
 }
 
+/** Update an existing pending BIS application (same fields as Add New Application form). */
+export async function updatePendingApplication(input: {
+  applicationId: string;
+  clientId: string;
+  isCodeId: string;
+  targetDate?: string | null;
+  portalUserId?: string | null;
+  portalPassword?: string | null;
+  caseHandledBy?: string | null;
+  caseReferredBy?: string | null;
+  billingAmount?: string | number | null;
+  billingFrequency?: string | null;
+  licenseScopeFormat?: LicenseScopeFormat;
+  licenseScopeColumnCount?: number;
+  licenseScopeColumnHeaders?: string[];
+  licenseScopePlain?: string | null;
+  licenseScopeRowsJson?: string | null;
+  isQeManaged?: boolean;
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const applicationId = input.applicationId?.trim();
+  const clientId = input.clientId?.trim();
+  const isCodeId = input.isCodeId?.trim();
+  if (!applicationId) return { ok: false, error: "Invalid application." };
+  if (!clientId) return { ok: false, error: "Select a client." };
+  if (!isCodeId) return { ok: false, error: "Select an IS code." };
+
+  const { data: existing, error: fetchError } = await supabase
+    .from("bis_projects")
+    .select("id, project_kind, notes")
+    .eq("id", applicationId)
+    .maybeSingle();
+
+  if (fetchError) return { ok: false, error: fetchError.message };
+  if (!existing) return { ok: false, error: "Application not found." };
+  if (!isApplicationProjectKind(existing.project_kind)) {
+    return { ok: false, error: "Only pending applications can be edited here." };
+  }
+
+  const targetRaw = (input.targetDate ?? "").trim();
+  const target_date =
+    targetRaw && /^\d{4}-\d{2}-\d{2}$/.test(targetRaw) ? targetRaw : null;
+
+  const [{ data: client }, { data: isCode }] = await Promise.all([
+    supabase.from("clients").select("id").eq("id", clientId).maybeSingle(),
+    supabase.from("is_codes").select("id").eq("id", isCodeId).maybeSingle(),
+  ]);
+  if (!client) return { ok: false, error: "Client not found." };
+  if (!isCode) return { ok: false, error: "IS code not found." };
+
+  const title = await buildTitle(supabase, clientId, isCodeId, "BIS application");
+
+  const billingRaw = String(input.billingAmount ?? "").trim().replace(/,/g, "");
+  let billing_amount = 0;
+  if (billingRaw) {
+    const n = Number(billingRaw);
+    if (!Number.isFinite(n) || n < 0) {
+      return { ok: false, error: "Billing amount must be a valid number." };
+    }
+    billing_amount = Math.round(n * 100) / 100;
+  }
+
+  const billing_frequency =
+    String(input.billingFrequency ?? "").trim() || "Yearly";
+  const case_handled_by =
+    String(input.caseHandledBy ?? "").trim() || "Amit Kumar";
+  const case_referred_by =
+    String(input.caseReferredBy ?? "").trim() || "QE";
+  const portal_user_id = String(input.portalUserId ?? "").trim() || null;
+  const portal_password = String(input.portalPassword ?? "").trim() || null;
+
+  const scopeFormat = parseLicenseScopeFormat(input.licenseScopeFormat);
+  const scopeColumnCount = clampLicenseScopeColumnCount(input.licenseScopeColumnCount);
+  let scopeRows: LicenseScopeTableRow[] = [];
+  try {
+    const rawRows = String(input.licenseScopeRowsJson ?? "").trim();
+    if (rawRows) {
+      scopeRows = parseStoredLicenseScopeRows(JSON.parse(rawRows) as unknown);
+    }
+  } catch {
+    scopeRows = [];
+  }
+  const scopeHeaders = parseLicenseScopeColumnHeaders(
+    input.licenseScopeColumnHeaders,
+    scopeColumnCount,
+  );
+  const scopeState = {
+    scopeType: scopeFormat,
+    columnCount: scopeColumnCount,
+    columnHeaders: scopeHeaders,
+    plainText: String(input.licenseScopePlain ?? ""),
+    rows: scopeRows,
+  };
+
+  const existingNotes = (existing.notes as string | null) ?? null;
+  const rawNotes = (existingNotes ?? "").trim();
+  let notes: string | null = null;
+  if (rawNotes.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(rawNotes) as { type?: string };
+      if (parsed.type === "application_checklist") {
+        const checklist = parseApplicationChecklistNotes(rawNotes);
+        const editorRows = storedRowsToEditorRows(scopeRows);
+        const serialized = serializeLicenseScopeText(
+          scopeFormat,
+          scopeState.plainText,
+          editorRows,
+        );
+        notes = buildApplicationChecklistPayload({
+          ...checklist,
+          licenseScope: serialized,
+          licenseScopeFormat: scopeFormat,
+          licenseScopeColumnCount: scopeColumnCount,
+          licenseScopeColumnHeaders: scopeHeaders,
+          licenseScopeRows: scopeRows,
+          sourceLicenseId: parseSourceLicenseIdFromNotes(rawNotes),
+        });
+      } else {
+        const built = buildBisProjectLicenseScopeNotes(existingNotes, scopeState);
+        notes = built.trim() ? built : null;
+      }
+    } catch {
+      const built = buildBisProjectLicenseScopeNotes(existingNotes, scopeState);
+      notes = built.trim() ? built : null;
+    }
+  } else {
+    const built = buildBisProjectLicenseScopeNotes(existingNotes, scopeState);
+    notes = built.trim() ? built : null;
+  }
+
+  const is_qe_managed = input.isQeManaged !== false;
+
+  const { error } = await supabase
+    .from("bis_projects")
+    .update({
+      title,
+      client_id: clientId,
+      is_code_id: isCodeId,
+      target_date,
+      case_handled_by,
+      case_referred_by,
+      billing_amount,
+      billing_frequency,
+      portal_user_id,
+      portal_password,
+      notes,
+      is_qe_managed,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", applicationId);
+
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-new-applications");
+  revalidatePath("/dashboard/bis-projects");
+  return { ok: true, id: applicationId };
+}
+
 /** Create a fresh BIS New Application from an expired / existing license, then archive the license. */
 export async function convertLicenseToApplication(
   projectId: string,
@@ -1428,6 +1596,153 @@ export async function createInclusionFromLicense(
   revalidatePath("/dashboard/bis-projects");
   revalidatePath("/dashboard/our-bis-licenses");
   return { ok: true, id: created.id as string };
+}
+
+/**
+ * Update an existing inclusion case (same fields as Start Inclusion form).
+ */
+export async function updateInclusionCase(input: {
+  inclusionId: string;
+  licenseId: string;
+  startDate?: string;
+  endDate?: string;
+  inclusionScopeFormat?: LicenseScopeFormat;
+  inclusionScopeColumnCount?: number;
+  inclusionScopeColumnHeaders?: string[];
+  inclusionScopePlain?: string;
+  inclusionScopeRows?: LicenseScopeTableRow[];
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return { ok: false, error: "Not signed in" };
+
+  const inclusionId = input.inclusionId?.trim();
+  const licenseId = input.licenseId?.trim();
+  if (!inclusionId) return { ok: false, error: "Invalid inclusion case" };
+  if (!licenseId) return { ok: false, error: "Invalid license" };
+
+  const { data: inclusion, error: inclusionFetchError } = await supabase
+    .from("bis_projects")
+    .select("id, project_kind, status, notes")
+    .eq("id", inclusionId)
+    .maybeSingle();
+
+  if (inclusionFetchError) return { ok: false, error: inclusionFetchError.message };
+  if (!inclusion) return { ok: false, error: "Inclusion case not found." };
+  if (!isInclusionProjectKind(inclusion.project_kind)) {
+    return { ok: false, error: "Only inclusion cases can be edited here." };
+  }
+  if (String(inclusion.status ?? "").trim().toLowerCase() === "completed") {
+    return { ok: false, error: "This inclusion case is already finished." };
+  }
+
+  const { data: license, error: licenseFetchError } = await supabase
+    .from("bis_projects")
+    .select(
+      "id, title, project_kind, status, client_id, is_code_id, portal_user_id, portal_password, case_handled_by, case_referred_by, billing_amount, billing_frequency, cm_l_digits, license_number, is_qe_managed, license_validity_date",
+    )
+    .eq("id", licenseId)
+    .maybeSingle();
+
+  if (licenseFetchError) return { ok: false, error: licenseFetchError.message };
+  if (!license) return { ok: false, error: "License not found." };
+  if (isApplicationProjectKind(license.project_kind)) {
+    return { ok: false, error: "Select an existing license, not an application." };
+  }
+  if (isInclusionProjectKind(license.project_kind)) {
+    return { ok: false, error: "Select a granted license, not another inclusion case." };
+  }
+
+  const clientId = (license.client_id as string | null)?.trim() ?? "";
+  const isCodeId = (license.is_code_id as string | null)?.trim() ?? "";
+  if (!clientId) return { ok: false, error: "Client is missing on this license." };
+  if (!isCodeId) return { ok: false, error: "IS code is missing on this license." };
+
+  const today = new Date().toISOString().split("T")[0]!;
+  const startDate =
+    input.startDate && /^\d{4}-\d{2}-\d{2}$/.test(input.startDate.trim())
+      ? input.startDate.trim()
+      : today;
+  const endDate =
+    input.endDate && /^\d{4}-\d{2}-\d{2}$/.test(input.endDate.trim())
+      ? input.endDate.trim()
+      : null;
+
+  const scopeFormat = parseLicenseScopeFormat(input.inclusionScopeFormat);
+  const scopeColumnCount = clampLicenseScopeColumnCount(input.inclusionScopeColumnCount);
+  const scopePlain = (input.inclusionScopePlain ?? "").trim();
+  const scopeRows = (input.inclusionScopeRows ?? []).filter((r) =>
+    licenseScopeRowHasContent(r),
+  );
+  if (licenseScopeUsesPlain(scopeFormat) && !scopePlain) {
+    return { ok: false, error: "Enter Inclusion Scope (plain text)." };
+  }
+  if (licenseScopeUsesTable(scopeFormat) && scopeRows.length === 0) {
+    return { ok: false, error: "Enter at least one Inclusion Scope row." };
+  }
+
+  const title = await buildTitle(supabase, clientId, isCodeId, "BIS inclusion");
+  const cmDigits = String(license.cm_l_digits ?? "").replace(/\D/g, "");
+  const licenseNo = String(license.license_number ?? "").trim();
+  const checklist = parseApplicationChecklistNotes(inclusion.notes);
+  const editorRows = storedRowsToEditorRows(scopeRows);
+  const serializedScope = serializeLicenseScopeText(
+    scopeFormat,
+    scopePlain,
+    editorRows,
+  );
+  const nextNotes = buildApplicationChecklistPayload({
+    ...checklist,
+    meta: {
+      ...checklist.meta,
+      date_of_application: startDate,
+    },
+    licenseScope: serializedScope,
+    licenseScopeFormat: scopeFormat,
+    licenseScopeColumnCount: scopeColumnCount,
+    licenseScopeColumnHeaders: parseLicenseScopeColumnHeaders(
+      input.inclusionScopeColumnHeaders,
+      scopeColumnCount,
+    ),
+    licenseScopeRows: scopeRows,
+    sourceLicenseId: licenseId,
+  });
+
+  const now = new Date().toISOString();
+  const { error: updateError } = await supabase
+    .from("bis_projects")
+    .update({
+      title,
+      client_id: clientId,
+      is_code_id: isCodeId,
+      cm_l_digits: cmDigits || null,
+      license_number: licenseNo || null,
+      start_date: startDate,
+      target_date: endDate,
+      notes: nextNotes,
+      updated_at: now,
+    })
+    .eq("id", inclusionId);
+
+  if (updateError) {
+    const msg = updateError.message ?? "";
+    if (/bis_projects_cm_l_digits_uidx|duplicate key/i.test(msg)) {
+      return {
+        ok: false,
+        error:
+          "This CM/L is already linked to another record. Pick a different license or finish conflicting cases first.",
+      };
+    }
+    return { ok: false, error: updateError.message };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/bis-new-inclusion");
+  revalidatePath("/dashboard/bis-projects");
+  revalidatePath("/dashboard/our-bis-licenses");
+  return { ok: true, id: inclusionId };
 }
 
 /**

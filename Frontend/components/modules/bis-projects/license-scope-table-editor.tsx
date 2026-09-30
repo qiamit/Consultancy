@@ -37,7 +37,7 @@ const themes = {
   light: {
     inp:
       "block w-full rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm shadow-sm outline-none focus:border-sky-500 focus:ring-2 focus:ring-sky-500/30 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100",
-    wrap: "overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700",
+    wrap: "shrink-0 overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700",
     thead: "bg-zinc-100 dark:bg-zinc-800",
     th: "border-b border-zinc-200 px-2 py-1.5 text-center text-xs font-semibold text-zinc-600 dark:border-zinc-700 dark:text-zinc-300",
     headerInp:
@@ -56,7 +56,7 @@ const themes = {
   dark: {
     inp:
       "block w-full rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1.5 text-sm text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40",
-    wrap: "overflow-hidden rounded-lg border border-zinc-800",
+    wrap: "shrink-0 overflow-hidden rounded-lg border border-zinc-800",
     thead: "bg-zinc-800",
     th: "border-b border-zinc-700 px-2 py-1.5 text-center text-xs font-semibold text-zinc-300",
     headerInp:

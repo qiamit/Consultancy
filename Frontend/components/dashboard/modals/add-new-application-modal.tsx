@@ -2,7 +2,12 @@
 
 import { useEffect, useState, useTransition } from "react";
 import { createClient } from "@backend/db/client/client";
-import { createPendingApplication } from "@backend/actions/bis-projects";
+import {
+  createPendingApplication,
+  updatePendingApplication,
+} from "@backend/actions/bis-projects";
+import { parseBisProjectLicenseScopeNotes } from "@backend/modules/bis/bis-project-license-scope-notes";
+import { isApplicationProjectKind } from "@backend/modules/bis/bis-project-kind";
 import { ClientDropdownField } from "@/components/modules/client-master/client-dropdown-field";
 import { ClientMasterEmbedModal } from "@/components/modules/finance/client-master-embed-modal";
 import { DialogCloseXButton } from "@/components/modules/client-master/dialog-close-x";
@@ -138,14 +143,25 @@ function Field({
   );
 }
 
+function toYmdOrEmpty(value: unknown): string {
+  if (value == null || value === "") return "";
+  const s = String(value).trim();
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(s);
+  return m ? m[1]! : "";
+}
+
 export function AddNewApplicationModal({
   onClose,
   onCreated,
+  editApplicationId = null,
 }: {
   onClose: () => void;
   onCreated: () => void;
+  /** When set, form loads that application for editing. */
+  editApplicationId?: string | null;
 }) {
   const { open: sidebarOpen } = useSidebarLayout();
+  const isEdit = Boolean(editApplicationId?.trim());
   const [clientId, setClientId] = useState("");
   const [isCodeId, setIsCodeId] = useState("");
   const [portalUserId, setPortalUserId] = useState("");
@@ -166,6 +182,7 @@ export function AddNewApplicationModal({
   const [error, setError] = useState<string | null>(null);
   const [saving, startSave] = useTransition();
   const [loadingOptions, setLoadingOptions] = useState(true);
+  const [loadingEdit, setLoadingEdit] = useState(isEdit);
   const [showAddClient, setShowAddClient] = useState(false);
   const [showAddIsCode, setShowAddIsCode] = useState(false);
 
@@ -276,7 +293,82 @@ export function AddNewApplicationModal({
     };
   }, []);
 
-  const canSave = Boolean(clientId && isCodeId) && !saving && !loadingOptions;
+  useEffect(() => {
+    const id = (editApplicationId ?? "").trim();
+    if (!id) {
+      setLoadingEdit(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingEdit(true);
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const { data, error: fetchError } = await supabase
+          .from("bis_projects")
+          .select(
+            "id, project_kind, client_id, is_code_id, target_date, portal_user_id, portal_password, case_handled_by, case_referred_by, billing_amount, billing_frequency, is_qe_managed, notes",
+          )
+          .eq("id", id)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (fetchError) {
+          setError(fetchError.message);
+          setLoadingEdit(false);
+          return;
+        }
+        if (!data || !isApplicationProjectKind(data.project_kind)) {
+          setError("Application not found.");
+          setLoadingEdit(false);
+          return;
+        }
+
+        const scope = parseBisProjectLicenseScopeNotes(data.notes);
+        const amount =
+          data.billing_amount == null || data.billing_amount === ""
+            ? ""
+            : String(data.billing_amount);
+
+        setClientId(String(data.client_id ?? "").trim());
+        setIsCodeId(String(data.is_code_id ?? "").trim());
+        setTargetDate(toYmdOrEmpty(data.target_date));
+        setPortalUserId(String(data.portal_user_id ?? "").trim());
+        setPortalPassword(String(data.portal_password ?? "").trim());
+        setCaseHandledBy(
+          String(data.case_handled_by ?? "").trim() || DEFAULT_CASE_HANDLED_BY,
+        );
+        setCaseReferredBy(
+          String(data.case_referred_by ?? "").trim() || DEFAULT_CASE_REFERRED_BY,
+        );
+        setBillingAmount(amount || DEFAULT_BILLING_AMOUNT);
+        setBillingFrequency(
+          String(data.billing_frequency ?? "").trim() || DEFAULT_BILLING_FREQUENCY,
+        );
+        setIsQeManaged(data.is_qe_managed === false ? "0" : "1");
+        setScopeType(scope.scopeType);
+        setScopeColumnCount(scope.columnCount);
+        setScopeColumnHeaders(scope.columnHeaders);
+        setScopePlain(scope.plainText);
+        setScopeRowsJson(JSON.stringify(scope.rows));
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unable to load application.");
+        }
+      } finally {
+        if (!cancelled) setLoadingEdit(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editApplicationId]);
+
+  const canSave =
+    Boolean(clientId && isCodeId) && !saving && !loadingOptions && !loadingEdit;
 
   function handleScopeTypeChange(next: LicenseScopeFormat) {
     if (next === scopeType) return;
@@ -316,7 +408,7 @@ export function AddNewApplicationModal({
     if (!clientId || !isCodeId) return;
     setError(null);
     startSave(async () => {
-      const res = await createPendingApplication({
+      const payload = {
         clientId,
         isCodeId,
         targetDate: targetDate || null,
@@ -332,7 +424,13 @@ export function AddNewApplicationModal({
         licenseScopePlain: scopePlain,
         licenseScopeRowsJson: scopeRowsJson,
         isQeManaged: isQeManaged === "1",
-      });
+      };
+      const res = isEdit
+        ? await updatePendingApplication({
+            applicationId: editApplicationId!.trim(),
+            ...payload,
+          })
+        : await createPendingApplication(payload);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -366,7 +464,7 @@ export function AddNewApplicationModal({
               id="add-new-application-title"
               className="text-sm font-semibold text-zinc-50"
             >
-              New BIS Application
+              {isEdit ? "Edit BIS Application" : "New BIS Application"}
             </h2>
             <DialogCloseXButton
               onClick={onClose}
@@ -378,6 +476,11 @@ export function AddNewApplicationModal({
             onSubmit={handleCreate}
             className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4"
           >
+            {loadingEdit ? (
+              <p className="text-sm text-zinc-500 dark:text-zinc-400 sm:col-span-2 lg:col-span-4">
+                Loading application…
+              </p>
+            ) : null}
             <div className="min-w-0 sm:col-span-2 lg:col-span-4">
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 lg:grid-rows-[auto_auto] lg:gap-x-4 lg:gap-y-2">
                 <div className="flex min-w-0 flex-col gap-1 sm:col-span-2 lg:col-span-1 lg:contents">
@@ -643,7 +746,7 @@ export function AddNewApplicationModal({
             </div>
 
             <LicenseScopeField
-              key={`${scopeType}-${scopeColumnCount}`}
+              key={`${editApplicationId ?? "new"}-${scopeType}-${scopeColumnCount}`}
               scopeType={scopeType}
               plainText={scopePlain}
               rowsJson={scopeRowsJson}
@@ -665,7 +768,8 @@ export function AddNewApplicationModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                disabled={saving}
+                className="rounded-lg border border-zinc-300 bg-white px-4 py-2 text-sm font-medium text-zinc-800 shadow-sm hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
               >
                 Cancel
               </button>
@@ -674,7 +778,13 @@ export function AddNewApplicationModal({
                 disabled={!canSave}
                 className="rounded-lg bg-sky-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {saving ? "Creating…" : "Create Application"}
+                {saving
+                  ? isEdit
+                    ? "Saving…"
+                    : "Creating…"
+                  : isEdit
+                    ? "Save Changes"
+                    : "Create Application"}
               </button>
             </div>
           </form>

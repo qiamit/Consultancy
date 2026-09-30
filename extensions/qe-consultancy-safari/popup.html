@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>QE Consultancy</title>
-    <link rel="stylesheet" href="styles.css?v=2.2.21" />
+    <link rel="stylesheet" href="styles.css?v=2.2.28" />
   </head>
   <body>
     <main class="app">
@@ -47,22 +47,35 @@
       <section class="panel panel-manak" aria-labelledby="manakTitle">
         <div class="panel-head">
           <span class="step">2</span>
-          <h2 id="manakTitle">Manak Test Request</h2>
+          <h2 id="manakTitle">Manak Online</h2>
         </div>
-        <label class="tile tile-power" for="powerToggle">
-          <span class="tile-top">
-            <span class="tile-title">Auto flow</span>
-            <span class="switch">
-              <input id="powerToggle" type="checkbox" />
-              <span class="slider"></span>
+        <div class="toggle-grid manak-toggles">
+          <label class="tile tile-power" for="powerToggle">
+            <span class="tile-top">
+              <span class="tile-title">Manak Test Request</span>
+              <span class="switch">
+                <input id="powerToggle" type="checkbox" />
+                <span class="slider"></span>
+              </span>
             </span>
-          </span>
-          <span id="powerLabel" class="tile-hint">ON — login → Test Request → save back to app</span>
-        </label>
+            <span id="powerLabel" class="tile-hint">ON — login → Test Request → save back</span>
+          </label>
+          <label class="tile tile-power tile-import-qr" for="importQrToggle">
+            <span class="tile-top">
+              <span class="tile-title">Import QR Code</span>
+              <span class="switch">
+                <input id="importQrToggle" type="checkbox" />
+                <span class="slider"></span>
+              </span>
+            </span>
+            <span id="importQrLabel" class="tile-hint">OFF — enables after Login</span>
+          </label>
+        </div>
         <p class="flow-note">
-          Keep this ON. In Consultancy Pro, press the Manak / Login button on a sample.
-          Extension fills login, opens Test Request, submits, then returns Sample Code + PDF to the app.
+          <strong>Test Request:</strong> from Consultancy Pro 🧪 — auto-enables, login → fill → PDF + Sample Code, then turns OFF.
+          <strong>Import QR:</strong> Import → Available list only (no samples / no Test Request).
         </p>
+        <p id="importQrStatus" class="import-qr-status" aria-live="polite"></p>
       </section>
 
       <section class="panel panel-bulk" aria-labelledby="fillTitle">

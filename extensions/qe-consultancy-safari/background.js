@@ -1,9 +1,13 @@
 const STORAGE_KEY = "copyPasteBypassEnabled";
 const STORAGE_KEY_CTRL = "ctrlKeyBypassEnabled";
 const EBIS_LOGIN = "https://www.manakonline.in/MANAK/eBISLogin";
+const HOME_URL = "https://www.manakonline.in/MANAK/login";
+const GENERATE_QR_URL =
+  "https://www.manakonline.in/MANAK/employeeQrCodeGeneration";
 const TEST_REQUEST =
   "https://www.manakonline.in/MANAK/testRequestGenerationForApplicant";
 const RESULT_KIND = "QE_MANAK_TR_RESULT_V1";
+const QR_IMPORT_KIND = "QE_MANAK_QR_IMPORT_V1";
 const PLAY_STORE = /play\.google\.com|apps\.apple\.com|com\.bis\.app|itunes\.apple\.com/i;
 const APP_TAB_URLS = [
   "http://localhost/*",
@@ -96,12 +100,26 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   };
   if (lastPortal.userId || lastPortal.password) {
     apply(lastPortal.userId, lastPortal.password);
-    return;
+  } else {
+    chrome.storage.local.get(["qeManakPortal"], (data) => {
+      const portal = (data && data.qeManakPortal) || {};
+      apply(portal.userId, portal.password);
+    });
   }
-  chrome.storage.local.get(["qeManakPortal"], (data) => {
-    const portal = (data && data.qeManakPortal) || {};
-    apply(portal.userId, portal.password);
-  });
+  // After login, Import QR flow must land on Generate QR (Not Used Codes).
+  // Independent of Manak Test Request Auto-flow power.
+  if (changeInfo.status === "complete") {
+    chrome.storage.local.get(
+      ["qeManakImportQr", "qeManakImportQrEnabled"],
+      (data) => {
+        if (!data || data.qeManakImportQr !== true) return;
+        if (data.qeManakImportQrEnabled === false) return;
+        if (/ebislogin/i.test(url)) return;
+        if (/employeeQrCodeGeneration/i.test(url)) return;
+        void safeTabUpdate(tabId, { url: GENERATE_QR_URL });
+      },
+    );
+  }
 });
 
 if (hasWebNavigation && chrome.webNavigation.onCreatedNavigationTarget) {
@@ -242,6 +260,39 @@ function notifyAppTabs(result) {
     if (!tabId || seen.has(tabId)) return;
     seen.add(tabId);
     deliverResultToTab(tabId, result);
+  };
+  send(lastManakAppTabId || lastIsCodeAppTabId);
+  chrome.tabs.query({}, (all) => {
+    findAppTabIds(all).forEach(send);
+  });
+}
+
+function deliverQrImportToTab(tabId, result) {
+  if (!tabId || !result) return;
+  void safeSendTab(tabId, { type: "QE_MANAK_QR_IMPORT", result });
+  if (!chrome.scripting || !chrome.scripting.executeScript) return;
+  void settle(
+    chrome.scripting.executeScript({
+      target: { tabId },
+      func: (payload) => {
+        try {
+          window.postMessage({ type: "QE_MANAK_QR_IMPORT", result: payload }, "*");
+          window.dispatchEvent(new CustomEvent("qe-manak-qr-import", { detail: payload }));
+        } catch {
+          /* ignore */
+        }
+      },
+      args: [result],
+    }),
+  );
+}
+
+function notifyQrImportToApp(result) {
+  const seen = new Set();
+  const send = (tabId) => {
+    if (!tabId || seen.has(tabId)) return;
+    seen.add(tabId);
+    deliverQrImportToTab(tabId, result);
   };
   send(lastManakAppTabId || lastIsCodeAppTabId);
   chrome.tabs.query({}, (all) => {
@@ -408,6 +459,26 @@ function isManakPdfDownload(item) {
   const blob = `${item.url || ""} ${item.finalUrl || ""} ${item.filename || ""} ${item.mime || ""} ${item.referrer || ""}`;
   if (!/manakonline/i.test(blob)) return false;
   return /pdf/i.test(blob) || /\.pdf/i.test(item.filename || "");
+}
+
+async function isManakTrCaptureActive() {
+  try {
+    const data = await chrome.storage.local.get([
+      "pendingFill",
+      "qeManakEnabled",
+      "qeManakArmed",
+      "qeManakImportQr",
+    ]);
+    return (
+      Boolean(data) &&
+      data.qeManakEnabled !== false &&
+      data.qeManakArmed === true &&
+      data.qeManakImportQr !== true &&
+      Boolean(data.pendingFill)
+    );
+  } catch {
+    return false;
+  }
 }
 
 async function broadcastBypass(type, enabled) {
@@ -603,6 +674,11 @@ function tabSession(tabId) {
   return safeSendTab(tabId, { type: "QE_MANAK_SESSION" }).then((res) => res || null);
 }
 
+function isManakApplicantLoginUrl(url) {
+  // /MANAK/login is NOT eBIS login — do not treat it as a logged-in session.
+  return /manakonline\.in\/MANAK\/login\/?($|\?|#)/i.test(String(url || ""));
+}
+
 async function findLoggedInManakTab() {
   const tabs = await queryManakTabs();
   let any = null;
@@ -615,7 +691,13 @@ async function findLoggedInManakTab() {
       if (!any) any = { tab, session };
       continue;
     }
-    if (!pathGuess && /manakonline\.in/i.test(url) && !/ebislogin/i.test(url)) {
+    // Guess only for real applicant pages — never /MANAK/login or eBISLogin.
+    if (
+      !pathGuess &&
+      /manakonline\.in/i.test(url) &&
+      !/ebislogin/i.test(url) &&
+      !isManakApplicantLoginUrl(url)
+    ) {
       pathGuess = {
         tab,
         session: {
@@ -626,6 +708,19 @@ async function findLoggedInManakTab() {
     }
   }
   return any || pathGuess;
+}
+
+/** Import QR / login flows: only trust content-script confirmed sessions. */
+async function findConfirmedLoggedInManakTab() {
+  const tabs = await queryManakTabs();
+  for (const tab of tabs) {
+    if (!tab.id) continue;
+    const url = String(tab.url || tab.pendingUrl || "");
+    if (isManakApplicantLoginUrl(url) || /ebislogin/i.test(url)) continue;
+    const session = await tabSession(tab.id);
+    if (session && session.loggedIn) return { tab, session };
+  }
+  return null;
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -808,10 +903,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const portalUserId = String(message.portalUserId || payload?.portalUserId || "").trim();
     const portalPassword = String(message.portalPassword || payload?.portalPassword || "").trim();
     rememberPortal(portalUserId, portalPassword);
+    const importQr = Boolean(message.importQr);
+    const qrCount = Math.max(1, Math.min(50, Number(message.qrCount) || 1));
     const openKey = [
-      message.loginOnly ? "login" : "tr",
+      message.loginOnly ? "login" : importQr ? "import-qr" : "tr",
       portalUserId,
       (payload && payload.sampleId) || "",
+      importQr ? String(qrCount) : "",
     ].join("|");
     const now = Date.now();
     if (openKey === lastOpenKey && now - lastOpenAt < 2500) {
@@ -820,16 +918,63 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
     lastOpenKey = openKey;
     lastOpenAt = now;
-    const loginUrl =
-      typeof message.loginUrl === "string" && message.loginUrl.trim()
+    // Import QR must always use eBIS login — never /MANAK/login.
+    const ebisLoginUrl = ebisLoginHref(portalUserId, portalPassword);
+    const loginUrl = importQr
+      ? ebisLoginUrl
+      : typeof message.loginUrl === "string" && message.loginUrl.trim()
         ? message.loginUrl.trim()
-        : ebisLoginHref(portalUserId, portalPassword);
+        : ebisLoginUrl;
     void (async () => {
-      const data = await chrome.storage.local.get(["qeManakEnabled"]);
-      const on = !data || data.qeManakEnabled !== false;
-      if (message.loginOnly) {
+      if (importQr) {
+        // Import QR is independent of Manak Test Request Auto power.
+        // Section enables after Login; never create Test Request.
         await chrome.storage.local.set({
           pendingFill: null,
+          manakQrImport: null,
+          qeManakImportQr: true,
+          qeManakImportQrEnabled: false,
+          qeManakQrCount: qrCount,
+          qeManakArmed: true,
+          qeManakHomeReady: false,
+          qeManakImportQrTabId: 0,
+          qeManakPortal: {
+            userId: portalUserId,
+            password: portalPassword,
+          },
+        });
+        const reused = await findConfirmedLoggedInManakTab();
+        if (reused && reused.tab.id) {
+          await chrome.storage.local.set({
+            qeManakImportQrEnabled: true,
+            qeManakImportQrTabId: reused.tab.id,
+            pendingFill: null,
+          });
+          await safeTabUpdate(reused.tab.id, { active: true, url: GENERATE_QR_URL });
+          sendResponse({
+            ok: true,
+            message: "Already logged in. Import QR enabled — opening Not Used QR Codes…",
+          });
+          return;
+        }
+        const created = await safeTabCreate({ url: ebisLoginUrl });
+        if (created && created.id) {
+          await chrome.storage.local.set({ qeManakImportQrTabId: created.id });
+          scheduleLoginFill(created.id, portalUserId, portalPassword);
+        }
+        sendResponse({
+          ok: true,
+          message:
+            "Import QR armed. Opening eBIS login — captcha + Login, then Not Used QR import.",
+        });
+        return;
+      }
+      if (message.loginOnly) {
+        // App-started login always turns Manak Test Request Auto flow ON.
+        await chrome.storage.local.set({
+          pendingFill: null,
+          qeManakImportQr: false,
+          qeManakEnabled: true,
           qeManakArmed: true,
           qeManakHomeReady: false,
           qeManakPortal: {
@@ -843,26 +988,24 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         sendResponse({
           ok: true,
-          message: on
-            ? "Opening eBIS login. User ID / Password will be filled. Type captcha only."
-            : "Extension is OFF. Page opened without auto-fill.",
+          message: "Opening eBIS login. User ID / Password will be filled. Type captcha only.",
         });
         return;
       }
-      const reused = on ? await findLoggedInManakTab() : null;
-      const next = on
-        ? {
-            pendingFill: payload,
-            manakResult: null,
-            qeManakArmed: true,
-            qeManakHomeReady: Boolean(reused),
-            qeManakPortal: {
-              userId: portalUserId,
-              password: portalPassword,
-            },
-          }
-        : { manakResult: null, qeManakArmed: false };
-      await chrome.storage.local.set(next);
+      // Generate Test Request from app — always re-enable Auto flow (even if last run turned it OFF).
+      const reused = await findLoggedInManakTab();
+      await chrome.storage.local.set({
+        pendingFill: payload,
+        manakResult: null,
+        qeManakImportQr: false,
+        qeManakEnabled: true,
+        qeManakArmed: true,
+        qeManakHomeReady: Boolean(reused),
+        qeManakPortal: {
+          userId: portalUserId,
+          password: portalPassword,
+        },
+      });
       if (reused && reused.tab.id) {
         if (reused.session && reused.session.onTr) {
           await safeTabUpdate(reused.tab.id, { active: true });
@@ -872,7 +1015,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         }
         sendResponse({
           ok: true,
-          message: "Already logged in. Opening Test Request without a new login.",
+          message: "Manak Test Request ON. Already logged in — opening Test Request.",
         });
         return;
       }
@@ -882,9 +1025,8 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       }
       sendResponse({
         ok: true,
-        message: on
-          ? "No Manak session found. Opening eBIS login. Type captcha only."
-          : "Extension is OFF. Page opened without auto-fill.",
+        message:
+          "Manak Test Request ON. Opening eBIS login — type captcha, then Test Request fills automatically.",
       });
     })();
     return true;
@@ -892,6 +1034,46 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if ((message.type === "QE_MANAK_PDF" || message.type === "QE_MANAK_RESULT") && message.result) {
     storePdfResult(message.result);
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message.type === "QE_MANAK_QR_IMPORT" && message.result) {
+    const result = { ...message.result, autoSave: true };
+    const senderTabId = sender && sender.tab ? Number(sender.tab.id) || 0 : 0;
+    chrome.storage.local.get(["qeManakImportQrTabId"], (stored) => {
+      const tracked = Number((stored && stored.qeManakImportQrTabId) || 0) || 0;
+      chrome.storage.local.set({
+        manakQrImport: result,
+        qeManakImportQr: false,
+        qeManakImportQrEnabled: false,
+        qeManakImportQrTabId: 0,
+        pendingFill: null,
+      });
+      notifyQrImportToApp(result);
+      const closeIds = new Set([senderTabId, tracked].filter(Boolean));
+      if (message.closeTab || message.finishImport) {
+        closeIds.forEach((id) => {
+          void settle(chrome.tabs.remove(id)).catch(() => {});
+        });
+      }
+    });
+    sendResponse({ ok: true });
+    return true;
+  }
+
+  if (message.type === "QE_MANAK_FINISH_TR") {
+    const senderTabId = sender && sender.tab ? Number(sender.tab.id) || 0 : 0;
+    void chrome.storage.local.set({
+      pendingFill: null,
+      qeManakArmed: false,
+      qeManakEnabled: false,
+      qeManakHomeReady: false,
+      qeManakImportQr: false,
+    });
+    if (message.closeTab && senderTabId) {
+      void settle(chrome.tabs.remove(senderTabId)).catch(() => {});
+    }
     sendResponse({ ok: true });
     return true;
   }
@@ -1269,7 +1451,10 @@ if (hasDownloads) {
   chrome.downloads.onCreated.addListener((item) => {
     const blob = `${item.url || ""} ${item.finalUrl || ""} ${item.filename || ""}`;
     if (isManakPdfDownload(item)) {
-      askManakTabsForPdf(item.url || item.finalUrl || "", item.filename || "");
+      void isManakTrCaptureActive().then((active) => {
+        if (!active) return;
+        askManakTabsForPdf(item.url || item.finalUrl || "", item.filename || "");
+      });
       return;
     }
     if (!isCodeFetchActive) return;
@@ -1322,6 +1507,8 @@ if (hasDownloads) {
         }
       }
       if (!isManakPdfDownload(item)) return;
+      // Manual Manak downloads (Test Report etc.) must stay intact when TR capture is OFF.
+      if (!(await isManakTrCaptureActive())) return;
       askManakTabsForPdf(item.url || item.finalUrl || "", item.filename || "");
       let captured = false;
       try {

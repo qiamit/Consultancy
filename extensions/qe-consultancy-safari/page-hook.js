@@ -9,6 +9,35 @@
     return blocked.test(String(url || ""));
   }
 
+  /** Only steal PDFs while Consultancy Pro Test Request capture is armed. */
+  function isTrCaptureActive() {
+    return document.documentElement.getAttribute("data-qe-manak-capture") === "1";
+  }
+
+  /** Quiet page alerts without injecting inline scripts (Manak CSP blocks those). */
+  function applyAlertSilence() {
+    if (document.documentElement.getAttribute("data-qe-silence-alert") !== "1") return;
+    if (window.__qeAlertQuiet) return;
+    window.__qeAlertQuiet = true;
+    if (!window.__qeNativeAlert) window.__qeNativeAlert = window.alert;
+    try {
+      window.alert = function () {};
+    } catch {
+      /* ignore */
+    }
+  }
+
+  document.addEventListener("qe-silence-alert", applyAlertSilence, true);
+  try {
+    new MutationObserver(applyAlertSilence).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-qe-silence-alert"],
+    });
+  } catch {
+    /* ignore */
+  }
+  applyAlertSilence();
+
   function isPdfLike(url) {
     const href = String(url || "");
     if (/testRequestGenerationForApplicant/i.test(href) && !/\.pdf/i.test(href)) return false;
@@ -32,6 +61,7 @@
   }
 
   function publishPdfBuffer(url, buf, name) {
+    if (!isTrCaptureActive()) return;
     if (!buf || buf.byteLength < 80) return;
     const head = String.fromCharCode.apply(null, new Uint8Array(buf.slice(0, 5)));
     if (head !== "%PDF-") return;
@@ -61,6 +91,7 @@
   }
 
   async function fetchPdfToPage(url) {
+    if (!isTrCaptureActive()) return;
     const href = String(url || "");
     if (!href || blockedUrl(href) || /^javascript:/i.test(href) || href === "#") return;
     try {
@@ -73,6 +104,7 @@
   }
 
   async function fetchFormAsPdf(form, extra) {
+    if (!isTrCaptureActive()) return false;
     if (!form) return false;
     const params = new URLSearchParams();
     Array.from(form.elements || []).forEach((el) => {
@@ -118,7 +150,7 @@
     if (window.__doPostBack.__qeWrapped) return;
     const orig = window.__doPostBack;
     function wrapped(target, arg) {
-      if (isDownloadPostback(target, arg)) {
+      if (isTrCaptureActive() && isDownloadPostback(target, arg)) {
         const form =
           document.getElementById("aspnetForm") ||
           document.querySelector("form[action]") ||
@@ -158,6 +190,7 @@
   }
 
   document.addEventListener("qe-manak-download-pdf", () => {
+    if (!isTrCaptureActive()) return;
     const btn = findDownloadControl();
     const form =
       document.getElementById("aspnetForm") ||
@@ -218,7 +251,10 @@
           try {
             const ct = res && res.headers && res.headers.get("content-type");
             rememberIfPdf(res && res.url ? res.url : href, ct);
-            if (/pdf/i.test(String(ct || "")) || isPdfLike(res && res.url ? res.url : href)) {
+            if (
+              isTrCaptureActive() &&
+              (/pdf/i.test(String(ct || "")) || isPdfLike(res && res.url ? res.url : href))
+            ) {
               res
                 .clone()
                 .arrayBuffer()
@@ -246,7 +282,7 @@
             const ct = this.getResponseHeader("content-type");
             const href = this.responseURL || this.__qeUrl;
             rememberIfPdf(href, ct);
-            if (/pdf/i.test(String(ct || "")) || isPdfLike(href)) {
+            if (isTrCaptureActive() && (/pdf/i.test(String(ct || "")) || isPdfLike(href))) {
               const buf = this.responseType === "arraybuffer" ? this.response : null;
               if (buf && buf.byteLength) publishPdfBuffer(href, buf, String(href || "").split("/").pop());
             }
@@ -261,11 +297,23 @@
   hookNetworkPdf();
 
   function lockPrint() {
+    if (!window.__qeNativePrint) window.__qeNativePrint = window.print;
+    if (!isTrCaptureActive()) {
+      try {
+        Object.defineProperty(window, "print", {
+          configurable: true,
+          writable: true,
+          value: window.__qeNativePrint,
+        });
+      } catch {
+        window.print = window.__qeNativePrint;
+      }
+      return;
+    }
     function silentPrint() {
       document.documentElement.setAttribute("data-qe-print-requested", "1");
       return false;
     }
-    if (!window.__qeNativePrint) window.__qeNativePrint = window.print;
     try {
       Object.defineProperty(window, "print", {
         configurable: true,
@@ -331,9 +379,12 @@
         event.stopImmediatePropagation();
         return;
       }
+      if (!isTrCaptureActive()) return;
       rememberPdfUrl(href);
       const downloadAttr = link.getAttribute("download") || "";
       const label = String(link.textContent || link.title || "").toLowerCase();
+      // Never hijack Test Report downloads — only Test Request PDFs.
+      if (/test\s*report/.test(label) && !/test\s*request/.test(label)) return;
       const looksTrPdf =
         isPdfLike(href) ||
         /\.pdf/i.test(downloadAttr) ||

@@ -27,6 +27,62 @@
     return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
 
+  /** Tell MAIN-world page-hook when Test Request PDF capture may intercept downloads. */
+  function setTrCaptureFlag(on) {
+    try {
+      if (on) document.documentElement.setAttribute("data-qe-manak-capture", "1");
+      else document.documentElement.removeAttribute("data-qe-manak-capture");
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function syncTrCaptureFlagFromStorage(data) {
+    const on =
+      Boolean(data) &&
+      data.qeManakEnabled !== false &&
+      data.qeManakArmed === true &&
+      data.qeManakImportQr !== true &&
+      Boolean(data.pendingFill);
+    setTrCaptureFlag(on);
+    return on;
+  }
+
+  function refreshTrCaptureFlag() {
+    return new Promise((resolve) => {
+      chrome.storage.local.get(
+        ["pendingFill", "qeManakEnabled", "qeManakArmed", "qeManakImportQr"],
+        (data) => resolve(syncTrCaptureFlagFromStorage(data || {})),
+      );
+    });
+  }
+
+  function finishTestRequestAndClose(payload) {
+    if (window.__qeManakFinished) return;
+    window.__qeManakFinished = true;
+    setTrCaptureFlag(false);
+    try {
+      chrome.storage.local.set({
+        pendingFill: null,
+        qeManakArmed: false,
+        qeManakEnabled: false,
+        qeManakHomeReady: false,
+      });
+    } catch {
+      /* ignore */
+    }
+    showBanner("Test Request saved. Disabling Manak auto-flow and closing tab…", true);
+    try {
+      chrome.runtime.sendMessage({
+        type: "QE_MANAK_FINISH_TR",
+        closeTab: true,
+        sampleId: text(payload && payload.sampleId),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
   function lookup(payload, key) {
     const parts = String(key).split(".");
     let cur = payload;
@@ -997,6 +1053,12 @@
       }
       window.__qeManakPdfSent = true;
       showBanner("Test Request PDF sent to Consultancy Pro for attach.", true);
+      window.setTimeout(() => {
+        const code =
+          cleanSampleCode(readSampleCodeFromPage() || meta.sample_code) || meta.sample_code;
+        if (code) publishResult(payload, code);
+        if (text(payload.sampleId) || code) finishTestRequestAndClose(payload);
+      }, 1400);
     } catch {
       window.__qeManakPdfSending = false;
       showBanner("PDF send failed. Retrying capture…", false);
@@ -1094,7 +1156,8 @@
   function startCaptchaContinue(payload, mode) {
     if (window.__qeManakCaptchaWatch) return;
     window.__qeManakCaptchaWatch = true;
-    const loginMode = mode === "login" || isLoginPage();
+    const importQrMode = mode === "import-qr";
+    const loginMode = importQrMode || mode === "login" || isLoginPage();
     const needsCaptcha = pageHasCaptcha() || loginMode;
 
     if (!loginMode && !needsCaptcha) {
@@ -1115,12 +1178,54 @@
       const clicked = clickContinueAfterCaptcha();
       showBanner(
         clicked
-          ? loginMode
-            ? "Captcha accepted. Opening Home…"
-            : "Captcha accepted. Submitting Test Request…"
+          ? importQrMode
+            ? "Captcha accepted. Opening Generate QR Codes…"
+            : loginMode
+              ? "Captcha accepted. Opening Home…"
+              : "Captcha accepted. Submitting Test Request…"
           : "Captcha filled. Click Sign In / Submit if the page is waiting.",
         clicked,
       );
+      if (importQrMode) {
+        // Login clicked → enable Import QR section, then open Generate QR (never Test Request).
+        chrome.storage.local.set({
+          qeManakImportQrEnabled: true,
+          pendingFill: null,
+          qeManakImportQr: true,
+        });
+        const qrUrl =
+          (map && map.generateQrUrl) ||
+          "https://www.manakonline.in/MANAK/employeeQrCodeGeneration";
+        window.setTimeout(() => {
+          if (/employeeQrCodeGeneration/i.test(location.pathname || "")) return;
+          if (isLoginPage() && !isLoggedInSession()) return;
+          location.href = qrUrl;
+        }, 1600);
+        return;
+      }
+      if (loginMode) {
+        // Login success → keep Manak Test Request ON and open Test Request page.
+        chrome.storage.local.set({
+          qeManakEnabled: true,
+          qeManakArmed: true,
+          qeManakHomeReady: true,
+          qeManakImportQr: false,
+          pendingFill: payload || null,
+        });
+        setTrCaptureFlag(Boolean(payload && payload.sampleId));
+        const trUrl = (map && map.testRequestUrl) || TR_URL;
+        window.setTimeout(() => {
+          if (isLoginPage() && !isLoggedInSession()) return;
+          if (isTrPage()) {
+            void runWorkflow(payload, { force: true });
+            return;
+          }
+          sessionStorage.setItem("qeManakHomeReady", "1");
+          sessionStorage.setItem("qeManakOpenedTr", "1");
+          location.href = trUrl;
+        }, 1800);
+        return;
+      }
       if (!loginMode) {
         await sleep(1200);
         const confirmWrap = document.querySelector(".modal, .ui-dialog, [role='dialog']");
@@ -1687,7 +1792,13 @@
       return { ok: false, message: "Extension auto-work is not armed." };
     }
 
-    chrome.storage.local.set({ pendingFill: payload, qeManakArmed: true });
+    chrome.storage.local.set({
+      pendingFill: payload,
+      qeManakArmed: true,
+      qeManakEnabled: true,
+      qeManakImportQr: false,
+    });
+    setTrCaptureFlag(true);
     const portal = state.qeManakPortal || {};
     const wantedUser = text(portal.userId || payload.portalUserId);
     const wantedPassword = text(portal.password || payload.portalPassword);
@@ -1792,6 +1903,283 @@
     };
   }
 
+  function generateQrPageUrl() {
+    return (
+      map.generateQrUrl ||
+      "https://www.manakonline.in/MANAK/employeeQrCodeGeneration"
+    );
+  }
+
+  function isGenerateQrPage() {
+    const path = normalize(location.pathname || "");
+    const blob = normalize(document.body ? document.body.innerText.slice(0, 2500) : "");
+    if (/employeeqrcodegeneration|generateqr|generate.?qr|qrcodegeneration/i.test(path)) {
+      return true;
+    }
+    if (document.getElementById("flagChange") && document.getElementById("generate")) {
+      return true;
+    }
+    return /generate qr code|generate new code|not used codes|available codes|available qr/i.test(
+      blob,
+    );
+  }
+
+  /** Import QR: only 12-digit Manak QR numbers (e.g. 100001399254). */
+  function isLikelyQrCodeValue(value) {
+    return /^\d{12}$/.test(text(value).replace(/\s+/g, ""));
+  }
+
+  function scrapeQrCodesFromPage() {
+    const found = new Set();
+    const add = (value) => {
+      const v = text(value).replace(/\s+/g, "");
+      if (isLikelyQrCodeValue(v)) found.add(v);
+    };
+    const addFromText = (raw) => {
+      const t = text(raw || "").replace(/\s+/g, " ");
+      (t.match(/\b\d{12}\b/g) || []).forEach(add);
+    };
+    // Not Used / Available Codes list — prefer visible 12-digit codes.
+    document
+      .querySelectorAll(
+        'input[name="chk"], input[name="chk[]"], input[id^="numId"], input[name^="numId"], input[id*="numId" i]',
+      )
+      .forEach((el) => {
+        if (!el) return;
+        add(el.value);
+        const row = el.closest("tr, li, label, div, td") || el.parentElement;
+        if (row) addFromText(row.textContent || "");
+      });
+    document
+      .querySelectorAll(
+        "#qrcodeNumber, input[name='qrcodeNumber'], input[id*='qr' i], input[name*='qr' i], td, th, label, span",
+      )
+      .forEach((el) => {
+        if (!el) return;
+        if (el.tagName === "INPUT" || el.tagName === "TEXTAREA") add(el.value);
+        addFromText(el.textContent || "");
+      });
+    const available =
+      document.querySelector("#availableCodes, .availableCodes, #AvailableCodes") ||
+      document.body;
+    if (available) addFromText(available.innerText || available.textContent || "");
+    return Array.from(found);
+  }
+
+  function setFlagChangeMode(mode) {
+    const sel =
+      document.getElementById("flagChange") ||
+      document.querySelector("select#flagChange, select[name='flagChange']");
+    if (!sel || !sel.options) return false;
+    const wantGenerate = mode === "generate";
+    const hit = Array.from(sel.options).find((opt) => {
+      const label = normalize(opt.textContent || opt.value || "");
+      if (wantGenerate) return /generate new code|new code/i.test(label) || String(opt.value) === "1";
+      return /not used codes|unused|available/i.test(label) || String(opt.value) === "2";
+    });
+    if (!hit) return false;
+    sel.value = hit.value;
+    sel.dispatchEvent(new Event("input", { bubbles: true }));
+    sel.dispatchEvent(new Event("change", { bubbles: true }));
+    const $ = window.jQuery || window.$;
+    if ($) {
+      try {
+        $(sel).val(hit.value).trigger("change");
+      } catch {
+        /* ignore */
+      }
+    }
+    return true;
+  }
+
+  function selectGenerateNewCode() {
+    return setFlagChangeMode("generate");
+  }
+
+  function selectNotUsedCodes() {
+    return setFlagChangeMode("unused");
+  }
+
+  function setQrCodeCount(count) {
+    const n = Math.max(1, Math.min(50, Number(count) || 1));
+    const input =
+      document.getElementById("codeCount") ||
+      document.querySelector(
+        "input#codeCount, input[name='codeCount'], input[placeholder*='Count' i]",
+      );
+    if (!input) return false;
+    input.focus();
+    input.value = String(n);
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    const $ = window.jQuery || window.$;
+    if ($) {
+      try {
+        $(input).val(String(n)).trigger("change");
+      } catch {
+        /* ignore */
+      }
+    }
+    return true;
+  }
+
+  function clickGenerateQrButton() {
+    const byId = document.getElementById("generate");
+    if (byId && typeof byId.click === "function") {
+      byId.click();
+      return true;
+    }
+    if (typeof window.transferChecked === "function") {
+      try {
+        window.transferChecked(2);
+        return true;
+      } catch {
+        /* ignore */
+      }
+    }
+    return (
+      clickByLabels([
+        "print",
+        "generate",
+        "generate qr code",
+        "generate qr",
+        "generate new code",
+      ]) || false
+    );
+  }
+
+  async function publishImportedQrCodes(codes) {
+    const qr_codes = Array.from(
+      new Set((codes || []).map((c) => text(c).replace(/\s+/g, "")).filter(isLikelyQrCodeValue)),
+    );
+    if (!qr_codes.length) return false;
+    const result = {
+      kind: "QE_MANAK_QR_IMPORT_V1",
+      qr_codes,
+      filledAt: Date.now(),
+      autoSave: true,
+    };
+    try {
+      await navigator.clipboard.writeText(JSON.stringify(result));
+    } catch {
+      /* ignore */
+    }
+    try {
+      chrome.runtime.sendMessage({
+        type: "QE_MANAK_QR_IMPORT",
+        result,
+        closeTab: true,
+        finishImport: true,
+      });
+    } catch {
+      /* ignore */
+    }
+    showBanner(`Imported ${qr_codes.length} QR code(s). Closing tab…`, true);
+    return true;
+  }
+
+  async function runImportQrWorkflow() {
+    // Import QR is independent of Manak Test Request Auto-flow power.
+    const state = await new Promise((resolve) => {
+      chrome.storage.local.get(
+        [
+          "qeManakImportQr",
+          "qeManakImportQrEnabled",
+          "qeManakQrCount",
+          "qeManakPortal",
+          "qeManakArmed",
+        ],
+        (data) => resolve(data || {}),
+      );
+    });
+    if (state.qeManakImportQr !== true) {
+      return { ok: false, message: "Import QR is not armed." };
+    }
+    // Never start a Test Request during Import QR.
+    chrome.storage.local.set({ pendingFill: null });
+    const wantedCount = Math.max(1, Math.min(50, Number(state.qeManakQrCount) || 1));
+    const portal = state.qeManakPortal || {};
+    const qrUrl = generateQrPageUrl();
+    const sectionOn = state.qeManakImportQrEnabled === true;
+
+    // If we landed on /MANAK/login by mistake, bounce to real eBIS login.
+    if (/\/manak\/login\/?$/i.test(location.pathname) && !isLoggedInSession()) {
+      const ebis =
+        (map && map.loginUrl) || "https://www.manakonline.in/MANAK/eBISLogin";
+      const u = new URL(ebis);
+      if (portal.userId) u.searchParams.set("userId", portal.userId);
+      if (portal.password) u.searchParams.set("passwd", portal.password);
+      location.href = u.toString();
+      return { ok: true, message: "Redirecting to eBIS login…" };
+    }
+
+    if (isLoginPage()) {
+      if (isLoggedInSession()) {
+        chrome.storage.local.set({
+          qeManakHomeReady: true,
+          qeManakImportQrEnabled: true,
+          pendingFill: null,
+        });
+        location.href = qrUrl;
+        return { ok: true, message: "Logged in. Import QR enabled — opening Generate QR." };
+      }
+      fillLoginFields(portal.userId, portal.password);
+      [400, 1200, 2500].forEach((ms) => {
+        window.setTimeout(() => fillLoginFields(portal.userId, portal.password), ms);
+      });
+      startCaptchaContinue({}, "import-qr");
+      showBanner(
+        "Import QR: eBIS login — User ID & password filled. Type captcha and click Login.",
+        true,
+      );
+      return { ok: true, message: "Waiting for eBIS login captcha." };
+    }
+
+    if (isGenerateQrPage()) {
+      if (!sectionOn) {
+        showBanner("Waiting — Import QR section enables right after Login…", true);
+        return { ok: true, message: "Waiting for Import QR enable." };
+      }
+      showBanner("Collecting Available / Not Used 12-digit QR Codes…", true);
+      selectNotUsedCodes();
+      await sleep(900);
+      const codes = scrapeQrCodesFromPage();
+
+      if (codes.length === 0) {
+        showBanner(
+          "No 12-digit Not Used QR codes yet. Stay on Not Used Codes — they will import automatically.",
+          false,
+        );
+        const obs = new MutationObserver(() => {
+          const next = scrapeQrCodesFromPage();
+          if (next.length > 0) {
+            obs.disconnect();
+            void publishImportedQrCodes(next.slice(0, 50));
+          }
+        });
+        if (document.body) obs.observe(document.body, { childList: true, subtree: true });
+        window.setTimeout(() => obs.disconnect(), 10 * 60 * 1000);
+        return { ok: true, message: "Watching Generate QR page." };
+      }
+      await publishImportedQrCodes(codes.slice(0, Math.max(wantedCount, Math.min(50, codes.length))));
+      return { ok: true, message: "QR codes imported." };
+    }
+
+    // After successful login (Home / session) — enable section then open QR page only.
+    if (isHomePage() || isLoggedInSession()) {
+      chrome.storage.local.set({
+        qeManakImportQrEnabled: true,
+        pendingFill: null,
+      });
+      sessionStorage.setItem("qeManakOpenedQr", "1");
+      showBanner("Import QR enabled. Opening Not Used QR Codes…", true);
+      location.href = qrUrl;
+      return { ok: true, message: "Navigating to Generate QR…" };
+    }
+
+    return { ok: true, message: "Import QR armed — complete login first." };
+  }
+
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     if (!msg || typeof msg !== "object") return;
 
@@ -1865,26 +2253,61 @@
     fillLoginFields(next.userId, next.password);
   }
 
-  chrome.storage.local.get(["pendingFill", "qeManakEnabled", "qeManakArmed", "qeManakPortal"], (data) => {
-    if (isKnowFeesPage()) return;
-    if (!data || data.qeManakEnabled === false) return;
-    if (isLoginPage()) {
-      const portal = data.qeManakPortal || {};
-      applyStoredPortal(portal);
-      [400, 1200, 2500, 4500].forEach((ms) => {
-        window.setTimeout(() => applyStoredPortal(portal), ms);
-      });
-    }
-    if (data.qeManakArmed !== true) return;
-    const pending = data.pendingFill;
-    if (!pending) return;
-    void runWorkflow(pending);
-  });
+  chrome.storage.local.get(
+    [
+      "pendingFill",
+      "qeManakEnabled",
+      "qeManakArmed",
+      "qeManakPortal",
+      "qeManakImportQr",
+      "qeManakImportQrEnabled",
+      "qeManakQrCount",
+    ],
+    (data) => {
+      if (isKnowFeesPage()) return;
+      syncTrCaptureFlagFromStorage(data || {});
+      const importArmed = data?.qeManakImportQr === true;
+      const trOn = !data || data.qeManakEnabled !== false;
+      // Fill login for Import QR even when Manak Test Request Auto is OFF.
+      if (isLoginPage() && (importArmed || trOn)) {
+        const portal = data.qeManakPortal || {};
+        applyStoredPortal(portal);
+        [400, 1200, 2500, 4500].forEach((ms) => {
+          window.setTimeout(() => applyStoredPortal(portal), ms);
+        });
+      }
+      if (importArmed) {
+        // Import QR armed — never run Test Request fill on this session.
+        setTrCaptureFlag(false);
+        void runImportQrWorkflow();
+        return;
+      }
+      if (!trOn) return;
+      if (data.qeManakArmed !== true) return;
+      const pending = data.pendingFill;
+      if (!pending) return;
+      void runWorkflow(pending);
+    },
+  );
 
   try {
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area !== "local" || !changes.qeManakPortal) return;
-      applyStoredPortal(changes.qeManakPortal.newValue || {});
+      if (area !== "local") return;
+      if (changes.qeManakPortal) {
+        applyStoredPortal(changes.qeManakPortal.newValue || {});
+      }
+      if (
+        changes.pendingFill ||
+        changes.qeManakEnabled ||
+        changes.qeManakArmed ||
+        changes.qeManakImportQr
+      ) {
+        void refreshTrCaptureFlag();
+      }
+      // App re-armed Import QR while this Manak tab is open.
+      if (changes.qeManakImportQr?.newValue === true) {
+        void runImportQrWorkflow();
+      }
     });
   } catch {
     /* ignore */

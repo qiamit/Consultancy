@@ -1369,6 +1369,13 @@ function ApplicationFormModal({
         .maybeSingle();
       if (saveGen !== notesSaveGenRef.current) return;
       let mergedPayload = payload;
+      const sectionJsonLen = (value: unknown) => {
+        try {
+          return JSON.stringify(value ?? null).length;
+        } catch {
+          return 0;
+        }
+      };
       try {
         const existingObj = JSON.parse(
           String(existingRow?.notes ?? "").trim() || "{}",
@@ -1380,6 +1387,8 @@ function ApplicationFormModal({
             "license_scope",
             "license_scope_format",
             "license_scope_rows",
+            "license_scope_column_count",
+            "license_scope_column_headers",
             "osl_sample_requirements",
             "pi_sample_requirements",
             "top_management",
@@ -1417,10 +1426,27 @@ function ApplicationFormModal({
           if (overrides.piSampleRequirements !== undefined && (overrides.piSampleRequirements?.length ?? 0) === 0) {
             explicitClear.add("pi_sample_requirements");
           }
-          for (const key of preserveKeys) {
-            if (!(key in newObj) && key in existingObj && !explicitClear.has(key)) {
+          const preferExistingSection = (key: string) => {
+            if (explicitClear.has(key)) return;
+            if (!(key in existingObj)) return;
+            const existingLen = sectionJsonLen(existingObj[key]);
+            const nextLen = key in newObj ? sectionJsonLen(newObj[key]) : 0;
+            // Missing locally, or local snapshot is much thinner than DB (stale hydrate).
+            if (!(key in newObj) || (existingLen > 200 && nextLen < Math.max(40, existingLen * 0.35))) {
               newObj[key] = existingObj[key];
             }
+          };
+          for (const key of preserveKeys) {
+            preferExistingSection(key);
+          }
+          // Checklist items: keep richer DB copy unless this save explicitly sent items.
+          if (
+            overrides.items === undefined &&
+            Array.isArray(existingObj.items) &&
+            sectionJsonLen(existingObj.items) > sectionJsonLen(newObj.items) * 2 &&
+            sectionJsonLen(existingObj.items) > 500
+          ) {
+            newObj.items = existingObj.items;
           }
           // Keep existing Process Flow Chart only when this save has no chart content
           // (blank snapshot). Explicit Save with content must always win — including
@@ -1466,7 +1492,42 @@ function ApplicationFormModal({
 
       // Hard stop: refuse accidental wipe of large saved notes.
       const existingLen = String(existingRow?.notes ?? "").trim().length;
-      const nextLen = String(mergedPayload ?? "").trim().length;
+      let nextLen = String(mergedPayload ?? "").trim().length;
+      if (existingLen > 5000 && nextLen < Math.max(1000, existingLen * 0.35)) {
+        // Last-chance heal: force-copy any still-missing large sections from DB.
+        try {
+          const existingObj = JSON.parse(
+            String(existingRow?.notes ?? "").trim() || "{}",
+          ) as Record<string, unknown>;
+          const newObj = JSON.parse(String(mergedPayload || "{}")) as Record<string, unknown>;
+          if (existingObj?.type === "application_checklist" && newObj) {
+            for (const [key, value] of Object.entries(existingObj)) {
+              if (key === "type" || key === "meta") continue;
+              const exLen = sectionJsonLen(value);
+              const nwLen = key in newObj ? sectionJsonLen(newObj[key]) : 0;
+              if (exLen > 200 && nwLen < Math.max(40, exLen * 0.35)) {
+                newObj[key] = value;
+              }
+            }
+            if (
+              existingObj.meta &&
+              typeof existingObj.meta === "object" &&
+              newObj.meta &&
+              typeof newObj.meta === "object"
+            ) {
+              newObj.meta = mergeApplicationMetaPreferFilled(
+                existingObj.meta as ApplicationMeta,
+                newObj.meta as ApplicationMeta,
+                applicationMetaRef.current,
+              );
+            }
+            mergedPayload = JSON.stringify(newObj);
+            nextLen = mergedPayload.length;
+          }
+        } catch {
+          /* keep refuse path below */
+        }
+      }
       if (existingLen > 5000 && nextLen < Math.max(1000, existingLen * 0.35)) {
         console.error("Refusing notes save that would wipe most checklist data", {
           existingLen,
@@ -3797,6 +3858,8 @@ export function PendingApplicationsSection({
   const [pageSize, setPageSize] = useState<number>(100);
   const [convertRow, setConvertRow] = useState<ApplicationRow | null>(null);
   const [addApplicationOpen, setAddApplicationOpen] = useState(false);
+  const [editInclusionId, setEditInclusionId] = useState<string | null>(null);
+  const [editApplicationId, setEditApplicationId] = useState<string | null>(null);
   const [viewRow, setViewRow] = useState<ApplicationRow | null>(null);
   const [isCodeView, setIsCodeView] = useState<{ id: string; is_number: string | null; revision_year: number | null } | null>(null);
   const [targetDates, setTargetDates] = useState<Record<string, string>>({});
@@ -4309,6 +4372,23 @@ export function PendingApplicationsSection({
                       </button>
                     ) : (
                       <div className="inline-flex flex-nowrap items-center justify-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isInclusion) {
+                              setEditInclusionId(r.id);
+                              return;
+                            }
+                            setEditApplicationId(r.id);
+                          }}
+                          title={isInclusion ? "Edit Inclusion" : "Edit Application"}
+                          aria-label={isInclusion ? "Edit Inclusion" : "Edit Application"}
+                          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-300 bg-white text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
                         {!isInclusion ? (
                           <button
                             type="button"
@@ -4530,19 +4610,35 @@ export function PendingApplicationsSection({
         }
       />
     )}
-    {addApplicationOpen && !isExpired && !isInclusion && (
+    {(addApplicationOpen || editApplicationId) && !isExpired && !isInclusion && (
       <AddNewApplicationModal
-        onClose={() => setAddApplicationOpen(false)}
+        key={editApplicationId ?? "new-application"}
+        editApplicationId={editApplicationId}
+        onClose={() => {
+          setAddApplicationOpen(false);
+          setEditApplicationId(null);
+        }}
         onCreated={() => router.refresh()}
       />
     )}
-    {addApplicationOpen && isInclusion && (
+    {(addApplicationOpen || editInclusionId) && isInclusion && (
       <StartInclusionFromLicenseModal
+        key={editInclusionId ?? "new-inclusion"}
         licenses={inclusionLicenses}
         clients={inclusionClients}
-        onClose={() => setAddApplicationOpen(false)}
-        onCreated={(id) => {
+        editInclusionId={editInclusionId}
+        onClose={() => {
           setAddApplicationOpen(false);
+          setEditInclusionId(null);
+        }}
+        onCreated={(id) => {
+          const wasEdit = Boolean(editInclusionId);
+          setAddApplicationOpen(false);
+          setEditInclusionId(null);
+          if (wasEdit) {
+            router.refresh();
+            return;
+          }
           const params = new URLSearchParams(searchParams.toString());
           params.set(PREPARATION_QUERY, id);
           params.delete(PREPARATION_DOC_QUERY);

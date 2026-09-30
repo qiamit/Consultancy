@@ -38,19 +38,30 @@ function clientDisplayLabel(c: {
 
 export function OslSampleFormModal({
   initial = null,
+  prefillQrCode = "",
+  availableQrCodes = [],
   clientOptions,
   onClientsChanged,
   onSave,
   onClose,
 }: {
   initial?: OslSampleRequirementRow | null;
+  /** When adding a new sample from Available QR, pre-select this code. */
+  prefillQrCode?: string;
+  /** Unused 12-digit QR codes imported from Manak (Not Used Codes). */
+  availableQrCodes?: string[];
   clientOptions: AppDropdownOptionRow[];
   onClientsChanged: () => void | Promise<void>;
   onSave: (row: OslSampleRequirementRow) => void;
   onClose: () => void;
 }) {
   const isEdit = Boolean(initial);
-  const [draft] = useState(() => initial ?? createOslSampleRequirementRow());
+  const [draft] = useState(() => {
+    const base = initial ?? createOslSampleRequirementRow();
+    const prefill = prefillQrCode.trim();
+    if (!initial && prefill) return { ...base, qr_code: prefill };
+    return base;
+  });
   const [sampleDescription, setSampleDescription] = useState(
     () => resolveGradeAndDescription(draft).sample_description,
   );
@@ -76,7 +87,24 @@ export function OslSampleFormModal({
     draft.batch_quantity?.trim() || "0.50 Tonne Approx",
   );
   const [sampleCode, setSampleCode] = useState(draft.sample_code);
-  const [qrCode, setQrCode] = useState(draft.qr_code);
+  const [qrCode, setQrCode] = useState(() => draft.qr_code.trim());
+  const qrSelectOptions = (() => {
+    const seen = new Set<string>();
+    const list: string[] = [];
+    const current = qrCode.trim();
+    // Keep current value in the list while editing (even if already assigned).
+    if (current) {
+      seen.add(current);
+      list.push(current);
+    }
+    for (const code of availableQrCodes) {
+      const v = code.trim();
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      list.push(v);
+    }
+    return list;
+  })();
   const [sampleType, setSampleType] = useState(
     draft.sample_type?.trim() || "AS",
   );
@@ -258,14 +286,24 @@ export function OslSampleFormModal({
                     <label className={fieldLabelClass} htmlFor="osl-qr-code">
                       QR Code
                     </label>
-                    <input
+                    <select
                       id="osl-qr-code"
-                      type="text"
-                      value={qrCode}
+                      value={qrCode.trim()}
                       onChange={(e) => setQrCode(e.target.value)}
                       className={fieldInputClass}
-                      placeholder="QR…"
-                    />
+                    >
+                      <option value="">Not Applicable</option>
+                      {qrSelectOptions.map((code) => (
+                        <option key={code} value={code}>
+                          {code}
+                        </option>
+                      ))}
+                    </select>
+                    {availableQrCodes.length === 0 && !qrCode.trim() ? (
+                      <p className="mt-1 text-[11px] text-zinc-500">
+                        Default: Not Applicable. Import QR codes first, then select here.
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <label className={fieldLabelClass} htmlFor="osl-priority">

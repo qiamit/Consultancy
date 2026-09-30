@@ -1,8 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { createInclusionFromLicense } from "@backend/actions/bis-projects";
+import {
+  createInclusionFromLicense,
+  updateInclusionCase,
+} from "@backend/actions/bis-projects";
 import type {
   LicenseScopeFormat,
   LicenseScopeTableRow,
@@ -13,6 +16,10 @@ import {
   licenseScopeUsesPlain,
   licenseScopeUsesTable,
 } from "@backend/modules/bis/license-scope-format";
+import {
+  parseBisProjectLicenseScopeNotes,
+  parseSourceLicenseIdFromNotes,
+} from "@backend/modules/bis/bis-project-license-scope-notes";
 import {
   isApplicationProjectKind,
   isInclusionProjectKind,
@@ -75,17 +82,21 @@ function toYmdOrNull(value: unknown): string | null {
 export function StartInclusionFromLicenseModal({
   licenses,
   clients = [],
+  editInclusionId = null,
   onClose,
   onCreated,
 }: {
   licenses: InclusionLicensePickRow[];
   /** Full Client Master list (preferred). Falls back to license clients if empty. */
   clients?: InclusionClientOption[];
+  /** When set, form loads that inclusion case for editing. */
+  editInclusionId?: string | null;
   onClose: () => void;
   onCreated: (id: string) => void;
 }) {
   const router = useRouter();
   const { open: sidebarOpen } = useSidebarLayout();
+  const isEdit = Boolean(editInclusionId?.trim());
   const [clientId, setClientId] = useState("");
   const [isCodeId, setIsCodeId] = useState("");
   const [startDate, setStartDate] = useState(todayYmd);
@@ -99,6 +110,9 @@ export function StartInclusionFromLicenseModal({
   const [pending, startTransition] = useTransition();
   const [fetchedLicenses, setFetchedLicenses] = useState<InclusionLicensePickRow[]>([]);
   const [loadingLicenses, setLoadingLicenses] = useState(false);
+  const [loadingEdit, setLoadingEdit] = useState(isEdit);
+  const pendingIsCodeIdRef = useRef<string | null>(null);
+  const preferredLicenseIdRef = useRef<string | null>(null);
 
   const clientOptions: IsCodeComboboxOption[] = useMemo(() => {
     if (clients.length > 0) {
@@ -129,10 +143,77 @@ export function StartInclusionFromLicenseModal({
       );
   }, [clients, licenses]);
 
+  // Prefill when editing an existing inclusion case.
+  useEffect(() => {
+    const id = (editInclusionId ?? "").trim();
+    if (!id) {
+      setLoadingEdit(false);
+      return;
+    }
+
+    let cancelled = false;
+    setLoadingEdit(true);
+    void (async () => {
+      try {
+        const supabase = createClient();
+        const { data, error: fetchError } = await supabase
+          .from("bis_projects")
+          .select(
+            "id, client_id, is_code_id, start_date, target_date, notes, project_kind, status",
+          )
+          .eq("id", id)
+          .maybeSingle();
+
+        if (cancelled) return;
+        if (fetchError) {
+          setError(fetchError.message);
+          setLoadingEdit(false);
+          return;
+        }
+        if (!data || !isInclusionProjectKind(data.project_kind)) {
+          setError("Inclusion case not found.");
+          setLoadingEdit(false);
+          return;
+        }
+        if (String(data.status ?? "").trim().toLowerCase() === "completed") {
+          setError("This inclusion case is already finished.");
+          setLoadingEdit(false);
+          return;
+        }
+
+        const scope = parseBisProjectLicenseScopeNotes(data.notes);
+        const nextClientId = String(data.client_id ?? "").trim();
+        const nextIsCodeId = String(data.is_code_id ?? "").trim();
+        pendingIsCodeIdRef.current = nextIsCodeId || null;
+        preferredLicenseIdRef.current = parseSourceLicenseIdFromNotes(data.notes);
+
+        setClientId(nextClientId);
+        setIsCodeId(nextIsCodeId);
+        setStartDate(toYmdOrNull(data.start_date) || todayYmd());
+        setEndDate(toYmdOrNull(data.target_date) || "");
+        setScopeType(scope.scopeType);
+        setScopeColumnCount(scope.columnCount);
+        setScopeColumnHeaders(scope.columnHeaders);
+        setScopePlain(scope.plainText);
+        setScopeRowsJson(JSON.stringify(scope.rows));
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Unable to load inclusion case.");
+        }
+      } finally {
+        if (!cancelled) setLoadingEdit(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [editInclusionId]);
+
   // Load this client's granted licenses when client changes (avoids preload miss / limit).
   useEffect(() => {
     const id = clientId.trim();
-    setIsCodeId("");
     setFetchedLicenses([]);
     if (!id) {
       setLoadingLicenses(false);
@@ -196,6 +277,11 @@ export function StartInclusionFromLicenseModal({
           );
 
         setFetchedLicenses(rows);
+        const pendingIs = pendingIsCodeIdRef.current;
+        if (pendingIs) {
+          setIsCodeId(pendingIs);
+          pendingIsCodeIdRef.current = null;
+        }
         setError(null);
       } catch (err) {
         if (!cancelled) {
@@ -241,6 +327,11 @@ export function StartInclusionFromLicenseModal({
       (r) => (r.is_code_id ?? "").trim() === isCodeId,
     );
     if (matches.length === 0) return null;
+    const preferred = preferredLicenseIdRef.current;
+    if (preferred) {
+      const hit = matches.find((r) => r.id === preferred);
+      if (hit) return hit;
+    }
     return (
       [...matches].sort((a, b) =>
         String(b.license_validity_date ?? "").localeCompare(
@@ -255,12 +346,15 @@ export function StartInclusionFromLicenseModal({
     : "—";
 
   function handleClientChange(next: string) {
+    pendingIsCodeIdRef.current = null;
+    preferredLicenseIdRef.current = null;
     setClientId(next);
     setIsCodeId("");
     setError(null);
   }
 
   function handleIsChange(next: string) {
+    preferredLicenseIdRef.current = null;
     setIsCodeId(next);
     setError(null);
   }
@@ -313,7 +407,7 @@ export function StartInclusionFromLicenseModal({
 
     setError(null);
     startTransition(async () => {
-      const res = await createInclusionFromLicense({
+      const payload = {
         licenseId: selectedLicense.id,
         startDate,
         endDate,
@@ -322,7 +416,13 @@ export function StartInclusionFromLicenseModal({
         inclusionScopeColumnHeaders: scopeColumnHeaders,
         inclusionScopePlain: scopePlain,
         inclusionScopeRows: scopeRows,
-      });
+      };
+      const res = isEdit
+        ? await updateInclusionCase({
+            inclusionId: editInclusionId!.trim(),
+            ...payload,
+          })
+        : await createInclusionFromLicense(payload);
       if (!res.ok) {
         setError(res.error);
         return;
@@ -341,13 +441,15 @@ export function StartInclusionFromLicenseModal({
         ? "No licensed IS for this client"
         : "Type to search IS Number…";
 
+  const formBusy = pending || loadingEdit;
+
   return (
     <div
       className={`fixed inset-0 z-[200] flex items-start justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-sm ${
         sidebarOpen ? "lg:left-64" : "lg:left-0"
       }`}
       onClick={(e) => {
-        if (e.target === e.currentTarget && !pending) onClose();
+        if (e.target === e.currentTarget && !formBusy) onClose();
       }}
     >
       <div className="my-8 w-full max-w-3xl overflow-visible rounded-2xl bg-white shadow-2xl dark:bg-zinc-900">
@@ -357,13 +459,19 @@ export function StartInclusionFromLicenseModal({
               BIS New Inclusion
             </p>
             <h2 className="text-base font-bold text-white">
-              Start Inclusion from Existing License
+              {isEdit
+                ? "Edit Inclusion Case"
+                : "Start Inclusion from Existing License"}
             </h2>
           </div>
           <DialogCloseXButton onClick={onClose} />
         </div>
 
         <div className="space-y-4 px-5 py-5">
+          {loadingEdit ? (
+            <p className="text-sm text-zinc-500 dark:text-zinc-400">Loading inclusion case…</p>
+          ) : null}
+
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="inc_client" className={BIS_FIELD_LABEL_CLASS}>
@@ -380,6 +488,7 @@ export function StartInclusionFromLicenseModal({
                   options={clientOptions}
                   placeholder="Type to search client…"
                   listZIndexClass="z-[310]"
+                  disabled={loadingEdit}
                 />
               </div>
             </div>
@@ -398,7 +507,7 @@ export function StartInclusionFromLicenseModal({
                   value={isCodeId}
                   onChange={handleIsChange}
                   options={isOptions}
-                  disabled={!clientId || loadingLicenses}
+                  disabled={!clientId || loadingLicenses || loadingEdit}
                   placeholder={isPlaceholder}
                   listZIndexClass="z-[310]"
                 />
@@ -447,6 +556,7 @@ export function StartInclusionFromLicenseModal({
                 type="date"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+                disabled={loadingEdit}
                 className={fieldInp}
               />
             </div>
@@ -460,6 +570,7 @@ export function StartInclusionFromLicenseModal({
                 type="date"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
+                disabled={loadingEdit}
                 className={fieldInp}
               />
             </div>
@@ -467,7 +578,7 @@ export function StartInclusionFromLicenseModal({
 
           <div className="grid grid-cols-1 gap-4">
             <LicenseScopeField
-              key={`${scopeType}-${scopeColumnCount}`}
+              key={`${editInclusionId ?? "new"}-${scopeType}-${scopeColumnCount}`}
               scopeType={scopeType}
               plainText={scopePlain}
               rowsJson={scopeRowsJson}
@@ -492,7 +603,7 @@ export function StartInclusionFromLicenseModal({
             <button
               type="button"
               onClick={onClose}
-              disabled={pending}
+              disabled={formBusy}
               className="rounded-lg px-3 py-2 text-xs font-semibold text-zinc-600 hover:bg-zinc-100 disabled:opacity-50 dark:text-zinc-300 dark:hover:bg-zinc-800"
             >
               Cancel
@@ -500,10 +611,16 @@ export function StartInclusionFromLicenseModal({
             <button
               type="button"
               onClick={handleStart}
-              disabled={pending || !selectedLicense}
+              disabled={formBusy || !selectedLicense}
               className="rounded-lg bg-teal-600 px-4 py-2 text-xs font-semibold text-white hover:bg-teal-500 disabled:opacity-50"
             >
-              {pending ? "Starting…" : "Start Inclusion"}
+              {pending
+                ? isEdit
+                  ? "Saving…"
+                  : "Starting…"
+                : isEdit
+                  ? "Save Changes"
+                  : "Start Inclusion"}
             </button>
           </div>
         </div>

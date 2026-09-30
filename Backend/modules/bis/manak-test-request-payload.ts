@@ -6,6 +6,9 @@ export const MANAK_TEST_REQUEST_KIND = "QE_MANAK_TR_V1" as const;
 /** Result written after Manak returns a Sample Code. */
 export const MANAK_TEST_REQUEST_RESULT_KIND = "QE_MANAK_TR_RESULT_V1" as const;
 
+/** Result written after Manak Generate QR codes are imported into the app. */
+export const MANAK_QR_IMPORT_KIND = "QE_MANAK_QR_IMPORT_V1" as const;
+
 export type ManakTestRequestApplication = {
   companyName: string;
   isNumber: string;
@@ -66,6 +69,12 @@ export type ManakTestRequestResult = {
   pdfName?: string;
   test_request_ref?: string;
   test_request_name?: string;
+};
+
+export type ManakQrImportResult = {
+  kind: typeof MANAK_QR_IMPORT_KIND;
+  qr_codes: string[];
+  filledAt: number;
 };
 
 function text(value: unknown): string {
@@ -258,6 +267,48 @@ export function parseManakTestRequestResult(
       pdfName: text(parsed.pdfName) || undefined,
       test_request_ref: testRequestRef || undefined,
       test_request_name: text(parsed.test_request_name) || undefined,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Manak QR codes are 12-digit numbers (e.g. 100001399254) from Not Used Codes. */
+export function isLikelyManakQrCode(value: string): boolean {
+  const v = text(value).replace(/\s+/g, "");
+  return /^\d{12}$/.test(v);
+}
+
+export function parseManakQrImportResult(
+  raw: string | null | undefined,
+): ManakQrImportResult | null {
+  const textValue = String(raw ?? "").trim();
+  if (!textValue) return null;
+  const jsonStart = textValue.indexOf("{");
+  const jsonEnd = textValue.lastIndexOf("}");
+  if (jsonStart < 0 || jsonEnd <= jsonStart) return null;
+  try {
+    const parsed = JSON.parse(textValue.slice(jsonStart, jsonEnd + 1)) as Partial<
+      ManakQrImportResult
+    > & { qr_codes?: unknown; qrCodes?: unknown };
+    if (!parsed || parsed.kind !== MANAK_QR_IMPORT_KIND) return null;
+    const list = Array.isArray(parsed.qr_codes)
+      ? parsed.qr_codes
+      : Array.isArray(parsed.qrCodes)
+        ? parsed.qrCodes
+        : [];
+    const qr_codes = [
+      ...new Set(
+        list
+          .map((item) => text(item).replace(/\s+/g, ""))
+          .filter((item) => isLikelyManakQrCode(item)),
+      ),
+    ];
+    if (qr_codes.length === 0) return null;
+    return {
+      kind: MANAK_QR_IMPORT_KIND,
+      qr_codes,
+      filledAt: Number(parsed.filledAt) || Date.now(),
     };
   } catch {
     return null;

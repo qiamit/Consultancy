@@ -124,6 +124,50 @@ h1 {
 .panel-manak .step { background: #059669; }
 .panel-bulk .step { background: #0f766e; }
 
+.manak-toggles {
+  align-items: stretch;
+}
+
+.manak-toggles .tile {
+  min-width: 0;
+}
+
+.tile-import-qr .tile-hint {
+  color: #6d28d9;
+}
+
+body.import-qr-off .tile-import-qr .tile-hint {
+  color: #b91c1c;
+}
+
+body.import-qr-wait .tile-import-qr .tile-hint {
+  color: #b45309;
+}
+
+body.off .manak-toggles .tile-power:not(.tile-import-qr) .tile-hint {
+  color: #b91c1c;
+}
+
+body.off .manak-toggles .tile-import-qr .tile-hint {
+  color: #6d28d9;
+}
+
+body.off.import-qr-off .tile-import-qr .tile-hint {
+  color: #b91c1c;
+}
+
+.import-qr-status {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f5f3ff;
+  border: 1px solid #ddd6fe;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #4c1d95;
+  font-weight: 600;
+}
+
 h2 {
   margin: 0;
   font-size: 13px;
@@ -174,10 +218,6 @@ h2 {
   font-weight: 600;
   color: #0f766e;
   line-height: 1.35;
-}
-
-body.off .tile-hint {
-  color: #b91c1c;
 }
 
 .flow-note {
