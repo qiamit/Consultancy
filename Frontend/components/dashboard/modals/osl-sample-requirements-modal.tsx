@@ -93,6 +93,7 @@ type ClientPickerRow = {
   id: string;
   name: string;
   company_name: string | null;
+  company_type?: string | null;
   address: string | null;
   city: string | null;
   pin_code: string | null;
@@ -101,7 +102,28 @@ type ClientPickerRow = {
 };
 
 const CLIENT_ADDRESS_SELECT =
-  "id, name, company_name, address, city, pin_code, state, country";
+  "id, name, company_name, company_type, address, city, pin_code, state, country";
+
+/** Client Master rows meant for OSL / Destination Lab pickers. */
+function isLaboratoryCompanyType(c: ClientPickerRow): boolean {
+  const t = (c.company_type ?? "").trim().toLowerCase();
+  if (!t) return false;
+  return (
+    t.includes("laboratory") ||
+    t.includes("testing lab") ||
+    t === "lab" ||
+    /\bosl\b/.test(t)
+  );
+}
+
+function looksLikeLaboratoryName(c: ClientPickerRow): boolean {
+  const hay = `${c.company_name ?? ""} ${c.name ?? ""}`.toLowerCase();
+  return (
+    hay.includes("laborator") ||
+    /\b(nabl|osl)\b/.test(hay) ||
+    /\blabs?\b/.test(hay)
+  );
+}
 
 function clientDisplayLabel(c: ClientPickerRow): string {
   const company = (c.company_name ?? "").trim();
@@ -210,11 +232,35 @@ function isCodeFileViewUrl(file: IsCodeFileEntry): string {
 
 async function fetchClientsForLabLookup(): Promise<ClientPickerRow[]> {
   const supabase = createClient();
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from("clients")
     .select(CLIENT_ADDRESS_SELECT)
     .order("company_name", { ascending: true });
+  if (error) {
+    console.error("OSL lab clients load failed:", error.message);
+    return [];
+  }
   return (data ?? []) as ClientPickerRow[];
+}
+
+function laboratoryClientOptions(
+  rows: ClientPickerRow[],
+): AppDropdownOptionRow[] {
+  const byType = rows.filter(isLaboratoryCompanyType);
+  const source =
+    byType.length > 0 ? byType : rows.filter(looksLikeLaboratoryName);
+  return source.map((c) => {
+    const label = clientDisplayLabel(c);
+    return {
+      id: c.id,
+      value: label,
+      label,
+      filterText:
+        [c.name, c.company_name, c.company_type].filter(Boolean).join(" ") ||
+        null,
+      canDelete: false,
+    };
+  });
 }
 
 export function OslSampleRequirementsModal({
@@ -337,12 +383,8 @@ export function OslSampleRequirementsModal({
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const supabase = createClient();
-      const { data } = await supabase
-        .from("clients")
-        .select(CLIENT_ADDRESS_SELECT)
-        .order("company_name", { ascending: true });
-      if (!cancelled) setClientRows((data ?? []) as ClientPickerRow[]);
+      const rows = await fetchClientsForLabLookup();
+      if (!cancelled) setClientRows(rows);
     })();
     return () => {
       cancelled = true;
@@ -594,6 +636,7 @@ export function OslSampleRequirementsModal({
         ...prev,
         ...companySettings,
         font_family: defaults.font_family,
+        font_size: defaults.font_size,
         show_letterhead: true,
         letterhead_layout: "logo-na",
         margin_top: defaults.margin_top,
@@ -638,6 +681,7 @@ export function OslSampleRequirementsModal({
     setPrintSettings((prev) => ({
       ...prev,
       font_family: defaults.font_family,
+      font_size: defaults.font_size,
       show_letterhead: true,
       margin_top: defaults.margin_top,
       margin_bottom: defaults.margin_bottom,
@@ -648,26 +692,11 @@ export function OslSampleRequirementsModal({
   }, []);
 
   const reloadClients = useCallback(async () => {
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("clients")
-      .select(CLIENT_ADDRESS_SELECT)
-      .order("company_name", { ascending: true });
-    setClientRows((data ?? []) as ClientPickerRow[]);
+    setClientRows(await fetchClientsForLabLookup());
   }, []);
 
   const clientOptions: AppDropdownOptionRow[] = useMemo(
-    () =>
-      clientRows.map((c) => {
-        const label = clientDisplayLabel(c);
-        return {
-          id: c.id,
-          value: label,
-          label,
-          filterText: [c.name, c.company_name].filter(Boolean).join(" ") || null,
-          canDelete: false,
-        };
-      }),
+    () => laboratoryClientOptions(clientRows),
     [clientRows],
   );
 
@@ -767,7 +796,9 @@ export function OslSampleRequirementsModal({
   }
 
   function openAddSampleForm(prefillQr?: string) {
-    setSampleFormPrefillQr((prefillQr || "").trim());
+    // Button onClick passes a MouseEvent — only treat real strings as QR prefill.
+    const qr = typeof prefillQr === "string" ? prefillQr.trim() : "";
+    setSampleFormPrefillQr(qr);
     setSampleFormRow(null);
   }
 
@@ -1244,8 +1275,8 @@ export function OslSampleRequirementsModal({
 
   return (
     <>
-      <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
-        <div className="flex shrink-0 flex-col gap-2 border-b border-zinc-800 bg-zinc-900 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-2 sm:px-4 sm:py-3">
+      <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-900 text-zinc-50 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)] pl-[env(safe-area-inset-left)] pr-[env(safe-area-inset-right)]">
+        <div className="flex shrink-0 flex-col gap-2 border-b border-zinc-700 bg-zinc-800 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-2 sm:px-4 sm:py-3">
           <div className="min-w-0 flex-1">
             <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isFullNumber} />
           </div>
@@ -1367,17 +1398,20 @@ export function OslSampleRequirementsModal({
         <div className="flex min-h-0 min-w-0 flex-1 flex-col xl:flex-row xl:overflow-x-auto">
           {!showPrintPreview && !showCourierLabelsPreview && (
             <div
-              className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-900 ${
+              className={`flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-800/50 ${
                 settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
               }`}
             >
-              <div className="border-b border-zinc-800 px-3 py-2.5 sm:px-4 sm:py-3">
+              <div className="border-b border-zinc-700 px-3 py-2.5 sm:px-4 sm:py-3">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="min-w-0 shrink-0 text-sm font-semibold text-white">
+                  <h2 className="min-w-0 shrink-0 text-base font-semibold text-white">
                     {labels.modalTitle}
                   </h2>
                   <div className="flex min-w-0 flex-1 flex-wrap items-center justify-end gap-2">
-                  <OslSampleAddButton theme="dark" onClick={openAddSampleForm} />
+                  <OslSampleAddButton
+                    theme="dark"
+                    onClick={() => openAddSampleForm()}
+                  />
                   <div ref={availableQrWrapRef} className="relative inline-flex shrink-0">
                     <div className="inline-flex overflow-hidden rounded-lg border border-violet-500/60">
                       <button

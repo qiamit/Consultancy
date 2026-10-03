@@ -3,6 +3,7 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
+  ImageRun,
   PageBreak,
   Packer,
   Paragraph,
@@ -14,6 +15,7 @@ import {
   VerticalAlign,
   WidthType,
 } from "docx";
+import { loadImageFromUrl } from "@backend/modules/print/docx-letterhead";
 import type { FactoryTestReportStored, FtrTestRowStored } from "@backend/modules/bis/factory-test-report";
 import { normalizeFtrRemark, sortFtrTestRowsByClause } from "@backend/modules/bis/factory-test-report";
 import {
@@ -684,6 +686,7 @@ function signatureCellParagraphs(
   designation: string,
   organisation: string,
   alignment: (typeof AlignmentType)[keyof typeof AlignmentType],
+  signatureImage?: { type: "png" | "jpg"; data: Uint8Array } | null,
 ): Paragraph[] {
   const out: Paragraph[] = [
     new Paragraph({
@@ -691,9 +694,26 @@ function signatureCellParagraphs(
       spacing: { after: 0 },
       children: [docxRun(title, true, DOCX_META_SIZE)],
     }),
+  ];
+  if (signatureImage) {
+    out.push(
+      new Paragraph({
+        alignment,
+        spacing: { before: 80, after: 40 },
+        children: [
+          new ImageRun({
+            type: signatureImage.type,
+            data: signatureImage.data,
+            transformation: { width: 120, height: 48 },
+          }),
+        ],
+      }),
+    );
+  }
+  out.push(
     new Paragraph({
       alignment,
-      spacing: { before: 480, after: 60 },
+      spacing: { before: signatureImage ? 40 : 480, after: 60 },
       border: { bottom: { style: BorderStyle.SINGLE, size: 6, color: "94A3B8" } },
       children: [],
     }),
@@ -702,7 +722,7 @@ function signatureCellParagraphs(
       spacing: { after: 0 },
       children: [docxRun(docxValue(name), true, DOCX_META_SIZE)],
     }),
-  ];
+  );
   if (designation.trim()) {
     out.push(
       new Paragraph({
@@ -722,14 +742,19 @@ function signatureCellParagraphs(
   return out;
 }
 
-function buildSignatureTableDocx(
+async function buildSignatureTableDocx(
   data: FactoryTestReportLetterData,
   settings: FactoryTestReportPrintSettings,
   totalWidth: number,
-): Table | null {
+): Promise<Table | null> {
   if (!settings.show_witnessed_by && !settings.show_tested_by) return null;
 
-  const half = Math.round(totalWidth / 2);
+  const col = Math.round(totalWidth / 3);
+  const colRight = totalWidth - col * 2;
+  const testedSig = settings.show_tested_by
+    ? await loadImageFromUrl(data.qualityControlInchargeSignatureUrl)
+    : null;
+  const topSig = await loadImageFromUrl(data.topManagementSignatureUrl);
   const left = settings.show_witnessed_by
     ? signatureCellParagraphs(
         "Witnessed By",
@@ -739,6 +764,14 @@ function buildSignatureTableDocx(
         AlignmentType.LEFT,
       )
     : [new Paragraph({ children: [] })];
+  const center = signatureCellParagraphs(
+    "Authorised Signatory",
+    data.topManagementName ?? "",
+    data.topManagementDesignation ?? "",
+    data.companyName,
+    AlignmentType.CENTER,
+    topSig,
+  );
   const right = settings.show_tested_by
     ? signatureCellParagraphs(
         "Tested By",
@@ -746,23 +779,29 @@ function buildSignatureTableDocx(
         data.qualityControlInchargeDesignation,
         data.companyName,
         AlignmentType.RIGHT,
+        testedSig,
       )
     : [new Paragraph({ children: [] })];
 
   return new Table({
     width: { size: totalWidth, type: WidthType.DXA },
-    columnWidths: [half, totalWidth - half],
+    columnWidths: [col, col, colRight],
     borders: NO_TABLE_BORDERS,
     rows: [
       new TableRow({
         children: [
           new TableCell({
-            width: { size: half, type: WidthType.DXA },
+            width: { size: col, type: WidthType.DXA },
             borders: NO_BORDERS,
             children: left,
           }),
           new TableCell({
-            width: { size: totalWidth - half, type: WidthType.DXA },
+            width: { size: col, type: WidthType.DXA },
+            borders: NO_BORDERS,
+            children: center,
+          }),
+          new TableCell({
+            width: { size: colRight, type: WidthType.DXA },
             borders: NO_BORDERS,
             children: right,
           }),
@@ -811,7 +850,7 @@ async function buildSingleReportDocxBlocks(
     );
   }
 
-  const signatures = buildSignatureTableDocx(data, settings, totalWidth);
+  const signatures = await buildSignatureTableDocx(data, settings, totalWidth);
   if (signatures) {
     blocks.push(new Paragraph({ spacing: { after: 200 }, children: [] }), signatures);
   }

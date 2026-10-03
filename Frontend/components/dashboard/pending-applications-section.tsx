@@ -3204,6 +3204,7 @@ function ApplicationFormModal({
           inspectionOfficerName={applicationMeta.inspection_officer_name}
           inspectionOfficerDesignation={applicationMeta.inspection_officer_designation}
           technicalStaff={technicalStaff}
+          topManagement={topManagement}
           isCodeId={row.is_code_id}
           isNumber={isCode?.is_number ?? row.is_number}
           revisionYear={isCode?.revision_year ?? row.is_revision_year}

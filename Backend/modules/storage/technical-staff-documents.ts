@@ -72,3 +72,21 @@ export async function resolveDocumentRef(
   if (error || !data?.signedUrl) return null;
   return data.signedUrl;
 }
+
+/**
+ * Same-origin proxy URL for a stored document ref (or pass-through for http(s) URLs).
+ * Prefer this for print HTML so preview / Playwright can load private bucket files.
+ */
+export function documentRefToInlineUrl(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (isDirectDocumentUrl(trimmed)) return trimmed;
+  const path = decodeStoredDocumentRef(trimmed);
+  if (!path) return null;
+  const params = new URLSearchParams({
+    bucket: DOCUMENTS_BUCKET,
+    path,
+    disposition: "inline",
+  });
+  return `/api/storage/public?${params.toString()}`;
+}

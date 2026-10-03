@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { AppSettingsTabs } from "@/components/dashboard/app-settings-tabs";
 import { fetchAiModels } from "@backend/actions/ai-models";
-import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
+import { getCachedAccess, getCachedUser } from "@backend/modules/auth/cached-access";
 import { createClient } from "@backend/db/client/server";
 
 function firstSearchParam(
@@ -26,12 +26,8 @@ export default async function AppSettingsPage({
   const errMsg = err === "db" ? "Could not save settings. Try again." : null;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [user, access] = await Promise.all([getCachedUser(), getCachedAccess()]);
   if (!user) redirect("/login");
-
-  const access = await ensureProfileAccess(supabase, user);
   if (!access?.isAdmin) {
     redirect("/dashboard?error=admin_required");
   }

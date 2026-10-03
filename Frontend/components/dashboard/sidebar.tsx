@@ -1,16 +1,11 @@
 import Link from "next/link";
-import { createClient } from "@backend/db/client/server";
-import { ensureProfileAccess, isSuperAdminEmail } from "@backend/modules/auth/ensure-access";
+import { getCachedAccess, getCachedUser } from "@backend/modules/auth/cached-access";
+import { isSuperAdminEmail } from "@backend/modules/auth/ensure-access";
 import { SidebarAside } from "./sidebar-aside";
 import { SidebarNav } from "./sidebar-nav";
 
 export async function Sidebar() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const access = user ? await ensureProfileAccess(supabase, user) : null;
+  const [user, access] = await Promise.all([getCachedUser(), getCachedAccess()]);
   const isAdmin = Boolean(
     access?.isAdmin || (user && isSuperAdminEmail(user.email)),
   );

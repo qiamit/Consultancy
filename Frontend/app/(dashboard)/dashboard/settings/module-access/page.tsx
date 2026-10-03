@@ -1,17 +1,13 @@
 import { redirect } from "next/navigation";
 import { ModuleAccessPanel } from "@/components/dashboard/module-access-panel";
-import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
+import { getCachedAccess, getCachedUser } from "@backend/modules/auth/cached-access";
 import { fetchStaffUsers } from "@backend/actions/user-management";
-import { createClient } from "@backend/db/client/server";
 
 export default async function ModuleAccessPage() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCachedUser();
   if (!user) redirect("/login");
 
-  const access = await ensureProfileAccess(supabase, user);
+  const access = await getCachedAccess();
   if (!access?.isAdmin) {
     redirect("/dashboard?error=admin_required");
   }

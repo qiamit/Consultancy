@@ -89,24 +89,25 @@ function buildSampleTableHtml(
   );
 
   if (visible.length === 0) {
-    return `<p style="font-size:12px;color:#64748b;text-align:center;padding:16px;">No sample details entered yet.</p>`;
+    return `<p style="font-size:10px;color:#64748b;text-align:center;padding:8px;">No sample details entered yet.</p>`;
   }
 
   const columns = normalizeOslSampleTableColumns(visibleColumns);
   const columnDefs = OSL_SAMPLE_TABLE_COLUMN_OPTIONS.filter((col) => columns.includes(col.key));
 
+  // Dense cells so ~8 long sample rows + declaration still fit on one A4 page.
   const thBase =
-    "padding:5px 7px;border:1px solid #cbd5e1;background:#f1f5f9;font-size:10px;font-weight:700;vertical-align:middle;line-height:1.35;";
+    "padding:2px 4px;border:1px solid #cbd5e1;background:#f1f5f9;font-size:8.5px;font-weight:700;vertical-align:middle;line-height:1.2;";
   const thNarrow = `${thBase}width:1%;white-space:nowrap;text-align:center;`;
   const thWide = `${thBase}text-align:left;`;
   const thWideCenter = `${thBase}text-align:center;`;
-  const thStack = `${thBase}width:1%;text-align:center;line-height:1.4;`;
+  const thStack = `${thBase}width:1%;text-align:center;line-height:1.2;`;
   const tdBase =
-    "padding:5px 7px;border:1px solid #e2e8f0;font-size:11px;vertical-align:middle;line-height:1.45;";
+    "padding:2px 4px;border:1px solid #e2e8f0;font-size:9px;vertical-align:middle;line-height:1.25;";
   const tdNarrow = `${tdBase}width:1%;white-space:nowrap;text-align:center;vertical-align:middle;`;
   const tdWide = `${tdBase}text-align:left;word-break:break-word;`;
   const tdWideCenter = `${tdBase}text-align:center;word-break:break-word;`;
-  const tdStack = `${tdBase}width:1%;text-align:center;word-break:break-word;line-height:1.4;vertical-align:middle;`;
+  const tdStack = `${tdBase}width:1%;text-align:center;word-break:break-word;line-height:1.2;vertical-align:middle;`;
 
   function headerStyle(col: (typeof columnDefs)[number]): string {
     if (col.stackHeader) return thStack;
@@ -138,8 +139,8 @@ function buildSampleTableHtml(
     })
     .join("");
 
-  return `<div style="overflow-x:auto;">
-  <table style="width:100%;border-collapse:collapse;table-layout:auto;font-size:11px;">
+  return `<div>
+  <table class="osl-sample-table" style="width:100%;border-collapse:collapse;table-layout:auto;font-size:9px;">
     <thead><tr>${headRow}</tr></thead>
     <tbody>${bodyRows}</tbody>
   </table>
@@ -155,6 +156,7 @@ function buildSignatoryBlock(data: OslSampleOfferLetterData): string {
     sigName,
     sigDesig,
     signatureImageUrl: data.signatureImageUrl,
+    compact: true,
   });
 }
 
@@ -173,33 +175,43 @@ function buildOfferLetterBody(
   const inspectionDate = formatInspectionDateDisplay(data.inspectionDate);
   const applicationNo = formatApplicationNo(data.applicationNumber);
 
+  // Declaration left + signature right — saves a full vertical signature stack.
+  const closingWithSignatory = `<div class="print-keep-with-signatory" style="break-inside:avoid;page-break-inside:avoid;display:flex;align-items:flex-end;justify-content:space-between;gap:14px;margin-top:6px;">
+      <p style="flex:1;min-width:0;margin:0;font-size:10px;line-height:1.3;text-align:justify;">
+        We declare that the above samples have been prepared prior to grant of the BIS licence, are drawn from
+        trial production, and are being manufactured for the purpose of obtaining BIS licence. The information
+        furnished above is true and correct to the best of our knowledge and belief.
+      </p>
+      <div style="flex-shrink:0;">${buildSignatoryBlock(data)}</div>
+    </div>`;
+
   return `
-<div style="text-align:center;margin-bottom:18px;">
-  <div style="font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;text-decoration:underline;">
+<div style="text-align:center;margin-bottom:6px;">
+  <div style="font-size:13px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;text-decoration:underline;">
     ${esc(labels.documentHeading)}
   </div>
 </div>
 
-<div style="font-size:12px;line-height:1.75;text-align:justify;">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 14px;">
-    <div style="flex:1;min-width:0;">
+<div style="font-size:10.5px;line-height:1.3;text-align:justify;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin:0 0 5px;">
+    <div style="flex:1;min-width:0;line-height:1.25;">
       To<br/>
       The Director &amp; Head<br/>
       Bureau of Indian Standards<br/>
       ${esc(bisBranchLine)}
     </div>
-    <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
+    <div style="flex-shrink:0;text-align:right;white-space:nowrap;font-size:10px;">
       <div><strong>Date of Inspection:</strong> ${esc(inspectionDate)}</div>
-      <div style="margin-top:4px;"><strong>Application No.:</strong> ${esc(applicationNo)}</div>
+      <div style="margin-top:1px;"><strong>Application No.:</strong> ${esc(applicationNo)}</div>
     </div>
   </div>
 
-  <p style="margin:0 0 14px;">
+  <p style="margin:0 0 5px;">
     <strong>Sub:</strong> Submission of samples for testing at Outside Testing Laboratory (OSL)
     ${isStdRef ? ` under Indian Standard ${isStdRef}` : ""}.
   </p>
 
-  <p style="margin:0 0 14px;">
+  <p style="margin:0 0 5px;">
     We, <strong>M/s. ${esc(data.companyName)}</strong>,
     ${data.address ? ` having our factory at <strong>${esc(data.address)}</strong>,` : ""}
     hereby sending the following samples for testing at the designated Outside Testing Laboratory (OSL)
@@ -207,20 +219,14 @@ function buildOfferLetterBody(
     The details of the samples sent are as under:
   </p>
 
-  <div style="margin:16px 0;padding:12px 14px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;">
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:8px;">
+  <div style="margin:4px 0 2px;padding:4px 6px;border:1px solid #cbd5e1;border-radius:4px;background:#f8fafc;">
+    <div style="font-size:8.5px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:#64748b;margin-bottom:3px;">
       ${variant === "pi" ? "Sample Details for Inspection" : "Sample Details for OSL"}
     </div>
     ${buildSampleTableHtml(data.rows, tableColumns)}
   </div>
 
-  <p style="margin:0 0 14px;">
-    We declare that the above samples have been prepared prior to grant of the BIS licence, are drawn from
-    trial production, and are being manufactured for the purpose of obtaining BIS licence. The information
-    furnished above is true and correct to the best of our knowledge and belief.
-  </p>
-
-  ${buildSignatoryBlock(data)}
+  ${closingWithSignatory}
 </div>`;
 }
 
@@ -255,10 +261,11 @@ export function defaultOslSamplePrintSettings(): PrintSettings {
     letterhead_layout: "logo-na",
     show_page_numbers: false,
     show_footer_line: false,
-    margin_top: 5,
-    margin_bottom: 5,
-    margin_left: 15,
-    margin_right: 10,
+    font_size: 10,
+    margin_top: 4,
+    margin_bottom: 4,
+    margin_left: 12,
+    margin_right: 8,
   };
 }
 
@@ -284,6 +291,17 @@ export function buildOslSampleRequirementsHtml(
     bodyHtml: buildOfferLetterBody(data, variant, tableColumns),
     settings: oslSampleLetterheadSettings(settings),
     company: buildOslSampleCompany(data, assets),
+    extraStyles: `
+      .lh-wrap { padding: 6px 0 4px !important; margin-bottom: 6px !important; }
+      .lh-wrap > div:first-child { font-size: 18px !important; line-height: 1.05 !important; }
+      .osl-sample-table th, .osl-sample-table td {
+        padding: 2px 4px !important;
+        font-size: 9px !important;
+        line-height: 1.25 !important;
+      }
+      .osl-sample-table th { font-size: 8.5px !important; }
+      .print-keep-with-signatory { break-inside: avoid; page-break-inside: avoid; }
+    `,
   });
 }
 

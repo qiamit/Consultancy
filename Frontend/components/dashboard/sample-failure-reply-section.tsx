@@ -1015,6 +1015,7 @@ function SampleFailureReplyModal({
           inspectionOfficerName={applicationMeta.inspection_officer_name}
           inspectionOfficerDesignation={applicationMeta.inspection_officer_designation}
           technicalStaff={technicalStaff}
+          topManagement={topManagement}
           isCodeId={row.is_code_id}
           isNumber={row.is_number}
           revisionYear={row.is_revision_year}

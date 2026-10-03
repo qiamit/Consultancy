@@ -1,6 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import {
+  refreshUnreadEmailCount,
+  subscribeUnreadEmailCount,
+} from "@/lib/unread-email-count";
 import {
   DASHBOARD_MODULES,
   type DashboardModuleKey,
@@ -289,17 +294,32 @@ export function DashboardHome({
   stats: DashboardStats;
 }) {
   const allowed = new Set(allowedModules);
+  const [unreadEmail, setUnreadEmail] = useState(stats.unreadEmail);
+
+  useEffect(() => {
+    if (!user.isAdmin && !allowed.has("email")) return;
+    return subscribeUnreadEmailCount(setUnreadEmail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount subscribe; header owns the poll
+  }, [user.isAdmin]);
+
+  useEffect(() => {
+    if (!user.isAdmin && !allowed.has("email")) return;
+    void refreshUnreadEmailCount(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- share header's in-flight fetch when possible
+  }, [user.isAdmin]);
+
+  const liveStats: DashboardStats = { ...stats, unreadEmail };
 
   const attentionChips = ATTENTION_CHIPS.filter((c) => canSee(allowed, c.module));
   const attentionTotal = attentionChips.reduce(
-    (sum, chip) => sum + stats[chip.key],
+    (sum, chip) => sum + liveStats[chip.key],
     0,
   );
 
   const portfolio = PORTFOLIO_SEGMENTS.filter((s) => canSee(allowed, s.module)).map(
     (s) => ({
       ...s,
-      value: stats[s.key],
+      value: liveStats[s.key],
     }),
   );
   const portfolioTotal = portfolio.reduce((sum, s) => sum + s.value, 0);
@@ -372,7 +392,7 @@ export function DashboardHome({
           <div className="flex flex-wrap gap-2">
             {attentionChips.map((chip) => {
               const accent = ACCENT[chip.accent];
-              const value = stats[chip.key];
+              const value = liveStats[chip.key];
               return (
                 <Link
                   key={chip.key}
@@ -507,7 +527,7 @@ export function DashboardHome({
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-4">
             {opsCards.map((card) => {
               const accent = ACCENT[card.accent];
-              const value = stats[card.key];
+              const value = liveStats[card.key];
               return (
                 <Link
                   key={card.key}

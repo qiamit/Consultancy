@@ -83,6 +83,16 @@ chrome.runtime.onInstalled.addListener(async () => {
   if (Object.keys(updates).length) {
     await chrome.storage.sync.set(updates);
   }
+  // Fresh install: Manak auto features stay OFF until Consultancy Pro / popup arms them.
+  const local = await chrome.storage.local.get(["qeManakEnabled"]);
+  if (typeof local.qeManakEnabled !== "boolean") {
+    await chrome.storage.local.set({
+      qeManakEnabled: false,
+      qeManakArmed: false,
+      qeManakImportQr: false,
+      qeManakImportQrEnabled: false,
+    });
+  }
 });
 
 chrome.tabs.onCreated.addListener((tab) => {
@@ -95,31 +105,48 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   if (!/manakonline\.in/i.test(url)) return;
   if (/knowfees/i.test(url)) return;
   if (changeInfo.status !== "complete" && !/ebislogin/i.test(url)) return;
-  const apply = (userId, password) => {
-    if (userId || password) scheduleLoginFill(tabId, userId, password);
-  };
-  if (lastPortal.userId || lastPortal.password) {
-    apply(lastPortal.userId, lastPortal.password);
-  } else {
-    chrome.storage.local.get(["qeManakPortal"], (data) => {
-      const portal = (data && data.qeManakPortal) || {};
-      apply(portal.userId, portal.password);
-    });
-  }
-  // After login, Import QR flow must land on Generate QR (Not Used Codes).
-  // Independent of Manak Test Request Auto-flow power.
-  if (changeInfo.status === "complete") {
-    chrome.storage.local.get(
-      ["qeManakImportQr", "qeManakImportQrEnabled"],
-      (data) => {
-        if (!data || data.qeManakImportQr !== true) return;
-        if (data.qeManakImportQrEnabled === false) return;
-        if (/ebislogin/i.test(url)) return;
-        if (/employeeQrCodeGeneration/i.test(url)) return;
-        void safeTabUpdate(tabId, { url: GENERATE_QR_URL });
-      },
-    );
-  }
+
+  // Login auto-fill + Import redirect ONLY while a Manak flow is armed.
+  chrome.storage.local.get(
+    [
+      "qeManakEnabled",
+      "qeManakArmed",
+      "pendingFill",
+      "qeManakImportQr",
+      "qeManakImportQrEnabled",
+      "qeManakImportQrLanded",
+      "qeManakPortal",
+    ],
+    (data) => {
+      const importArmed = data && data.qeManakImportQr === true;
+      const trArmed =
+        data &&
+        data.qeManakEnabled === true &&
+        data.qeManakArmed === true &&
+        Boolean(data.pendingFill);
+      if (!importArmed && !trArmed) return;
+
+      if (/ebislogin/i.test(url) || changeInfo.status === "complete") {
+        const portal = (data && data.qeManakPortal) || {};
+        const userId = lastPortal.userId || portal.userId || "";
+        const password = lastPortal.password || portal.password || "";
+        if (userId || password) scheduleLoginFill(tabId, userId, password);
+      }
+
+      // Import QR: land on Generate QR once after login.
+      if (changeInfo.status !== "complete" || !importArmed) return;
+      if (/ebislogin/i.test(url)) return;
+      if (/employeeQrCodeGeneration|generateqr|qrcodegeneration/i.test(url)) {
+        if (data.qeManakImportQrLanded !== true) {
+          void chrome.storage.local.set({ qeManakImportQrLanded: true });
+        }
+        return;
+      }
+      if (data.qeManakImportQrLanded === true) return;
+      void chrome.storage.local.set({ qeManakImportQrLanded: true });
+      void safeTabUpdate(tabId, { url: GENERATE_QR_URL });
+    },
+  );
 });
 
 if (hasWebNavigation && chrome.webNavigation.onCreatedNavigationTarget) {
@@ -471,13 +498,31 @@ async function isManakTrCaptureActive() {
     ]);
     return (
       Boolean(data) &&
-      data.qeManakEnabled !== false &&
+      data.qeManakEnabled === true &&
       data.qeManakArmed === true &&
       data.qeManakImportQr !== true &&
       Boolean(data.pendingFill)
     );
   } catch {
     return false;
+  }
+}
+
+/** Tell every Manak tab to drop capture / import hooks immediately. */
+async function broadcastManakIdle() {
+  try {
+    const tabs = await chrome.tabs.query({
+      url: ["https://www.manakonline.in/*", "https://manakonline.in/*"],
+    });
+    await Promise.all(
+      tabs
+        .filter((tab) => typeof tab.id === "number")
+        .map((tab) =>
+          chrome.tabs.sendMessage(tab.id, { type: "QE_MANAK_IDLE" }).catch(() => null),
+        ),
+    );
+  } catch {
+    /* ignore */
   }
 }
 
@@ -584,6 +629,10 @@ function injectLightResult(tabId, result) {
       args: [light],
     }),
   );
+}
+
+function clearRememberedPortal() {
+  lastPortal = { userId: "", password: "" };
 }
 
 function rememberPortal(userId, password) {
@@ -934,6 +983,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           manakQrImport: null,
           qeManakImportQr: true,
           qeManakImportQrEnabled: false,
+          qeManakImportQrLanded: false,
           qeManakQrCount: qrCount,
           qeManakArmed: true,
           qeManakHomeReady: false,
@@ -947,6 +997,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         if (reused && reused.tab.id) {
           await chrome.storage.local.set({
             qeManakImportQrEnabled: true,
+            qeManakImportQrLanded: true,
             qeManakImportQrTabId: reused.tab.id,
             pendingFill: null,
           });
@@ -1047,6 +1098,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         manakQrImport: result,
         qeManakImportQr: false,
         qeManakImportQrEnabled: false,
+        qeManakImportQrLanded: false,
         qeManakImportQrTabId: 0,
         pendingFill: null,
       });
@@ -1062,6 +1114,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  if (message.type === "QE_MANAK_IDLE") {
+    clearRememberedPortal();
+    void broadcastManakIdle();
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (message.type === "QE_MANAK_FINISH_TR") {
     const senderTabId = sender && sender.tab ? Number(sender.tab.id) || 0 : 0;
     void chrome.storage.local.set({
@@ -1071,6 +1130,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       qeManakHomeReady: false,
       qeManakImportQr: false,
     });
+    void broadcastManakIdle();
     if (message.closeTab && senderTabId) {
       void settle(chrome.tabs.remove(senderTabId)).catch(() => {});
     }

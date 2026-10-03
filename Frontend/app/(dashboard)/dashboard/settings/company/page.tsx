@@ -4,7 +4,7 @@ import { listCompanyNotesTemplates } from "@backend/shared/data/company-notes-te
 import { listCompanyScopeOfWork } from "@backend/shared/data/company-scope-of-work";
 import { listCompanyTerms } from "@backend/shared/data/company-terms";
 import { DOCUMENTS_BUCKET } from "@backend/modules/storage/documents";
-import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
+import { getCachedAccess, getCachedUser } from "@backend/modules/auth/cached-access";
 import { createClient } from "@backend/db/client/server";
 
 async function signedImageUrl(
@@ -70,12 +70,8 @@ export default async function CompanySettingsPage({
   const saved = firstSearchParam(sp, "saved") === "1";
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [user, access] = await Promise.all([getCachedUser(), getCachedAccess()]);
   if (!user) redirect("/login");
-
-  const access = await ensureProfileAccess(supabase, user);
   if (!access?.isAdmin) {
     redirect("/dashboard?error=admin_required");
   }

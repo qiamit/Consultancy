@@ -3,18 +3,16 @@ import { createClient } from "@backend/db/client/server";
 import { DashboardHome } from "@/components/dashboard/dashboard-home";
 import {
   applicationProjectKindDbValues,
+  inclusionProjectKindDbValues,
   inFilter,
-  nonLicenseProjectKindDbValues,
 } from "@backend/modules/bis/bis-project-kind";
 import { dashboardLicenseDateBounds } from "@backend/shared/dashboard-date-bounds";
-import { ensureProfileAccess } from "@backend/modules/auth/ensure-access";
+import { getCachedAccess, getCachedUser } from "@backend/modules/auth/cached-access";
 import {
   getModulePermission,
   type DashboardModuleKey,
   type ModulePermission,
 } from "@backend/modules/auth/modules";
-import { fetchUnreadEmailCount } from "@backend/actions/email-accounts";
-
 export const dynamic = "force-dynamic";
 
 const LEGACY_RENEWAL_TABS = new Set(["renewals", "deferred"]);
@@ -64,19 +62,18 @@ export default async function DashboardHomePage({
   if (tab === "finance") redirect("/dashboard/finance");
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const [user, access] = await Promise.all([getCachedUser(), getCachedAccess()]);
   if (!user) redirect("/login");
-
-  const access = await ensureProfileAccess(supabase, user);
   if (!access) redirect("/login");
 
-  const [applicationKinds, nonLicenseKinds] = await Promise.all([
+  // One dropdown query each — avoid nonLicense calling application kinds again.
+  const [applicationKinds, inclusionKinds] = await Promise.all([
     applicationProjectKindDbValues(supabase),
-    nonLicenseProjectKindDbValues(supabase),
+    inclusionProjectKindDbValues(supabase),
   ]);
-  const applicationKindFilter = inFilter(applicationKinds);
+  const nonLicenseKinds = Array.from(
+    new Set([...applicationKinds, ...inclusionKinds]),
+  );
   const nonLicenseKindFilter = inFilter(nonLicenseKinds);
   const { today, yesterday, plus30Days, plus90Days, minus90Days } =
     dashboardLicenseDateBounds();
@@ -104,7 +101,6 @@ export default async function DashboardHomePage({
     quotationsPendingRes,
     taxPendingRes,
     roleRowRes,
-    unreadEmail,
   ] = await Promise.all([
     supabase.from("clients").select("id", { count: "exact", head: true }),
     supabase.from("is_codes").select("id", { count: "exact", head: true }),
@@ -156,9 +152,6 @@ export default async function DashboardHomePage({
       .select("label")
       .eq("slug", access.profile.role)
       .maybeSingle(),
-    access.modules.includes("email") || access.isAdmin
-      ? fetchUnreadEmailCount()
-      : Promise.resolve(0),
   ]);
 
   const modulePermissions = Object.fromEntries(
@@ -200,7 +193,8 @@ export default async function DashboardHomePage({
         surveillance: surveillanceRes.count ?? 0,
         financePending:
           (quotationsPendingRes.count ?? 0) + (taxPendingRes.count ?? 0),
-        unreadEmail,
+        // Loaded asynchronously by the header badge — do not block home SSR.
+        unreadEmail: 0,
       }}
     />
   );

@@ -304,8 +304,8 @@ export function TechnicalStaffModal({
 
   return (
     <>
-      <div className="absolute inset-0 z-[400] flex flex-col bg-zinc-950">
-        <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 bg-zinc-900 px-4 py-3">
+      <div className="dark absolute inset-0 z-[400] flex flex-col bg-zinc-950 text-zinc-50">
+        <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-700 bg-zinc-900 px-4 py-3">
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-sm font-semibold text-white">Technical Staff Details</h2>
             <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isFullNumber} />
@@ -389,7 +389,7 @@ export function TechnicalStaffModal({
             <button
               type="button"
               onClick={() => setShowQeAssistant(true)}
-              className="rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-950/70"
+              className="rounded-lg border border-amber-400/70 bg-amber-500/30 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-500/45"
             >
               QE Assistant
             </button>
@@ -403,7 +403,7 @@ export function TechnicalStaffModal({
                 settingsPanel ? "xl:w-[calc(100%-18rem)]" : "xl:w-full"
               }`}
             >
-              <div className="space-y-3 border-b border-zinc-800 px-4 py-3">
+              <div className="space-y-3 border-b border-zinc-700 px-4 py-3">
                 <div className="flex flex-wrap items-center justify-end gap-3">
                   <div className="flex shrink-0 flex-wrap items-center gap-2">
                     <TechnicalStaffAddButton theme="dark" onClick={openAddStaffForm} />
@@ -411,7 +411,7 @@ export function TechnicalStaffModal({
                       <button
                         type="button"
                         onClick={() => setShowIsCodeView(true)}
-                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-1.5 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                        className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-violet-400/60 bg-violet-600/30 px-2.5 py-1.5 text-xs font-semibold text-violet-100 hover:bg-violet-600/45"
                       >
                         <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -423,7 +423,7 @@ export function TechnicalStaffModal({
                 </div>
               </div>
 
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-zinc-950/40 p-4">
                 <TechnicalStaffTableEditor
                   theme="dark"
                   rows={rows}

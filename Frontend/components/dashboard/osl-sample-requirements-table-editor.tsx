@@ -26,15 +26,15 @@ const themes = {
     wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-300 dark:border-zinc-700",
     empty: "px-4 py-10 text-center text-sm text-zinc-500 dark:text-zinc-400",
     editBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-500/70 bg-amber-50 text-amber-800 shadow-sm hover:bg-amber-100 dark:border-amber-400/70 dark:bg-amber-500/25 dark:text-amber-100 dark:hover:bg-amber-500/40",
     copyBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-zinc-100 hover:text-sky-600 dark:hover:bg-zinc-800 dark:hover:text-sky-300",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-500/50 bg-sky-50 text-sky-700 shadow-sm hover:bg-sky-100 dark:border-sky-400/60 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:bg-sky-500/35",
     generateTrBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-500/50 bg-emerald-50 text-emerald-700 shadow-sm hover:bg-emerald-100 dark:border-emerald-400/60 dark:bg-emerald-500/20 dark:text-emerald-100 dark:hover:bg-emerald-500/35",
     labelsBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-emerald-50 hover:text-emerald-700 dark:hover:bg-emerald-950/40 dark:hover:text-emerald-300",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-violet-500/50 bg-violet-50 text-violet-700 shadow-sm hover:bg-violet-100 dark:border-violet-400/60 dark:bg-violet-500/20 dark:text-violet-100 dark:hover:bg-violet-500/35",
     delBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-zinc-100 hover:text-red-600 dark:hover:bg-zinc-800 dark:hover:text-red-400",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-500/50 bg-rose-50 text-rose-700 shadow-sm hover:bg-rose-100 dark:border-rose-400/60 dark:bg-rose-500/20 dark:text-rose-100 dark:hover:bg-rose-500/35",
     muted: "text-zinc-400 dark:text-zinc-500",
     highlight: "ring-2 ring-sky-500/80",
     card: "overflow-hidden rounded-xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-700 dark:bg-zinc-950",
@@ -60,41 +60,41 @@ const themes = {
     trMuted: "opacity-60",
   },
   dark: {
-    wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800",
-    empty: "px-4 py-10 text-center text-sm text-zinc-500",
+    wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-600 bg-zinc-900",
+    empty: "px-4 py-10 text-center text-sm text-zinc-300",
     editBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/80 bg-amber-500/30 text-amber-50 shadow-sm hover:bg-amber-500/45",
     copyBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-zinc-800 hover:text-sky-300",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/70 bg-sky-500/25 text-sky-50 shadow-sm hover:bg-sky-500/40",
     generateTrBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-zinc-800 hover:text-emerald-300",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-emerald-400/70 bg-emerald-500/25 text-emerald-50 shadow-sm hover:bg-emerald-500/40",
     labelsBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-zinc-800 hover:text-emerald-300",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-violet-400/70 bg-violet-500/25 text-violet-50 shadow-sm hover:bg-violet-500/40",
     delBtn:
-      "rounded-md p-1 text-lg leading-none text-zinc-400 hover:bg-zinc-800 hover:text-red-400",
-    muted: "text-zinc-500",
-    highlight: "ring-2 ring-sky-500/80",
-    card: "overflow-hidden rounded-xl border border-zinc-700/80 bg-zinc-950 shadow-[0_8px_30px_rgba(0,0,0,0.25)]",
-    panel: "rounded-xl border border-zinc-800 bg-zinc-950/80 p-3",
-    cardLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
-    cardValue: "mt-0.5 text-xs leading-snug text-zinc-100",
-    heroLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
-    heroValue: "mt-1 text-sm font-semibold leading-snug text-zinc-50",
-    ticketBand: "grid gap-3 border-b border-zinc-800 bg-zinc-900/80 px-3.5 py-3 sm:grid-cols-2",
-    kvWrap: "divide-y divide-zinc-800/90 px-3.5",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-400/70 bg-rose-500/25 text-rose-50 shadow-sm hover:bg-rose-500/40",
+    muted: "text-zinc-400",
+    highlight: "ring-2 ring-sky-400/90",
+    card: "overflow-hidden rounded-xl border border-zinc-600 bg-zinc-900 shadow-[0_8px_30px_rgba(0,0,0,0.25)]",
+    panel: "rounded-xl border border-zinc-600 bg-zinc-900 p-3",
+    cardLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
+    cardValue: "mt-0.5 text-xs leading-snug text-zinc-50",
+    heroLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
+    heroValue: "mt-1 text-sm font-semibold leading-snug text-white",
+    ticketBand: "grid gap-3 border-b border-zinc-700 bg-zinc-800 px-3.5 py-3 sm:grid-cols-2",
+    kvWrap: "divide-y divide-zinc-700 px-3.5",
     kvRow: "grid gap-1 py-2.5 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:items-start sm:gap-3",
-    kvLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-500",
-    kvValue: "text-sm leading-snug text-zinc-100",
-    cardFooter: "border-t border-zinc-800 bg-zinc-900/70 px-3.5 py-2.5",
+    kvLabel: "text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
+    kvValue: "text-sm leading-snug text-zinc-50",
+    cardFooter: "border-t border-zinc-700 bg-zinc-800 px-3.5 py-2.5",
     addBtn:
-      "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
-    metaRow: "flex gap-2 border-b border-zinc-800/90 py-1.5 last:border-b-0",
-    tableWrap: "min-h-0 flex-1 overflow-auto",
-    table: "w-full min-w-[1200px] border-collapse text-center text-xs",
-    th: "sticky top-0 z-10 whitespace-nowrap border-b border-zinc-700 bg-zinc-900 px-2.5 py-2 text-center text-[10px] font-bold uppercase tracking-wide text-zinc-400",
-    td: "border-b border-zinc-800 px-2.5 py-2 align-middle text-center text-zinc-100",
-    tdMono: "border-b border-zinc-800 px-2.5 py-2 align-middle text-center font-mono text-[11px] font-semibold text-zinc-50",
-    trMuted: "opacity-60",
+      "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-400/70 bg-teal-600/30 px-2.5 py-1.5 text-xs font-semibold text-teal-100 hover:bg-teal-600/45",
+    metaRow: "flex gap-2 border-b border-zinc-700 py-1.5 last:border-b-0",
+    tableWrap: "min-h-0 flex-1 overflow-auto bg-zinc-900",
+    table: "w-full min-w-[1280px] border-collapse text-center text-xs",
+    th: "sticky top-0 z-10 whitespace-nowrap border-b border-zinc-500 bg-zinc-800 px-2.5 py-2.5 text-center text-[10px] font-bold uppercase tracking-wide text-zinc-100",
+    td: "border-b border-zinc-700 bg-zinc-900 px-2.5 py-2.5 align-middle text-center text-zinc-50",
+    tdMono: "border-b border-zinc-700 bg-zinc-900 px-2.5 py-2.5 align-middle text-center font-mono text-[11px] font-semibold text-white",
+    trMuted: "opacity-70",
   },
 } as const;
 
@@ -223,12 +223,12 @@ function fieldOrDash(value: string) {
 
 function sampleForBadgeClass(kind: OslSampleFor): string {
   if (kind === "ft") {
-    return "border-amber-500/40 bg-amber-500/15 text-amber-200";
+    return "border-amber-400/80 bg-amber-500/30 text-amber-50";
   }
   if (kind === "it") {
-    return "border-violet-500/40 bg-violet-500/15 text-violet-200";
+    return "border-violet-400/80 bg-violet-500/30 text-violet-50";
   }
-  return "border-teal-500/40 bg-teal-500/15 text-teal-200";
+  return "border-teal-400/80 bg-teal-500/30 text-teal-50";
 }
 
 function IconClip() {
@@ -310,13 +310,13 @@ function sampleDocButtonClass(
 ): string {
   if (hasPdf) {
     return kind === "request"
-      ? "border-emerald-500/50 bg-emerald-500/15 text-emerald-200 hover:bg-emerald-500/25"
-      : "border-sky-500/50 bg-sky-500/15 text-sky-200 hover:bg-sky-500/25";
+      ? "border-emerald-400/80 bg-emerald-500/25 text-emerald-100 hover:bg-emerald-500/40"
+      : "border-sky-400/80 bg-sky-500/25 text-sky-100 hover:bg-sky-500/40";
   }
   if (kind === "request" && hasSampleCode && !hasPdf) {
-    return "border-red-500/50 bg-red-500/15 text-red-200 hover:bg-red-500/25";
+    return "border-rose-400/80 bg-rose-500/25 text-rose-100 hover:bg-rose-500/40";
   }
-  return "border-zinc-600/70 bg-zinc-800/60 text-zinc-300 hover:bg-zinc-800";
+  return "border-zinc-500 bg-zinc-800 text-zinc-100 hover:bg-zinc-700";
 }
 
 /** Request / Report chip — click opens Add · View · Delete · Download. */
@@ -593,13 +593,13 @@ function InLetterToggle({
       }
       className={`inline-flex h-[22px] w-[34px] shrink-0 items-center justify-center rounded-full border transition-colors ${
         on
-          ? "border-sky-500/50 bg-sky-500/20 text-sky-200"
-          : "border-zinc-600/70 bg-zinc-800/50 text-zinc-500"
+          ? "border-sky-400/80 bg-sky-500/30 text-sky-100"
+          : "border-zinc-500 bg-zinc-800 text-zinc-300"
       }`}
     >
       <span
         className={`relative inline-flex h-3.5 w-6 shrink-0 items-center rounded-full transition-colors ${
-          on ? "bg-sky-500" : "bg-zinc-600"
+          on ? "bg-sky-400" : "bg-zinc-500"
         }`}
         aria-hidden
       >
@@ -722,8 +722,20 @@ export function OslSampleRequirementsTableEditor({
   }, [focusSampleIndex, visibleRows.length]);
 
   function rowToolbar(row: OslSampleRequirementRow, srNo: string) {
+    const iconClass = "h-3.5 w-3.5 shrink-0";
     return (
-      <div className="inline-flex items-center justify-center gap-1">
+      <div className="inline-flex flex-wrap items-center justify-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onEdit(row)}
+          className={t.editBtn}
+          aria-label={`Edit sample form ${srNo}`}
+          title="Edit Form"
+        >
+          <svg className={iconClass} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 3.487a2.25 2.25 0 113.182 3.182L7.5 19.213 3 20.25l1.037-4.5L16.862 3.487z" />
+          </svg>
+        </button>
         <button
           type="button"
           onClick={() => onCopy(row)}
@@ -731,14 +743,16 @@ export function OslSampleRequirementsTableEditor({
           aria-label={`Duplicate sample ${srNo}`}
           title="Duplicate"
         >
-          📋
+          <svg className={iconClass} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+          </svg>
         </button>
         {onGenerateTestRequest ? (
           <button
             type="button"
             onClick={() => onGenerateTestRequest(row)}
             className={`${t.generateTrBtn} ${
-              manakGeneratedRowId === row.id ? "ring-1 ring-emerald-400/60" : ""
+              manakGeneratedRowId === row.id ? "ring-2 ring-emerald-300/80" : ""
             }`}
             aria-label={`Generate Test Request for sample ${srNo}`}
             title={
@@ -747,7 +761,9 @@ export function OslSampleRequirementsTableEditor({
                 : "Generate Test Request"
             }
           >
-            🧪
+            <svg className={iconClass} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
+            </svg>
           </button>
         ) : null}
         {onViewSampleLabels ? (
@@ -755,9 +771,7 @@ export function OslSampleRequirementsTableEditor({
             type="button"
             onClick={() => onViewSampleLabels(row)}
             disabled={sampleLabelsLoading}
-            className={`${t.labelsBtn} ${
-              sampleLabelsRowId === row.id ? "text-emerald-300" : ""
-            } disabled:opacity-50`}
+            className={`${t.labelsBtn} disabled:cursor-not-allowed disabled:opacity-50`}
             aria-label={`View sample labels for sample ${srNo}`}
             title={
               sampleLabelsLoading && sampleLabelsRowId === row.id
@@ -765,7 +779,9 @@ export function OslSampleRequirementsTableEditor({
                 : "View Sample Labels"
             }
           >
-            🏷️
+            <svg className={iconClass} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z" />
+            </svg>
           </button>
         ) : null}
         <button
@@ -775,7 +791,9 @@ export function OslSampleRequirementsTableEditor({
           aria-label={`Delete sample ${srNo}`}
           title="Delete"
         >
-          🗑️
+          <svg className={iconClass} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
         </button>
       </div>
     );
@@ -824,7 +842,7 @@ export function OslSampleRequirementsTableEditor({
                     }`}
                   >
                     <td className={t.td}>
-                      <span className="font-semibold text-zinc-400">{srNo}</span>
+                      <span className="font-semibold text-zinc-200">{srNo}</span>
                     </td>
                     <td className={t.td}>
                       <span
@@ -838,22 +856,28 @@ export function OslSampleRequirementsTableEditor({
                         <button
                           type="button"
                           onClick={() => onEdit(row)}
-                          className="font-mono text-[11px] font-semibold text-sky-300 underline decoration-sky-500/50 underline-offset-2 hover:text-sky-200 hover:decoration-sky-300"
-                          title="Edit sample"
-                          aria-label={`Edit sample ${srNo} (QR ${row.qr_code.trim()})`}
+                          className="font-mono text-[11px] font-semibold text-sky-200 underline decoration-sky-400/70 underline-offset-2 hover:text-sky-100 hover:decoration-sky-200"
+                          title="Edit Form"
+                          aria-label={`Edit sample form ${srNo} (QR ${row.qr_code.trim()})`}
                         >
                           {row.qr_code.trim()}
                         </button>
                       ) : (
-                        "—"
+                        <span className="text-zinc-400">—</span>
                       )}
                     </td>
-                    <td className={t.tdMono}>{fieldOrDash(row.sample_code)}</td>
+                    <td className={t.tdMono}>
+                      {row.sample_code.trim() ? (
+                        row.sample_code.trim()
+                      ) : (
+                        <span className="text-zinc-400">—</span>
+                      )}
+                    </td>
                     <td className={`${t.td} max-w-[14rem] break-words`}>
                       <button
                         type="button"
                         onClick={() => setDetailsRow({ row, srNo })}
-                        className="text-xs font-semibold text-violet-300 underline decoration-violet-500/50 underline-offset-2 hover:text-violet-200 hover:decoration-violet-300"
+                        className="text-xs font-semibold text-violet-200 underline decoration-violet-400/70 underline-offset-2 hover:text-violet-100 hover:decoration-violet-200"
                         title="View sample details"
                         aria-label={`View sample details for ${srNo}`}
                       >
@@ -862,7 +886,7 @@ export function OslSampleRequirementsTableEditor({
                     </td>
                     <td className={t.td}>
                       {priority ? (
-                        <span className="inline-flex items-center rounded-full border border-zinc-600/70 bg-zinc-800/60 px-2 py-0.5 text-[10px] font-semibold text-zinc-300">
+                        <span className="inline-flex items-center rounded-full border border-zinc-400/80 bg-zinc-700 px-2 py-0.5 text-[10px] font-semibold text-zinc-50">
                           {priority}
                         </span>
                       ) : (

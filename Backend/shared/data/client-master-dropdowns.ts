@@ -38,122 +38,110 @@ export type ClientMasterDropdownOptions = {
   phoneCountryCodeOptions: AppDropdownOptionRow[];
 };
 
+function withDefault(
+  options: AppDropdownOptionRow[],
+  value: string,
+  idPrefix: string,
+): AppDropdownOptionRow[] {
+  if (options.some((o) => o.value === value)) return options;
+  return [
+    {
+      id: `${idPrefix}${value}`,
+      value,
+      label: null,
+      canDelete: false,
+    },
+    ...options,
+  ];
+}
+
 export async function loadClientMasterDropdownOptions(
   supabase: Supabase,
 ): Promise<ClientMasterDropdownOptions> {
-  let companyTypeOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_TYPE);
-  if (companyTypeOptions.length === 0) {
-    companyTypeOptions = COMPANY_TYPES.map((value, i) => ({
-      id: `__static__${i}`,
-      value,
-      label: null,
-      canDelete: false,
-    }));
-  }
+  const [
+    companyTypeRaw,
+    companyScaleRaw,
+    companyStatusRaw,
+    pinCodeRaw,
+    cityRaw,
+    stateRaw,
+    countryRaw,
+    paymentTermRaw,
+    phoneCountryCodeRaw,
+  ] = await Promise.all([
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_TYPE),
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_SCALE),
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_STATUS),
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_PIN_CODE),
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_CITY),
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_STATE),
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COUNTRY),
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_PAYMENT_TERM),
+    fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_PHONE_COUNTRY_CODE),
+  ]);
 
-  let companyScaleOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_SCALE);
-  if (companyScaleOptions.length === 0) {
-    companyScaleOptions = SCALES.map((value, i) => ({
-      id: `__static_scale__${i}`,
-      value,
-      label: null,
-      canDelete: false,
-    }));
-  }
+  const companyTypeOptions =
+    companyTypeRaw.length > 0
+      ? companyTypeRaw
+      : COMPANY_TYPES.map((value, i) => ({
+          id: `__static__${i}`,
+          value,
+          label: null,
+          canDelete: false,
+        }));
 
-  let companyStatusOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COMPANY_STATUS);
-  if (companyStatusOptions.length === 0) {
-    companyStatusOptions = STATUSES.map((value, i) => ({
-      id: `__static_status__${i}`,
-      value,
-      label: null,
-      canDelete: false,
-    }));
-  }
+  const companyScaleOptions =
+    companyScaleRaw.length > 0
+      ? companyScaleRaw
+      : SCALES.map((value, i) => ({
+          id: `__static_scale__${i}`,
+          value,
+          label: null,
+          canDelete: false,
+        }));
 
-  let pinCodeOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_PIN_CODE);
-  if (!pinCodeOptions.some((o) => o.value === DEFAULT_PIN_CODE)) {
-    pinCodeOptions = [
-      {
-        id: `__static_pin__${DEFAULT_PIN_CODE}`,
-        value: DEFAULT_PIN_CODE,
-        label: null,
-        canDelete: false,
-      },
-      ...pinCodeOptions,
-    ];
-  }
+  const companyStatusOptions =
+    companyStatusRaw.length > 0
+      ? companyStatusRaw
+      : STATUSES.map((value, i) => ({
+          id: `__static_status__${i}`,
+          value,
+          label: null,
+          canDelete: false,
+        }));
 
-  let cityOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_CITY);
-  if (!cityOptions.some((o) => o.value === DEFAULT_CITY)) {
-    cityOptions = [
-      {
-        id: `__static_city__${DEFAULT_CITY}`,
-        value: DEFAULT_CITY,
-        label: null,
-        canDelete: false,
-      },
-      ...cityOptions,
-    ];
-  }
+  const pinCodeOptions = withDefault(
+    pinCodeRaw,
+    DEFAULT_PIN_CODE,
+    "__static_pin__",
+  );
+  const cityOptions = withDefault(cityRaw, DEFAULT_CITY, "__static_city__");
+  const stateOptions = withDefault(stateRaw, DEFAULT_STATE, "__static_state__");
+  const countryOptions = withDefault(
+    countryRaw,
+    DEFAULT_COUNTRY,
+    "__static_country__",
+  );
 
-  let stateOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_STATE);
-  if (!stateOptions.some((o) => o.value === DEFAULT_STATE)) {
-    stateOptions = [
-      {
-        id: `__static_state__${DEFAULT_STATE}`,
-        value: DEFAULT_STATE,
-        label: null,
-        canDelete: false,
-      },
-      ...stateOptions,
-    ];
-  }
+  const paymentTermOptions =
+    paymentTermRaw.length > 0
+      ? paymentTermRaw
+      : PAYMENT_TERMS.map((t, i) => ({
+          id: `__static_payment__${i}`,
+          value: t.value,
+          label: t.label,
+          canDelete: false,
+        }));
 
-  let countryOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_COUNTRY);
-  if (!countryOptions.some((o) => o.value === DEFAULT_COUNTRY)) {
-    countryOptions = [
-      {
-        id: `__static_country__${DEFAULT_COUNTRY}`,
-        value: DEFAULT_COUNTRY,
-        label: null,
-        canDelete: false,
-      },
-      ...countryOptions,
-    ];
-  }
-
-  let paymentTermOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(supabase, DROPDOWN_KEY_CLIENT_PAYMENT_TERM);
-  if (paymentTermOptions.length === 0) {
-    paymentTermOptions = PAYMENT_TERMS.map((t, i) => ({
-      id: `__static_payment__${i}`,
-      value: t.value,
-      label: t.label,
-      canDelete: false,
-    }));
-  }
-
-  let phoneCountryCodeOptions: AppDropdownOptionRow[] =
-    await fetchAppDropdownOptions(
-      supabase,
-      DROPDOWN_KEY_CLIENT_PHONE_COUNTRY_CODE,
-    );
-  if (phoneCountryCodeOptions.length === 0) {
-    phoneCountryCodeOptions = DEFAULT_PHONE_COUNTRY_CODES.map((value, i) => ({
-      id: `__static_phone_cc__${i}`,
-      value,
-      label: null,
-      canDelete: false,
-    }));
-  }
+  const phoneCountryCodeOptions =
+    phoneCountryCodeRaw.length > 0
+      ? phoneCountryCodeRaw
+      : DEFAULT_PHONE_COUNTRY_CODES.map((value, i) => ({
+          id: `__static_phone_cc__${i}`,
+          value,
+          label: null,
+          canDelete: false,
+        }));
 
   return {
     companyTypeOptions,

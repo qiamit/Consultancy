@@ -1,7 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Outfit, Sora, JetBrains_Mono } from "next/font/google";
 import { cookies } from "next/headers";
-import { createClient } from "@backend/db/client/server";
 import {
   getAppThemeOption,
   normalizeAppTheme,
@@ -62,21 +61,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const cookieStore = await cookies();
-  let themeRaw = cookieStore.get("theme")?.value;
-
-  if (!themeRaw) {
-    try {
-      const supabase = await createClient();
-      const { data } = await supabase
-        .from("app_settings")
-        .select("app_theme")
-        .eq("id", 1)
-        .maybeSingle();
-      themeRaw = data?.app_theme || "system";
-    } catch {
-      themeRaw = "system";
-    }
-  }
+  // Prefer cookie only — DB fallback blocked every document on cold visits.
+  const themeRaw = cookieStore.get("theme")?.value || "system";
 
   const theme = normalizeAppTheme(themeRaw);
   const isDark = resolveServerDark(theme);

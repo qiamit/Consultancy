@@ -255,7 +255,7 @@ export function buildLicenseScopeTableHtml(
   const head = headers
     .map(
       (label) =>
-        `<th style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;text-transform:none;letter-spacing:normal;font-weight:700;">${esc(label)}</th>`,
+        `<th style="padding:4px 6px;border:1px solid #cbd5e1;text-align:center;text-transform:none;letter-spacing:normal;font-weight:700;">${esc(label)}</th>`,
     )
     .join("");
 
@@ -264,7 +264,7 @@ export function buildLicenseScopeTableHtml(
       const cells = licenseScopeRowCells(r, count)
         .map(
           (cell) =>
-            `<td style="padding:6px 8px;border:1px solid #cbd5e1;text-align:center;">${esc(cell.trim() || "—")}</td>`,
+            `<td style="padding:4px 6px;border:1px solid #cbd5e1;text-align:center;">${esc(cell.trim() || "—")}</td>`,
         )
         .join("");
       return `<tr>${cells}</tr>`;
@@ -272,7 +272,7 @@ export function buildLicenseScopeTableHtml(
     .join("");
 
   return `
-<table class="license-scope-table" style="width:100%;border-collapse:collapse;font-size:12px;line-height:1.5;">
+<table class="license-scope-table" style="width:100%;border-collapse:collapse;font-size:11px;line-height:1.35;">
   <thead>
     <tr style="background:#e2e8f0;">
       ${head}

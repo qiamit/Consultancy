@@ -175,15 +175,20 @@ export function FtrTestParameterPickerModal({
         onClick={(e) => {
           if (e.target === e.currentTarget) onClose();
         }}
+        onWheel={(e) => {
+          // Keep wheel inside the picker — parent FTR overlay must not steal scroll.
+          e.stopPropagation();
+        }}
       >
         <div
-          className="flex max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-700 bg-zinc-900 shadow-2xl"
+          className="dark flex h-[min(85vh,56rem)] max-h-[85vh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-600 bg-zinc-900 text-zinc-50 shadow-2xl"
           onClick={(e) => e.stopPropagation()}
+          onWheel={(e) => e.stopPropagation()}
         >
-          <div className="border-b border-zinc-800 px-5 py-4">
+          <div className="shrink-0 border-b border-zinc-700 px-5 py-4">
             <div className="min-w-0">
-              <h3 className="text-sm font-semibold text-white">Add Test Parameters</h3>
-              <p className="mt-0.5 text-xs text-zinc-400">
+              <h3 className="text-base font-semibold text-white">Add Test Parameters</h3>
+              <p className="mt-0.5 text-xs text-zinc-300">
                 Select parameters for {isReference !== "—" ? isReference : "this IS code"}
               </p>
             </div>
@@ -193,13 +198,13 @@ export function FtrTestParameterPickerModal({
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="Search test name, clause, unit…"
-                className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40"
+                className="min-w-0 flex-1 rounded-lg border border-zinc-600 bg-zinc-950 px-3 py-2 text-sm text-zinc-50 outline-none placeholder:text-zinc-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40"
               />
               {isCodeId ? (
                 <button
                   type="button"
                   onClick={() => setShowIsCodeView(true)}
-                  className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-indigo-600/50 bg-indigo-950/40 px-2.5 py-2 text-xs font-semibold text-indigo-200 hover:bg-indigo-950/70"
+                  className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-violet-400/60 bg-violet-600/30 px-2.5 py-2 text-xs font-semibold text-violet-100 hover:bg-violet-600/45"
                 >
                   <svg
                     className="h-3.5 w-3.5"
@@ -227,71 +232,81 @@ export function FtrTestParameterPickerModal({
             </div>
           </div>
 
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain bg-zinc-950/80"
+            data-ftr-param-picker-scroll
+          >
             {!isCodeId ? (
-              <p className="px-5 py-8 text-center text-sm text-zinc-500">
+              <p className="px-5 py-8 text-center text-sm text-zinc-400">
                 This application has no IS code linked. Assign the application IS code to load test
                 parameters.
               </p>
             ) : loading ? (
-              <p className="px-5 py-8 text-center text-sm text-zinc-500">Loading test parameters…</p>
+              <p className="px-5 py-8 text-center text-sm text-zinc-400">Loading test parameters…</p>
             ) : parameters.length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-zinc-500">
+              <p className="px-5 py-8 text-center text-sm text-zinc-400">
                 No test parameters found for {isReference !== "—" ? isReference : "this IS code"}. Add
                 them in Test Parameters master first.
               </p>
             ) : filtered.length === 0 ? (
-              <p className="px-5 py-8 text-center text-sm text-zinc-500">No matches for your search.</p>
+              <p className="px-5 py-8 text-center text-sm text-zinc-400">No matches for your search.</p>
             ) : (
-              <table className="w-full text-sm">
-                <thead className="sticky top-0 bg-zinc-800">
-                  <tr>
-                    <th className="w-10 px-3 py-2">
+              <table className="w-full border-0 bg-transparent text-sm shadow-none">
+                <thead className="sticky top-0 z-10">
+                  <tr className="bg-zinc-800">
+                    <th className="w-10 px-3 py-2.5">
                       <input
                         type="checkbox"
                         checked={pageAllSelected}
                         onChange={toggleAllOnPage}
-                        className="h-4 w-4 rounded accent-sky-600"
+                        className="h-4 w-4 rounded accent-sky-500"
                       />
                     </th>
-                    <th className="px-3 py-2 text-left text-xs font-semibold uppercase text-zinc-400">
+                    <th className="px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-zinc-100">
                       Test Name
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-zinc-400">
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-100">
                       Clause
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-zinc-400">
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-100">
                       Unit
                     </th>
-                    <th className="px-3 py-2 text-center text-xs font-semibold uppercase text-zinc-400">
+                    <th className="px-3 py-2.5 text-center text-xs font-semibold uppercase tracking-wide text-zinc-100">
                       Specified Value
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-zinc-800">
-                  {paginated.map(({ p }) => {
+                <tbody>
+                  {paginated.map(({ p }, index) => {
                     const id = paramKey(p);
+                    const selected = selectedIds.has(id);
                     return (
                       <tr
                         key={id}
-                        className="cursor-pointer hover:bg-zinc-800/60"
+                        className={`cursor-pointer ${
+                          selected
+                            ? "bg-sky-950/50"
+                            : index % 2 === 0
+                              ? "bg-zinc-900/90"
+                              : "bg-zinc-950/90"
+                        } hover:bg-zinc-800`}
                         onClick={() => toggle(id)}
                       >
-                        <td className="px-3 py-2 text-center">
+                        <td className="px-3 py-2.5 text-center">
                           <input
                             type="checkbox"
-                            checked={selectedIds.has(id)}
+                            checked={selected}
                             onChange={() => toggle(id)}
                             onClick={(e) => e.stopPropagation()}
-                            className="h-4 w-4 rounded accent-sky-600"
+                            className="h-4 w-4 rounded accent-sky-500"
                           />
                         </td>
-                        <td className="px-3 py-2 text-zinc-200">{p.test_name}</td>
-                        <td className="px-3 py-2 text-center font-mono text-xs text-zinc-400">
+                        <td className="px-3 py-2.5 font-medium text-zinc-50">{p.test_name}</td>
+                        <td className="px-3 py-2.5 text-center font-mono text-xs text-zinc-200">
                           {p.clause_no || "—"}
                         </td>
-                        <td className="px-3 py-2 text-center text-zinc-400">{p.unit || "—"}</td>
-                        <td className="px-3 py-2 text-center text-zinc-400">
+                        <td className="px-3 py-2.5 text-center text-zinc-200">{p.unit || "—"}</td>
+                        <td className="px-3 py-2.5 text-center text-zinc-200">
                           {p.specified_value || "—"}
                         </td>
                       </tr>
@@ -302,16 +317,18 @@ export function FtrTestParameterPickerModal({
             )}
           </div>
 
-          <div className="flex flex-col gap-2 border-t border-zinc-800 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex shrink-0 flex-col gap-2 border-t border-zinc-700 bg-zinc-900 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="text-xs text-zinc-500">{selectedIds.size} selected</span>
+              <span className="text-xs font-medium text-zinc-300">
+                {selectedIds.size} selected
+              </span>
               {filtered.length > 0 ? (
                 <>
                   <select
                     value={pageSize}
                     onChange={(e) => setPageSize(Number(e.target.value))}
                     aria-label="Entries per page"
-                    className="rounded-lg border border-zinc-600 bg-zinc-800 px-2 py-1 text-xs text-zinc-100 outline-none focus:border-sky-500"
+                    className="rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1 text-xs text-zinc-50 outline-none focus:border-sky-500"
                   >
                     {PAGE_SIZE_OPTIONS.map((n) => (
                       <option key={n} value={n}>
@@ -319,10 +336,10 @@ export function FtrTestParameterPickerModal({
                       </option>
                     ))}
                   </select>
-                  <p className="text-xs text-zinc-500">
+                  <p className="text-xs text-zinc-400">
                     Page{" "}
-                    <span className="font-medium text-zinc-300">{page}</span> of{" "}
-                    <span className="font-medium text-zinc-300">{totalPages}</span>
+                    <span className="font-medium text-zinc-100">{page}</span> of{" "}
+                    <span className="font-medium text-zinc-100">{totalPages}</span>
                     {search.trim() ? (
                       <>
                         {" "}
@@ -355,7 +372,7 @@ export function FtrTestParameterPickerModal({
                     </button>
                   </div>
                   <div className="flex items-center gap-1">
-                    <label htmlFor="ftr-param-picker-go-page" className="text-xs text-zinc-500">
+                    <label htmlFor="ftr-param-picker-go-page" className="text-xs text-zinc-400">
                       Go to
                     </label>
                     <input
@@ -371,7 +388,7 @@ export function FtrTestParameterPickerModal({
                           handleGoTo();
                         }
                       }}
-                      className="w-12 rounded-lg border border-zinc-600 bg-zinc-800 px-2 py-1 text-center text-xs text-zinc-100 outline-none focus:border-sky-500"
+                      className="w-12 rounded-lg border border-zinc-600 bg-zinc-950 px-2 py-1 text-center text-xs text-zinc-50 outline-none focus:border-sky-500"
                     />
                     <button type="button" onClick={handleGoTo} className={pageBtn}>
                       Go
@@ -384,7 +401,7 @@ export function FtrTestParameterPickerModal({
               <button
                 type="button"
                 onClick={onClose}
-                className="rounded-lg border border-zinc-700 px-4 py-2 text-xs font-semibold text-zinc-300 hover:bg-zinc-800"
+                className="rounded-lg border border-zinc-500 bg-zinc-800 px-4 py-2 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
               >
                 Cancel
               </button>

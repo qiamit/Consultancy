@@ -8,6 +8,9 @@ export type AccessContext = {
   modules: DashboardModuleKey[];
 };
 
+/** Process-scoped: once an admin exists, skip the COUNT(*) bootstrap on later requests. */
+let adminBootstrapSettled = false;
+
 export function isSuperAdminEmail(email: string | null | undefined): boolean {
   const configured = process.env.SUPER_ADMIN_EMAIL?.trim().toLowerCase();
   if (!configured || !email) return false;
@@ -40,6 +43,7 @@ export async function ensureProfileAccess(
       profile = { ...profile, role: "admin" };
     }
 
+    adminBootstrapSettled = true;
     return {
       profile,
       isAdmin: true,
@@ -50,14 +54,17 @@ export async function ensureProfileAccess(
   let profile = await loadProfile(supabase, user);
   if (!profile) return null;
 
-  const { count: adminCount } = await supabase
-    .from("profiles")
-    .select("*", { count: "exact", head: true })
-    .eq("role", "admin");
+  if (!adminBootstrapSettled) {
+    const { count: adminCount } = await supabase
+      .from("profiles")
+      .select("*", { count: "exact", head: true })
+      .eq("role", "admin");
 
-  if ((adminCount ?? 0) === 0 && profile.role !== "admin") {
-    await supabase.from("profiles").update({ role: "admin" }).eq("id", profile.id);
-    profile = { ...profile, role: "admin" };
+    if ((adminCount ?? 0) === 0 && profile.role !== "admin") {
+      await supabase.from("profiles").update({ role: "admin" }).eq("id", profile.id);
+      profile = { ...profile, role: "admin" };
+    }
+    adminBootstrapSettled = true;
   }
 
   const isAdmin = profile.role === "admin";

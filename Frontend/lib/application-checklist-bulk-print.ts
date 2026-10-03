@@ -89,6 +89,7 @@ import {
   type TechnicalStaffStored,
 } from "@backend/modules/bis/technical-staff";
 import {
+  resolveDocumentSignatureImageUrl,
   resolvePrimaryTopManagementPerson,
   rowHasContent as topManagementRowHasContent,
   withDocumentSignatureImage,
@@ -232,6 +233,7 @@ import { fileNameFromStoredDocumentRef } from "@backend/modules/storage/cmpf-306
 import { DOCUMENTS_BUCKET } from "@backend/modules/storage/documents";
 import {
   decodeStoredDocumentRef,
+  documentRefToInlineUrl,
   isDirectDocumentUrl,
 } from "@backend/modules/storage/technical-staff-documents";
 import {
@@ -988,11 +990,28 @@ function resolveFactoryTestReports(ctx: ChecklistBulkPrintContext): FactoryTestR
   });
 }
 
-function buildFactoryTestReportHtmlFromCtx(
+async function resolveEmbeddedDocumentImageUrl(ref: string): Promise<string> {
+  const href = documentRefToInlineUrl(ref);
+  if (!href) return "";
+  const absolute = href.startsWith("http")
+    ? href
+    : typeof window !== "undefined"
+      ? `${window.location.origin}${href}`
+      : href;
+  try {
+    const res = await fetch(absolute);
+    if (!res.ok) return absolute;
+    return await blobToDataUrl(await res.blob());
+  } catch {
+    return absolute;
+  }
+}
+
+async function buildFactoryTestReportHtmlFromCtx(
   ctx: ChecklistBulkPrintContext,
   printAssets: ManufacturingScopePrintAssets,
   onlyReportIndex?: number,
-): string {
+): Promise<string> {
   const settings = {
     ...defaultFactoryTestReportPrintSettings(),
     show_letterhead: true as const,
@@ -1005,6 +1024,11 @@ function buildFactoryTestReportHtmlFromCtx(
     const one = reports[onlyReportIndex];
     reports = one ? [one] : [];
   }
+  const signatureUrl = qc.sealSign
+    ? await resolveEmbeddedDocumentImageUrl(qc.sealSign)
+    : "";
+  const primary = resolvePrimaryTopManagementPerson(ctx.topManagement);
+  const topSig = resolveDocumentSignatureImageUrl(ctx.topManagement);
   const data = {
     ...letter,
     city: letter.city ?? "",
@@ -1013,6 +1037,10 @@ function buildFactoryTestReportHtmlFromCtx(
     inspectionOfficerDesignation: ctx.inspectionOfficerDesignation.trim(),
     qualityControlInchargeName: qc.name,
     qualityControlInchargeDesignation: qc.designation,
+    qualityControlInchargeSignatureUrl: signatureUrl || undefined,
+    topManagementName: primary.person_name,
+    topManagementDesignation: primary.designation,
+    topManagementSignatureUrl: topSig || undefined,
   };
   return buildFactoryTestReportHtml(data, settings, printAssets);
 }
@@ -1031,7 +1059,7 @@ export async function buildFactoryTestReportSampleHtml(
     seal_sign_url: assetUrls.seal_sign_url ?? ctx.printAssets?.seal_sign_url ?? null,
     logo_url: null,
   };
-  const html = buildFactoryTestReportHtmlFromCtx(ctx, printAssets, reportIndex).trim();
+  const html = (await buildFactoryTestReportHtmlFromCtx(ctx, printAssets, reportIndex)).trim();
   if (!html) throw new Error("Factory Test Report preview HTML is empty.");
   return html;
 }
@@ -1460,7 +1488,8 @@ function buildSingleChecklistDocHtml(
       return buildAuthorizationLetterHtml(data, settings, printAssets);
     }
     case "factory_test_reports": {
-      return buildFactoryTestReportHtmlFromCtx(ctx, printAssets);
+      // Async signature embedding is handled in buildSelectedChecklistPrintDocs.
+      return "";
     }
     case "updated_scheme_of_inspection": {
       const settings = withBulkLetterhead(defaultUpdatedSchemeOfInspectionPrintSettings());
@@ -1542,10 +1571,15 @@ export async function buildSelectedChecklistPrintDocs(
     logo_url: null,
   };
 
-  return selectedWithContent.map((id) => ({
-    id,
-    html: buildSingleChecklistDocHtml(id, ctx, printAssets),
-  }));
+  return Promise.all(
+    selectedWithContent.map(async (id) => ({
+      id,
+      html:
+        id === "factory_test_reports"
+          ? await buildFactoryTestReportHtmlFromCtx(ctx, printAssets)
+          : buildSingleChecklistDocHtml(id, ctx, printAssets),
+    })),
+  );
 }
 
 export function openChecklistCombinedPrint(html: string): void {
@@ -1996,7 +2030,11 @@ export async function buildChecklistBulkPackItems(
       continue;
     }
     if (row.kind === "ftr_sample") {
-      const html = buildFactoryTestReportHtmlFromCtx(ctx, ftrAssets!, row.reportIndex);
+      const html = await buildFactoryTestReportHtmlFromCtx(
+        ctx,
+        ftrAssets!,
+        row.reportIndex,
+      );
       items.push({ kind: "html", id: row.id, html });
       continue;
     }

@@ -10,7 +10,7 @@ import {
 import { DashboardHeader } from "@/components/dashboard/dashboard-header";
 import { QEAssistantProvider } from "@/components/dashboard/qe-assistant-provider";
 import { IsCodePortalAiListener } from "@/components/modules/is-code-master/portal-ai-listener";
-import { createClient } from "@backend/db/client/server";
+import { getCachedUser } from "@backend/modules/auth/cached-access";
 import { requirePageModuleAccess } from "@backend/modules/auth/require-page-access";
 
 export default async function DashboardLayout({
@@ -18,10 +18,7 @@ export default async function DashboardLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getCachedUser();
   if (!user) redirect("/login");
   const pathname = (await headers()).get("x-pathname") || "/dashboard";
   await requirePageModuleAccess(pathname);

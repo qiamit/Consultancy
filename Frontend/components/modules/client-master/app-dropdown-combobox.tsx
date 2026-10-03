@@ -548,38 +548,53 @@ export function AppDropdownCombobox({
           </ul>
         ) : null}
       </div>
-      {isClient && listOpen && filtered.length > 0 && portalList && listPosition
+      {isClient && listOpen && portalList && listPosition
         ? createPortal(
-            <ul
-              id={listboxId}
-              role="listbox"
-              style={{
-                position: "fixed",
-                top: listPosition.top,
-                left: listPosition.left,
-                width: listPosition.width,
-              }}
-              className={`max-h-48 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-900 ${listZIndexClass}`}
-              onMouseDown={(e) => e.preventDefault()}
-            >
-              {filtered.map((o, i) => (
-                <li
-                  key={o.value || "__empty__"}
-                  id={`${listboxId}-opt-${i}`}
-                  role="option"
-                  aria-selected={i === highlight}
-                  className={`cursor-pointer px-3 py-2 text-sm ${
-                    i === highlight
-                      ? "bg-sky-100 text-zinc-900 dark:bg-sky-900/40 dark:text-zinc-100"
-                      : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
-                  }`}
-                  onMouseEnter={() => setHighlight(i)}
-                  onMouseDown={() => pick(o)}
-                >
-                  {o.label || o.value || emptySelectLabel}
-                </li>
-              ))}
-            </ul>,
+            filtered.length > 0 ? (
+              <ul
+                id={listboxId}
+                role="listbox"
+                style={{
+                  position: "fixed",
+                  top: listPosition.top,
+                  left: listPosition.left,
+                  width: listPosition.width,
+                }}
+                className={`max-h-48 overflow-y-auto rounded-md border border-zinc-200 bg-white py-1 shadow-lg dark:border-zinc-600 dark:bg-zinc-900 ${listZIndexClass}`}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                {filtered.map((o, i) => (
+                  <li
+                    key={o.value || "__empty__"}
+                    id={`${listboxId}-opt-${i}`}
+                    role="option"
+                    aria-selected={i === highlight}
+                    className={`cursor-pointer px-3 py-2 text-sm ${
+                      i === highlight
+                        ? "bg-sky-100 text-zinc-900 dark:bg-sky-900/40 dark:text-zinc-100"
+                        : "text-zinc-800 hover:bg-zinc-100 dark:text-zinc-100 dark:hover:bg-zinc-800"
+                    }`}
+                    onMouseEnter={() => setHighlight(i)}
+                    onMouseDown={() => pick(o)}
+                  >
+                    {o.label || o.value || emptySelectLabel}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div
+                style={{
+                  position: "fixed",
+                  top: listPosition.top,
+                  left: listPosition.left,
+                  width: listPosition.width,
+                }}
+                className={`rounded-md border border-zinc-200 bg-white px-3 py-2 text-sm text-zinc-500 shadow-lg dark:border-zinc-600 dark:bg-zinc-900 dark:text-zinc-400 ${listZIndexClass}`}
+                onMouseDown={(e) => e.preventDefault()}
+              >
+                No matches
+              </div>
+            ),
             document.body,
           )
         : null}

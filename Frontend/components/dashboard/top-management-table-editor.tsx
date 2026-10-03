@@ -33,29 +33,29 @@ const themes = {
     chk: "h-4 w-4 rounded border-zinc-300 text-sky-600 focus:ring-sky-500/30 dark:border-zinc-600 dark:bg-zinc-900 dark:text-sky-500",
   },
   dark: {
-    wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-800",
+    wrap: "flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-zinc-600 bg-zinc-900",
     thead: "bg-zinc-800",
     thLeft:
-      "border border-zinc-700 px-2 py-2 text-left align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
+      "border border-zinc-600 px-2 py-2.5 text-left align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-100",
     thCenter:
-      "border border-zinc-700 px-2 py-2 text-center align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-300",
+      "border border-zinc-600 px-2 py-2.5 text-center align-middle text-[10px] font-semibold uppercase tracking-wide text-zinc-100",
     tdLeft:
-      "border border-zinc-700 px-2 py-2.5 align-middle text-left text-xs text-zinc-300",
+      "border border-zinc-700 px-2 py-2.5 align-middle text-left text-xs font-medium text-zinc-50",
     tdCenter:
-      "border border-zinc-700 px-2 py-2.5 align-middle text-center text-xs text-zinc-300",
+      "border border-zinc-700 px-2 py-2.5 align-middle text-center text-xs font-medium text-zinc-50",
     selectCell:
-      "border border-zinc-700 bg-zinc-800/60 px-2 py-2.5 text-center align-middle",
-    empty: "px-4 py-10 text-center text-sm text-zinc-500",
+      "border border-zinc-700 bg-zinc-800/80 px-2 py-2.5 text-center align-middle",
+    empty: "px-4 py-10 text-center text-sm text-zinc-300",
     editBtn:
-      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-amber-400/70 bg-amber-500/25 text-amber-50 hover:bg-amber-500/40",
     copyBtn:
-      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-sky-300",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-sky-400/70 bg-sky-500/25 text-sky-50 hover:bg-sky-500/40",
     delBtn:
-      "rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-red-400",
-    muted: "text-zinc-500",
+      "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-rose-400/70 bg-rose-500/25 text-rose-50 hover:bg-rose-500/40",
+    muted: "text-zinc-400",
     addBtn:
-      "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-600/50 bg-teal-950/40 px-2.5 py-1.5 text-xs font-semibold text-teal-200 hover:bg-teal-950/70",
-    chk: "h-4 w-4 rounded border-zinc-600 bg-zinc-900 text-sky-500 focus:ring-sky-500/30",
+      "inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-teal-400/70 bg-teal-600/30 px-2.5 py-1.5 text-xs font-semibold text-teal-50 hover:bg-teal-600/45",
+    chk: "h-4 w-4 rounded border-zinc-500 bg-zinc-900 accent-sky-500",
   },
 } as const;
 
@@ -127,7 +127,7 @@ export function TopManagementTableEditor({
             No persons added yet. Use &ldquo;Add Person&rdquo; to enter top management details.
           </p>
         ) : (
-          <table className="w-full min-w-[960px] border-collapse text-xs">
+          <table className="w-full min-w-[960px] border-0 bg-transparent text-xs shadow-none">
             <thead className={`${t.thead} sticky top-0 z-[1]`}>
               <tr>
                 <th className={`${t.thCenter} w-12`}>
@@ -147,13 +147,13 @@ export function TopManagementTableEditor({
                 <th className={t.thCenter}>Mobile Number</th>
                 <th className={t.thCenter}>
                   Signature
-                  <span className="mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-500">
+                  <span className="mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-300">
                     Sr 1 → letter
                   </span>
                 </th>
                 <th className={t.thCenter}>
                   Apply Signature
-                  <span className="mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-500">
+                  <span className="mt-0.5 block text-[9px] font-normal normal-case tracking-normal text-zinc-300">
                     All documents
                   </span>
                 </th>
@@ -165,8 +165,18 @@ export function TopManagementTableEditor({
                 const srNo = String(index + 1).padStart(2, "0");
                 const selected = selectedIds.has(row.id);
                 const isPrimary = index === 0;
+                const rowBg =
+                  theme === "dark"
+                    ? selected
+                      ? "bg-sky-950/45"
+                      : index % 2 === 0
+                        ? "bg-zinc-900"
+                        : "bg-zinc-950/90"
+                    : selected
+                      ? "bg-sky-50 dark:bg-sky-950/40"
+                      : "";
                 return (
-                  <tr key={row.id}>
+                  <tr key={row.id} className={rowBg}>
                     <td className={t.selectCell}>
                       <input
                         type="checkbox"
@@ -177,7 +187,7 @@ export function TopManagementTableEditor({
                       />
                     </td>
                     <td className={t.tdCenter}>
-                      <span className="font-semibold tabular-nums">{srNo}</span>
+                      <span className="font-semibold tabular-nums text-zinc-100">{srNo}</span>
                     </td>
                     <td className={t.tdLeft}>{cellText(row.person_name, t.muted)}</td>
                     <td className={t.tdCenter}>{cellText(row.designation, t.muted)}</td>
@@ -189,7 +199,7 @@ export function TopManagementTableEditor({
                           <img
                             src={row.signature_image_url}
                             alt="Signature"
-                            className="mx-auto max-h-10 max-w-[7rem] rounded border border-zinc-700/60 object-contain bg-[repeating-conic-gradient(#3f3f46_0%_25%,#27272a_0%_50%)] bg-[length:8px_8px]"
+                            className="mx-auto max-h-10 max-w-[7rem] rounded border border-zinc-600 object-contain bg-[repeating-conic-gradient(#3f3f46_0%_25%,#27272a_0%_50%)] bg-[length:8px_8px]"
                           />
                         ) : (
                           <span className={t.muted}>—</span>
@@ -200,7 +210,7 @@ export function TopManagementTableEditor({
                     </td>
                     <td className={t.tdCenter}>
                       {isPrimary ? (
-                        <span>
+                        <span className="font-semibold text-zinc-50">
                           {row.apply_signature_on_documents ? "Yes" : "No"}
                         </span>
                       ) : (
@@ -208,7 +218,7 @@ export function TopManagementTableEditor({
                       )}
                     </td>
                     <td className={t.tdCenter}>
-                      <div className="inline-flex items-center justify-center gap-1">
+                      <div className="inline-flex items-center justify-center gap-1.5">
                         <button
                           type="button"
                           onClick={() => onEdit(row)}
@@ -216,7 +226,9 @@ export function TopManagementTableEditor({
                           aria-label={`Edit person ${srNo}`}
                           title="Edit"
                         >
-                          ✏️
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M16.862 3.487a2.25 2.25 0 113.182 3.182L7.5 19.213 3 20.25l1.037-4.5L16.862 3.487z" />
+                          </svg>
                         </button>
                         <button
                           type="button"
@@ -225,7 +237,9 @@ export function TopManagementTableEditor({
                           aria-label={`Copy person ${srNo}`}
                           title="Copy"
                         >
-                          📋
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
                         </button>
                         <button
                           type="button"
@@ -234,7 +248,9 @@ export function TopManagementTableEditor({
                           aria-label={`Delete person ${srNo}`}
                           title="Delete"
                         >
-                          🗑️
+                          <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24" aria-hidden>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
                         </button>
                       </div>
                     </td>

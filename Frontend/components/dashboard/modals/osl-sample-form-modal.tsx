@@ -545,11 +545,18 @@ export function OslSampleFormModal({
                         selectedValue={laboratoryName}
                         onClearSelection={() => applyLaboratoryName("")}
                         includeEmptyOption={false}
-                        searchPlaceholder="Search client…"
+                        searchPlaceholder="Search laboratory…"
                         blankInputWhenNoSelection
                         onSuffixButtonClick={() => setShowAddClient("lab")}
                       />
                     </div>
+                    {clientOptions.length === 0 ? (
+                      <p className="mt-1 text-[11px] text-amber-400/90">
+                        No laboratory in Client Master yet. Add a client with
+                        Company Type = Testing Laboratory (or Calibration
+                        Laboratory), then try again.
+                      </p>
+                    ) : null}
                   </div>
                   <div>
                     <span className={fieldLabelClass}>Destination Lab</span>
@@ -571,7 +578,7 @@ export function OslSampleFormModal({
                         selectedValue={destinationLab}
                         onClearSelection={() => setDestinationLab("")}
                         includeEmptyOption={false}
-                        searchPlaceholder="Search client…"
+                        searchPlaceholder="Search laboratory…"
                         blankInputWhenNoSelection
                         onSuffixButtonClick={() => setShowAddClient("destination")}
                       />
@@ -691,6 +698,7 @@ export function OslSampleFormModal({
 
       {showAddClient ? (
         <ClientMasterEmbedModal
+          initialCompanyType="Testing Laboratory"
           onClose={() => setShowAddClient(null)}
           onSuccess={async (clientId) => {
             const target = showAddClient;
@@ -699,7 +707,7 @@ export function OslSampleFormModal({
             const supabase = createClient();
             const { data } = await supabase
               .from("clients")
-              .select("name, company_name")
+              .select("name, company_name, company_type")
               .eq("id", clientId)
               .maybeSingle();
             if (data) {

@@ -10,12 +10,19 @@ import type { ClientMasterDropdownOptions } from "@backend/shared/data/client-ma
 export function ClientMasterEmbedModal({
   onSuccess,
   onClose,
+  initialCompanyType,
 }: {
   onSuccess: (clientId: string) => void;
   onClose: () => void;
+  /** Prefill Company Type (e.g. Testing Laboratory when adding an OSL lab). */
+  initialCompanyType?: string;
 }) {
   const [options, setOptions] = useState<ClientMasterDropdownOptions | null>(null);
-  const [form, setForm] = useState(() => emptyForm());
+  const [form, setForm] = useState(() => {
+    const base = emptyForm();
+    const type = (initialCompanyType ?? "").trim();
+    return type ? { ...base, company_type: type } : base;
+  });
 
   useEffect(() => {
     fetchClientFormOptions().then(setOptions);

@@ -26,7 +26,7 @@ function useDocumentModalNav() {
 }
 
 const linkClass =
-  "truncate text-sky-400 underline-offset-2 hover:text-sky-300 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-500/60";
+  "truncate text-sky-300 underline-offset-2 hover:text-sky-200 hover:underline focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-sky-400/70";
 
 /**
  * Header subtitle under document modal titles: Client · IS as optional links.
@@ -48,7 +48,7 @@ export function DocumentModalSubtitle({
   const extra = (suffix ?? "").trim();
 
   return (
-    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 truncate text-xs text-zinc-400">
+    <p className="flex min-w-0 flex-wrap items-center gap-x-1.5 truncate text-sm font-medium text-zinc-100">
       {onOpenClient ? (
         <button type="button" onClick={onOpenClient} className={linkClass} title="Open client">
           {company}
@@ -58,7 +58,7 @@ export function DocumentModalSubtitle({
       )}
       {showIs ? (
         <>
-          <span className="text-zinc-600" aria-hidden>
+          <span className="text-zinc-400" aria-hidden>
             ·
           </span>
           {onOpenIsCode ? (
@@ -72,7 +72,7 @@ export function DocumentModalSubtitle({
       ) : null}
       {extra ? (
         <>
-          <span className="text-zinc-600" aria-hidden>
+          <span className="text-zinc-400" aria-hidden>
             ·
           </span>
           <span className="truncate">{extra}</span>

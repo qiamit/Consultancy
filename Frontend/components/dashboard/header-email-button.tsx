@@ -2,8 +2,14 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
-import { fetchUnreadEmailCount } from "@backend/actions/email-accounts";
+import { useEffect, useState } from "react";
+import {
+  getCachedUnreadEmailCount,
+  refreshUnreadEmailCount,
+  subscribeUnreadEmailCount,
+} from "@/lib/unread-email-count";
+
+const POLL_MS = 5 * 60_000;
 
 export function HeaderEmailButton({
   initialUnreadCount = 0,
@@ -11,32 +17,32 @@ export function HeaderEmailButton({
   initialUnreadCount?: number;
 }) {
   const pathname = usePathname();
-  const [unread, setUnread] = useState(initialUnreadCount);
+  const [unread, setUnread] = useState(
+    () => getCachedUnreadEmailCount() ?? initialUnreadCount,
+  );
   const isActive =
     pathname === "/dashboard/email" || pathname.startsWith("/dashboard/email/");
 
-  const refreshCount = useCallback(() => {
-    void fetchUnreadEmailCount().then(setUnread);
-  }, []);
+  useEffect(() => subscribeUnreadEmailCount(setUnread), []);
 
   useEffect(() => {
-    setUnread(initialUnreadCount);
-  }, [initialUnreadCount]);
-
-  useEffect(() => {
-    refreshCount();
-    const id = window.setInterval(refreshCount, 60_000);
-    const onFocus = () => refreshCount();
+    void refreshUnreadEmailCount(true);
+    const id = window.setInterval(() => {
+      void refreshUnreadEmailCount(true);
+    }, POLL_MS);
+    const onFocus = () => {
+      void refreshUnreadEmailCount(false);
+    };
     window.addEventListener("focus", onFocus);
     return () => {
       window.clearInterval(id);
       window.removeEventListener("focus", onFocus);
     };
-  }, [refreshCount]);
+  }, []);
 
   useEffect(() => {
-    if (isActive) refreshCount();
-  }, [isActive, refreshCount]);
+    if (isActive) void refreshUnreadEmailCount(true);
+  }, [isActive]);
 
   const badgeLabel =
     unread > 99 ? "99+" : unread > 0 ? String(unread) : null;

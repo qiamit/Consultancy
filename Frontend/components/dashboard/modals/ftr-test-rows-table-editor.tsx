@@ -22,10 +22,10 @@ import {
 } from "@backend/modules/bis/ftr-observed-formula";
 
 const decBtn =
-  "absolute top-1/2 z-[1] flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-sm font-bold leading-none text-zinc-400 hover:bg-zinc-800 hover:text-zinc-100 disabled:cursor-not-allowed disabled:opacity-40";
+  "absolute top-1/2 z-[1] flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-sm font-bold leading-none text-zinc-200 hover:bg-zinc-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-40";
 
 const inp =
-  "block w-full rounded-md border border-zinc-700 bg-zinc-950 py-1.5 text-xs text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40";
+  "block w-full rounded-md border border-zinc-500 bg-zinc-950 py-1.5 text-xs text-zinc-50 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40";
 
 const FTR_REMARK_OPTIONS = [FTR_REMARK_DEFAULT, FTR_REMARK_NOT_CONFIRM] as const;
 
@@ -203,7 +203,7 @@ function SpecifiedRequirementsCell({
 
   return (
     <div className="flex items-start justify-end gap-1.5">
-      <span className="min-w-0 flex-1 text-center text-zinc-400">
+      <span className="min-w-0 flex-1 text-center text-zinc-100">
         {row.specified_requirements || "—"}
       </span>
       <button
@@ -211,7 +211,7 @@ function SpecifiedRequirementsCell({
         onClick={startEdit}
         aria-label="Edit specified requirements"
         title="Edit"
-        className="shrink-0 rounded p-0.5 text-sm leading-none text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+        className="shrink-0 rounded p-0.5 text-sm leading-none text-zinc-200 hover:bg-zinc-700 hover:text-white"
       >
         ✏️
       </button>
@@ -295,69 +295,79 @@ export function FtrTestRowsTableEditor({
 
   if (testRows.length === 0) {
     return (
-      <p className="py-6 text-center text-sm text-zinc-500">
+      <p className="py-6 text-center text-sm text-zinc-400">
         No test parameters added yet. Click{" "}
-        <span className="text-zinc-300">Add Test Parameter</span> to add rows.
+        <span className="text-zinc-100">Add Test Parameter</span> to add rows.
       </p>
     );
   }
 
   if (filteredRows.length === 0) {
     return (
-      <p className="py-6 text-center text-sm text-zinc-500">No matches for your search.</p>
+      <p className="py-6 text-center text-sm text-zinc-400">No matches for your search.</p>
     );
   }
 
   return (
-    <div className="min-h-0 overflow-auto rounded-lg border border-zinc-800">
-      <table className="w-full border-collapse text-xs">
-        <thead className="sticky top-0 z-[1] bg-zinc-800">
-          <tr>
-            <th className="w-10 border-b border-zinc-700 px-3 py-2">
+    <div className="min-h-0 overflow-auto rounded-lg border border-zinc-600 bg-zinc-900">
+      <table className="w-full border-0 bg-transparent text-xs shadow-none">
+        <thead className="sticky top-0 z-[1]">
+          <tr className="bg-zinc-800">
+            <th className="w-10 border-b border-zinc-600 px-3 py-2.5">
               <input
                 type="checkbox"
                 checked={pageAllSelected}
                 onChange={toggleAllVisible}
-                className="h-4 w-4 rounded accent-sky-600"
+                className="h-4 w-4 rounded accent-sky-500"
                 aria-label="Select all visible test parameters"
               />
             </th>
-            <th className="border-b border-zinc-700 px-3 py-2 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
+            <th className="border-b border-zinc-600 px-3 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wide text-zinc-100">
               Test Name
             </th>
-            <th className="border-b border-zinc-700 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
+            <th className="border-b border-zinc-600 px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-100">
               Specified Requirements
             </th>
-            <th className="w-24 border-b border-zinc-700 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
+            <th className="w-24 border-b border-zinc-600 px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-100">
               Unit
             </th>
-            <th className="border-b border-zinc-700 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
+            <th className="border-b border-zinc-600 px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-100">
               Observed Value
             </th>
-            <th className="border-b border-zinc-700 px-3 py-2 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-300">
+            <th className="border-b border-zinc-600 px-3 py-2.5 text-center text-[11px] font-semibold uppercase tracking-wide text-zinc-100">
               Remark
             </th>
           </tr>
         </thead>
-        <tbody className="divide-y divide-zinc-800">
-          {filteredRows.map((row) => {
+        <tbody>
+          {filteredRows.map((row, index) => {
             const key = ftrTestRowKey(row);
+            const selected = selectedKeys.has(key);
             return (
-            <tr key={key} className="hover:bg-zinc-800/40">
-              <td className="px-3 py-2 text-center align-top">
+            <tr
+              key={key}
+              className={`${
+                selected
+                  ? "bg-sky-950/45"
+                  : index % 2 === 0
+                    ? "bg-zinc-900"
+                    : "bg-zinc-950/90"
+              } hover:bg-zinc-800`}
+            >
+              <td className="border-b border-zinc-700 px-3 py-2.5 text-center align-top">
                 <input
                   type="checkbox"
-                  checked={selectedKeys.has(key)}
+                  checked={selected}
                   onChange={() => toggleRow(key)}
-                  className="h-4 w-4 rounded accent-sky-600"
+                  className="h-4 w-4 rounded accent-sky-500"
                   aria-label={`Select ${row.test_name}`}
                 />
               </td>
-              <td className="px-3 py-2 align-top text-zinc-200">
+              <td className="border-b border-zinc-700 px-3 py-2.5 align-top text-zinc-50">
                 <div className="space-y-0.5">
-                  <div className="font-medium leading-snug">{row.test_name || "—"}</div>
+                  <div className="font-semibold leading-snug text-white">{row.test_name || "—"}</div>
                   {((row.clause_no ?? "").trim() || (row.is_reference ?? "").trim()) && (
-                    <div className="text-[10px] leading-snug text-zinc-400">
+                    <div className="text-[10px] leading-snug text-zinc-300">
                       {[(row.clause_no ?? "").trim(), (row.is_reference ?? "").trim()]
                         .filter(Boolean)
                         .join(" | ")}
@@ -365,16 +375,16 @@ export function FtrTestRowsTableEditor({
                   )}
                 </div>
               </td>
-              <td className="px-3 py-2 align-top">
+              <td className="border-b border-zinc-700 px-3 py-2.5 align-top">
                 <SpecifiedRequirementsCell
                   row={row}
                   onSave={(value) => updateRow(row, { specified_requirements: value })}
                 />
               </td>
-              <td className="px-3 py-2 align-top text-center text-zinc-300">
+              <td className="border-b border-zinc-700 px-3 py-2.5 align-top text-center font-medium text-zinc-100">
                 {(row.unit ?? "").trim() || "—"}
               </td>
-              <td className="px-3 py-2 align-top">
+              <td className="border-b border-zinc-700 px-3 py-2.5 align-top">
                 <ObservedValueInput
                   value={row.observed_value}
                   decimalPlaces={resolveObservedDecimals(row.observed_decimals)}
@@ -384,7 +394,7 @@ export function FtrTestRowsTableEditor({
                   listId={`ftr-formula-tests-${ftrTestRowKey(row)}`}
                 />
               </td>
-              <td className="px-3 py-2 align-top">
+              <td className="border-b border-zinc-700 px-3 py-2.5 align-top">
                 <select
                   value={remarkSelectValue(row.remark)}
                   onChange={(e) => updateRow(row, { remark: e.target.value })}

@@ -1,22 +1,17 @@
-import { createClient } from "@backend/db/client/server";
-import { ensureProfileAccess, isSuperAdminEmail } from "@backend/modules/auth/ensure-access";
-import { fetchUnreadEmailCount } from "@backend/actions/email-accounts";
+import { getCachedAccess, getCachedUser } from "@backend/modules/auth/cached-access";
+import { isSuperAdminEmail } from "@backend/modules/auth/ensure-access";
 import { DashboardTopBar } from "./dashboard-top-bar";
 
 export async function DashboardHeader() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const access = user ? await ensureProfileAccess(supabase, user) : null;
+  const [user, access] = await Promise.all([getCachedUser(), getCachedAccess()]);
   const isAdmin = Boolean(
     access?.isAdmin || (user && isSuperAdminEmail(user.email)),
   );
   const canAccessEmail = isAdmin;
   const canAccessCms = Boolean(isAdmin || access?.modules.includes("cms"));
-  const unreadEmailCount = canAccessEmail ? await fetchUnreadEmailCount() : 0;
 
+  // Do not await unread email count here — it was blocking every dashboard
+  // navigation (~2–5s). The header badge loads it client-side via /api/email/unread-count.
   return (
     <DashboardTopBar
       userName={
@@ -28,7 +23,7 @@ export async function DashboardHeader() {
       isAdmin={isAdmin}
       canAccessEmail={canAccessEmail}
       canAccessCms={canAccessCms}
-      unreadEmailCount={unreadEmailCount}
+      unreadEmailCount={0}
     />
   );
 }

@@ -34,27 +34,47 @@ export function normalizeSignatoryField(value: string, fallback = "—"): string
   return v;
 }
 
+/** Keep a closing paragraph (or other HTML) with the signatory block on the same printed page. */
+export function wrapKeepWithSignatoryHtml(
+  precedingHtml: string,
+  signatoryHtml: string,
+): string {
+  return `<div class="print-keep-with-signatory" style="break-inside:avoid;page-break-inside:avoid;-webkit-column-break-inside:avoid;">${precedingHtml}${signatoryHtml}</div>`;
+}
+
 export function buildRightAlignedSignatoryBlockHtml(options: {
   companyName: string;
   sigName: string;
   sigDesig: string;
   signatureImageUrl?: string;
   sigTextAlign?: "left" | "right";
+  /** Tighter spacing for tall single-page letters (e.g. OSL Sample). */
+  compact?: boolean;
 }): string {
   const sigAlign = options.sigTextAlign ?? "right";
-  const overlay = signatorySignatureOverlayHtml(options.signatureImageUrl);
+  const compact = Boolean(options.compact);
+  const overlay = signatorySignatureOverlayHtml(
+    options.signatureImageUrl,
+    compact
+      ? { top: "-48px", maxHeight: "56px", maxWidth: "150px" }
+      : undefined,
+  );
   const company = normalizeSignatoryField(options.companyName, "—");
   const sigName = normalizeSignatoryField(options.sigName);
   const sigDesig = normalizeSignatoryField(options.sigDesig);
+  const outerTop = compact ? "0" : "14px";
+  const lineTop = compact ? "28px" : "40px";
+  const metaSize = compact ? "10px" : "11px";
 
   // One inline column so "For …", the signature line, and Name/Designation share the same width.
+  // Compact top margin so letters with tall tables do not orphan the signature onto a blank page.
   return `
-  <div style="margin-top:36px;text-align:right;">
-      <div style="display:inline-block;min-width:220px;text-align:${sigAlign};">
-        <div style="font-weight:700;">For ${company}</div>
-        <div style="position:relative;margin-top:36px;text-align:${sigAlign};">
+  <div style="margin-top:${outerTop};text-align:right;">
+      <div style="display:inline-block;min-width:${compact ? "190px" : "220px"};text-align:${sigAlign};">
+        <div style="font-weight:700;font-size:${compact ? "11px" : "inherit"};">For ${company}</div>
+        <div style="position:relative;margin-top:${lineTop};text-align:${sigAlign};">
           ${overlay}
-          <div style="position:relative;z-index:1;border-top:1px solid #111;padding-top:4px;font-size:11px;line-height:1.35;text-align:${sigAlign};">
+          <div style="position:relative;z-index:1;border-top:1px solid #111;padding-top:3px;font-size:${metaSize};line-height:1.3;text-align:${sigAlign};">
             <div><strong>Name:</strong> ${sigName}</div>
             <div><strong>Designation:</strong> ${sigDesig}</div>
           </div>

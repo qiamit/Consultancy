@@ -136,11 +136,14 @@ export function findQualityControlIncharge(
 export function resolveQualityControlIncharge(staff: TechnicalStaffStored[]): {
   name: string;
   designation: string;
+  /** Stored Seal & Sign ref (`doc://…`) or direct image URL. */
+  sealSign: string;
 } {
   const match = findQualityControlIncharge(staff);
-  if (!match) return { name: "", designation: "" };
+  if (!match) return { name: "", designation: "", sealSign: "" };
   return {
     name: match.person_name.trim(),
     designation: match.designation.trim(),
+    sealSign: match.seal_sign.trim(),
   };
 }

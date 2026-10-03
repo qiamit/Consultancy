@@ -38,6 +38,12 @@ import {
 import type { TechnicalStaffStored } from "@backend/modules/bis/technical-staff";
 import { resolveQualityControlIncharge } from "@backend/modules/bis/technical-staff";
 import {
+  resolveDocumentSignatureImageUrl,
+  resolvePrimaryTopManagementPerson,
+  type TopManagementStored,
+} from "@backend/modules/bis/top-management";
+import { documentRefToInlineUrl } from "@backend/modules/storage/technical-staff-documents";
+import {
   editorReportsFromStored,
   ftrSamplesForSource,
   ftrSourceTag,
@@ -98,7 +104,7 @@ function HeaderField({
 }) {
   return (
     <div className={compact ? "w-[9.5rem] shrink-0" : undefined}>
-      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+      <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
         {label}
       </label>
       <input type={type} value={value} onChange={(e) => onChange(e.target.value)} className={headerInp} />
@@ -117,6 +123,7 @@ export function FactoryTestReportModal({
   inspectionOfficerName,
   inspectionOfficerDesignation,
   technicalStaff,
+  topManagement,
   isCodeId,
   isNumber,
   revisionYear,
@@ -138,6 +145,7 @@ export function FactoryTestReportModal({
   inspectionOfficerName: string;
   inspectionOfficerDesignation: string;
   technicalStaff: TechnicalStaffStored[];
+  topManagement: TopManagementStored[];
   isCodeId: string | null;
   isNumber: string | null;
   revisionYear: number | null;
@@ -238,6 +246,55 @@ export function FactoryTestReportModal({
     () => resolveQualityControlIncharge(technicalStaff),
     [technicalStaff],
   );
+
+  const topManagementPerson = useMemo(
+    () => resolvePrimaryTopManagementPerson(topManagement),
+    [topManagement],
+  );
+  const topManagementSignatureUrl = useMemo(
+    () => resolveDocumentSignatureImageUrl(topManagement),
+    [topManagement],
+  );
+
+  // Embed QCI Seal & Sign as a data URL so preview + Playwright PDF both show it.
+  const [testedBySignatureUrl, setTestedBySignatureUrl] = useState("");
+  useEffect(() => {
+    const ref = qualityControlIncharge.sealSign;
+    if (!ref) {
+      setTestedBySignatureUrl("");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const href = documentRefToInlineUrl(ref);
+      if (!href) {
+        if (!cancelled) setTestedBySignatureUrl("");
+        return;
+      }
+      try {
+        const res = await fetch(href);
+        if (!res.ok) throw new Error("signature fetch failed");
+        const blob = await res.blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result ?? ""));
+          reader.onerror = () => reject(new Error("signature read failed"));
+          reader.readAsDataURL(blob);
+        });
+        if (!cancelled) setTestedBySignatureUrl(dataUrl.trim());
+      } catch {
+        // Preview can still try the proxy URL; PDF service may not load relative paths.
+        if (!cancelled) {
+          setTestedBySignatureUrl(
+            href.startsWith("http") ? href : `${window.location.origin}${href}`,
+          );
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [qualityControlIncharge.sealSign]);
 
   const ftrContext = useMemo((): FtrContext => {
     const address = letterData.address.trim();
@@ -367,6 +424,10 @@ export function FactoryTestReportModal({
       inspectionOfficerDesignation: inspectionOfficerDesignation.trim(),
       qualityControlInchargeName: qualityControlIncharge.name,
       qualityControlInchargeDesignation: qualityControlIncharge.designation,
+      qualityControlInchargeSignatureUrl: testedBySignatureUrl || undefined,
+      topManagementName: topManagementPerson.person_name,
+      topManagementDesignation: topManagementPerson.designation,
+      topManagementSignatureUrl: topManagementSignatureUrl || undefined,
     };
   }, [
     letterData,
@@ -376,6 +437,10 @@ export function FactoryTestReportModal({
     inspectionOfficerDesignation,
     qualityControlIncharge.name,
     qualityControlIncharge.designation,
+    testedBySignatureUrl,
+    topManagementPerson.person_name,
+    topManagementPerson.designation,
+    topManagementSignatureUrl,
   ]);
 
   const allReportsData = useMemo((): FactoryTestReportLetterData => {
@@ -387,6 +452,10 @@ export function FactoryTestReportModal({
       inspectionOfficerDesignation: inspectionOfficerDesignation.trim(),
       qualityControlInchargeName: qualityControlIncharge.name,
       qualityControlInchargeDesignation: qualityControlIncharge.designation,
+      qualityControlInchargeSignatureUrl: testedBySignatureUrl || undefined,
+      topManagementName: topManagementPerson.person_name,
+      topManagementDesignation: topManagementPerson.designation,
+      topManagementSignatureUrl: topManagementSignatureUrl || undefined,
     };
   }, [
     letterData,
@@ -396,6 +465,10 @@ export function FactoryTestReportModal({
     inspectionOfficerDesignation,
     qualityControlIncharge.name,
     qualityControlIncharge.designation,
+    testedBySignatureUrl,
+    topManagementPerson.person_name,
+    topManagementPerson.designation,
+    topManagementSignatureUrl,
   ]);
 
   const refreshPreview = useCallback(() => {
@@ -559,8 +632,8 @@ export function FactoryTestReportModal({
   }
 
   return (
-    <div className="fixed inset-0 z-[400] flex flex-col bg-zinc-950">
-      <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-800 bg-zinc-900 px-4 py-3">
+    <div className="dark fixed inset-0 z-[400] flex flex-col bg-zinc-950 text-zinc-50">
+      <div className="flex shrink-0 items-center gap-2 overflow-hidden border-b border-zinc-700 bg-zinc-900 px-4 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-sm font-semibold text-white">Factory Test Report (FTR)</h2>
           <DocumentModalSubtitle companyName={letterData.companyName} isNumber={isReference} />
@@ -645,8 +718,8 @@ export function FactoryTestReportModal({
           >
           {reports.length === 0 ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 p-8 text-center">
-              <p className="text-sm text-zinc-400">
-                No FTR reports yet. Add samples in <strong className="text-zinc-200">Sample Requirements</strong>, then click Sync.
+              <p className="text-sm text-zinc-300">
+                No FTR reports yet. Add samples in <strong className="text-zinc-50">Sample Requirements</strong>, then click Sync.
               </p>
               <button
                 type="button"
@@ -658,17 +731,17 @@ export function FactoryTestReportModal({
             </div>
           ) : (
             <>
-              <div className="flex flex-wrap items-end gap-x-3 gap-y-2 border-b border-zinc-800 px-4 py-3">
+              <div className="flex flex-wrap items-end gap-x-3 gap-y-2 border-b border-zinc-700 px-4 py-3">
                 <div className="flex min-w-0 flex-1 flex-wrap items-end gap-2">
                   <div className="min-w-0 max-w-full sm:max-w-md">
-                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                    <label className="mb-1 block text-[10px] font-semibold uppercase tracking-wide text-zinc-300">
                       Sample
                     </label>
                     <div className="relative flex min-w-[16rem] max-w-full items-stretch">
                       <select
                         value={activeReport?.id ?? ""}
                         onChange={(e) => selectReport(e.target.value)}
-                        className="block w-full truncate rounded-lg border border-zinc-600 bg-zinc-950 py-1.5 pl-3 pr-16 text-xs font-semibold text-zinc-100 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40"
+                        className="block w-full truncate rounded-lg border border-zinc-500 bg-zinc-950 py-1.5 pl-3 pr-16 text-xs font-semibold text-zinc-50 outline-none focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40"
                         aria-label="Select FTR sample"
                       >
                         {contextualReports.map((report) => {
@@ -734,21 +807,21 @@ export function FactoryTestReportModal({
 
               {activeReport && (
                 <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                  <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-zinc-800 px-4 py-3">
+                  <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-zinc-700 px-4 py-3">
                     <input
                       type="search"
                       value={testRowSearch}
                       onChange={(e) => setTestRowSearch(e.target.value)}
                       placeholder="Search test rows…"
                       autoComplete="off"
-                      className="min-w-0 flex-1 rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-1.5 text-xs text-zinc-100 outline-none placeholder:text-zinc-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40 sm:max-w-xs"
+                      className="min-w-0 flex-1 rounded-lg border border-zinc-500 bg-zinc-950 px-3 py-1.5 text-xs text-zinc-50 outline-none placeholder:text-zinc-500 focus:border-sky-500 focus:ring-1 focus:ring-sky-500/40 sm:max-w-xs"
                     />
                     <div className="ml-auto flex shrink-0 flex-wrap items-center gap-2">
                       <button
                         type="button"
                         onClick={() => setShowQeAssistant(true)}
                         disabled={!assistantReport}
-                        className="shrink-0 rounded-lg border border-amber-700/50 bg-amber-950/40 px-3 py-1.5 text-xs font-semibold text-amber-200 hover:bg-amber-950/70 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="shrink-0 rounded-lg border border-amber-400/70 bg-amber-500/30 px-3 py-1.5 text-xs font-semibold text-amber-50 hover:bg-amber-500/45 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         QE Assistant
                       </button>
@@ -756,7 +829,7 @@ export function FactoryTestReportModal({
                         type="button"
                         onClick={handleRemoveSelectedTestRows}
                         disabled={selectedTestRowKeys.size === 0}
-                        className="shrink-0 rounded-lg border border-red-700/50 bg-red-950/40 px-3 py-1.5 text-xs font-semibold text-red-200 hover:bg-red-950/70 disabled:cursor-not-allowed disabled:opacity-40"
+                        className="shrink-0 rounded-lg border border-rose-400/70 bg-rose-500/30 px-3 py-1.5 text-xs font-semibold text-rose-50 hover:bg-rose-500/45 disabled:cursor-not-allowed disabled:opacity-40"
                       >
                         Remove Test Parameter
                         {selectedTestRowKeys.size > 0 ? ` (${selectedTestRowKeys.size})` : ""}
@@ -764,14 +837,14 @@ export function FactoryTestReportModal({
                       <button
                         type="button"
                         onClick={() => setShowParameterPicker(true)}
-                        className="shrink-0 rounded-lg border border-sky-700/50 bg-sky-950/40 px-3 py-1.5 text-xs font-semibold text-sky-200 hover:bg-sky-950/70"
+                        className="shrink-0 rounded-lg border border-sky-400/70 bg-sky-500/30 px-3 py-1.5 text-xs font-semibold text-sky-50 hover:bg-sky-500/45"
                       >
                         Add Test Parameter
                       </button>
                     </div>
                   </div>
 
-                  <div className="min-h-0 flex-1 overflow-auto p-4">
+                  <div className="min-h-0 flex-1 overflow-auto bg-zinc-950/50 p-4">
                     <FtrTestRowsTableEditor
                       rows={activeReport.test_rows}
                       searchQuery={testRowSearch}

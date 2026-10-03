@@ -42,6 +42,13 @@ export type FactoryTestReportLetterData = Omit<
   inspectionOfficerDesignation: string;
   qualityControlInchargeName: string;
   qualityControlInchargeDesignation: string;
+  /** Resolved QCI Seal & Sign image (data URL or absolute/proxy URL). */
+  qualityControlInchargeSignatureUrl?: string;
+  /** Top Management Sr 1 — center Seal & Sign block. */
+  topManagementName?: string;
+  topManagementDesignation?: string;
+  /** Top Management Sr 1 signature (when apply-on-documents is Yes). */
+  topManagementSignatureUrl?: string;
 };
 
 function esc(s: string): string {
@@ -250,19 +257,38 @@ function buildSignaturesHtml(
     </div>`
       : "";
 
+  const tmSigUrl = (data.topManagementSignatureUrl ?? "").trim();
+  const tmSigImg = tmSigUrl
+    ? `<img class="sig-image" src="${esc(tmSigUrl)}" alt="Seal & Sign" />`
+    : "";
+  const tmName = (data.topManagementName ?? "").trim();
+  const tmDesig = (data.topManagementDesignation ?? "").trim();
+  const center = `<div class="ftr-sig-block ftr-sig-center">
+      <div class="sig-title">Authorised Signatory</div>
+      <div class="sig-space">${tmSigImg}</div>
+      <div class="sig-name">${esc(tmName) || "—"}</div>
+      ${tmDesig ? `<div class="sig-designation">${esc(tmDesig)}</div>` : ""}
+      <div class="sig-org">${esc(data.companyName) || "—"}</div>
+    </div>`;
+
+  const testedSigUrl = (data.qualityControlInchargeSignatureUrl ?? "").trim();
+  const testedSigImg = testedSigUrl
+    ? `<img class="sig-image" src="${esc(testedSigUrl)}" alt="Signature" />`
+    : "";
   const right =
     settings.show_tested_by
       ? `<div class="ftr-sig-block ftr-sig-right">
       <div class="sig-title">Tested By</div>
-      <div class="sig-space"></div>
+      <div class="sig-space">${testedSigImg}</div>
       <div class="sig-name">${esc(data.qualityControlInchargeName) || "—"}</div>
       ${data.qualityControlInchargeDesignation.trim() ? `<div class="sig-designation">${esc(data.qualityControlInchargeDesignation)}</div>` : ""}
       <div class="sig-org">${esc(data.companyName) || "—"}</div>
     </div>`
       : "";
 
-  if (!left && !right) return "";
-  return `<div class="ftr-signatures">${left}${right}</div>`;
+  if (!left && !right && !center) return "";
+  // Always keep Top Management Seal & Sign in the center between the two sides.
+  return `<div class="ftr-signatures">${left}${center}${right}</div>`;
 }
 
 function buildEndOfReportHtml(): string {
@@ -462,7 +488,7 @@ export function buildFactoryTestReportHtml(
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      gap: 32px;
+      gap: 12px;
       margin-top: 10px;
       margin-bottom: 8px;
       width: 100%;
@@ -477,11 +503,30 @@ export function buildFactoryTestReportHtml(
       text-transform: uppercase;
       color: #111;
     }
-    .ftr-sig-block { flex: 0 0 42%; max-width: 42%; }
-    .ftr-sig-left { text-align: left; margin-right: auto; }
-    .ftr-sig-right { text-align: right; margin-left: auto; }
+    .ftr-sig-block { flex: 1 1 0; min-width: 0; max-width: 34%; }
+    .ftr-sig-left { text-align: left; }
+    .ftr-sig-center { text-align: center; }
+    .ftr-sig-right { text-align: right; }
     .sig-title { font-weight: 700; font-size: 10px; margin-bottom: 4px; }
-    .sig-space { height: 40px; border-bottom: 1px solid #94a3b8; margin-bottom: 6px; }
+    .sig-space {
+      min-height: 44px;
+      height: 48px;
+      border-bottom: 1px solid #94a3b8;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: flex-end;
+      box-sizing: border-box;
+    }
+    .ftr-sig-left .sig-space { justify-content: flex-start; }
+    .ftr-sig-center .sig-space { justify-content: center; }
+    .ftr-sig-right .sig-space { justify-content: flex-end; }
+    .sig-image {
+      max-height: 44px;
+      max-width: 140px;
+      width: auto;
+      object-fit: contain;
+      display: block;
+    }
     .sig-name { font-size: 10px; font-weight: 600; line-height: 1.4; }
     .sig-designation { font-size: 9px; color: #475569; line-height: 1.35; margin-top: 2px; }
     .sig-org { font-size: 9px; font-weight: 700; margin-top: 4px; line-height: 1.35; }

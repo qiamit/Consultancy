@@ -15,7 +15,10 @@ import {
 } from "@backend/modules/print/types";
 import { formatDisplayDate } from "@backend/shared/format-date";
 import { formatApplicationNumberDisplay } from "@backend/modules/bis/application-checklist-notes";
-import { signatorySignatureOverlayHtml } from "@backend/modules/print/signatory-signature";
+import {
+  buildRightAlignedSignatoryBlockHtml,
+  wrapKeepWithSignatoryHtml,
+} from "@backend/modules/print/signatory-signature";
 
 export type ManufacturingScopeDeclarationData = {
   companyName: string;
@@ -86,7 +89,7 @@ function buildLicenseScopeContent(data: ManufacturingScopeDeclarationData): stri
     const scopeText = data.licenseScope.trim();
     if (scopeText || !licenseScopeUsesTable(format)) {
       parts.push(
-        `<div style="font-size:12px;line-height:1.65;">${nl2br(scopeText || "—")}</div>`,
+        `<div style="font-size:11px;line-height:1.4;">${nl2br(scopeText || "—")}</div>`,
       );
     }
   }
@@ -102,9 +105,9 @@ function buildLicenseScopeContent(data: ManufacturingScopeDeclarationData): stri
     );
   }
   if (parts.length === 0) {
-    return `<div style="font-size:12px;line-height:1.65;">—</div>`;
+    return `<div style="font-size:11px;line-height:1.4;">—</div>`;
   }
-  return parts.join(`<div style="height:10px;"></div>`);
+  return parts.join(`<div style="height:6px;"></div>`);
 }
 
 function formatIsStandardRef(isNumber: string, isTitle: string): string {
@@ -129,17 +132,29 @@ function buildDeclarationBody(data: ManufacturingScopeDeclarationData): string {
   const applicationNo = formatApplicationNo(data.applicationNumber);
   const sigName = esc(data.signatoryName ?? "") || esc(data.contactPerson) || "—";
   const sigDesig = esc(data.signatoryDesignation ?? "") || "—";
-  const signatureOverlay = signatorySignatureOverlayHtml(data.signatureImageUrl);
+  const signatoryHtml = buildRightAlignedSignatoryBlockHtml({
+    companyName: esc(data.companyName),
+    sigName,
+    sigDesig,
+    signatureImageUrl: data.signatureImageUrl,
+  });
+  const closingWithSignatory = wrapKeepWithSignatoryHtml(
+    `<p style="margin:8px 0 0;">
+    We further declare that the above information is true and correct to the best of our knowledge and belief.
+    We undertake to inform BIS of any change in the manufacturing scope covered under the licence.
+  </p>`,
+    signatoryHtml,
+  );
 
   return `
-<div style="text-align:center;margin-bottom:18px;">
-  <div style="font-size:15px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;text-decoration:underline;">
+<div style="text-align:center;margin-bottom:10px;">
+  <div style="font-size:14px;font-weight:800;text-transform:uppercase;letter-spacing:.04em;text-decoration:underline;">
     Declaration Regarding Manufacturing Scope
   </div>
 </div>
 
-<div style="font-size:12px;line-height:1.75;text-align:justify;">
-  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 14px;">
+<div style="font-size:11.5px;line-height:1.45;text-align:justify;">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 8px;">
     <div style="flex:1;min-width:0;">
       To<br/>
       The Director &amp; Head<br/>
@@ -148,16 +163,16 @@ function buildDeclarationBody(data: ManufacturingScopeDeclarationData): string {
     </div>
     <div style="flex-shrink:0;text-align:right;white-space:nowrap;">
       <div><strong>Date of Inspection:</strong> ${dateLabel}</div>
-      <div style="margin-top:4px;"><strong>Application No.:</strong> ${esc(applicationNo)}</div>
+      <div style="margin-top:2px;"><strong>Application No.:</strong> ${esc(applicationNo)}</div>
     </div>
   </div>
 
-  <p style="margin:0 0 14px;">
+  <p style="margin:0 0 8px;">
     <strong>Sub:</strong> Declaration regarding manufacturing scope
     ${isStdRef ? ` under Indian Standard ${isStdRef}` : ""}.
   </p>
 
-  <p style="margin:0 0 14px;">
+  <p style="margin:0 0 8px;">
     We, <strong>M/s. ${esc(data.companyName)}</strong>,
     ${data.address ? ` having our factory at <strong>${esc(data.address)}</strong>,` : ""}
     hereby declare that our manufacturing scope for BIS certification
@@ -165,27 +180,14 @@ function buildDeclarationBody(data: ManufacturingScopeDeclarationData): string {
     is as follows:
   </p>
 
-  <div style="margin:16px 0;padding:12px 14px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;min-height:80px;">
-    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:6px;">
+  <div style="margin:8px 0;padding:8px 10px;border:1px solid #cbd5e1;border-radius:6px;background:#f8fafc;">
+    <div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#64748b;margin-bottom:4px;">
       License Scope
     </div>
     ${scopeContent}
   </div>
 
-  <p style="margin:0 0 14px;">
-    We further declare that the above information is true and correct to the best of our knowledge and belief.
-    We undertake to inform BIS of any change in the manufacturing scope covered under the licence.
-  </p>
-
-  <div style="margin-top:36px;text-align:right;">
-      <div style="margin-top:24px;font-weight:700;">For ${esc(data.companyName)}</div>
-      <div style="position:relative;margin-top:32px;display:inline-block;min-width:200px;text-align:right;">
-        ${signatureOverlay}
-        <div style="position:relative;z-index:1;border-top:1px solid #94a3b8;padding-top:6px;min-width:180px;"></div>
-        <div style="margin-top:8px;font-size:11px;text-align:right;"><strong>Name:</strong> ${sigName}</div>
-        <div style="margin-top:4px;font-size:11px;text-align:right;"><strong>Designation:</strong> ${sigDesig}</div>
-      </div>
-  </div>
+  ${closingWithSignatory}
 </div>`;
 }
 
@@ -271,7 +273,17 @@ export function buildManufacturingScopeDeclarationHtml(
     bodyHtml: buildDeclarationBody(data),
     settings: manufacturingScopeLetterheadSettings(settings),
     company: buildManufacturingScopeCompany(data, assets),
-    extraStyles: `.license-scope-table th, .license-scope-table td { text-transform: none; letter-spacing: normal; text-align: center; }`,
+    extraStyles: `
+      .lh-wrap { padding: 8px 0 6px !important; }
+      .license-scope-table { font-size: 10.5px !important; line-height: 1.35 !important; }
+      .license-scope-table th, .license-scope-table td {
+        text-transform: none;
+        letter-spacing: normal;
+        text-align: center;
+        padding: 3px 6px !important;
+      }
+      .print-keep-with-signatory { break-inside: avoid; page-break-inside: avoid; }
+    `,
   });
 }
 
@@ -309,7 +321,17 @@ export function openManufacturingScopeDeclarationPreview(
         bodyHtml: buildDeclarationBody(data),
         settings: { ...settings, ...s },
         company: c,
-        extraStyles: `.license-scope-table th, .license-scope-table td { text-transform: none; letter-spacing: normal; text-align: center; }`,
+        extraStyles: `
+          .lh-wrap { padding: 8px 0 6px !important; }
+          .license-scope-table { font-size: 10.5px !important; line-height: 1.35 !important; }
+          .license-scope-table th, .license-scope-table td {
+            text-transform: none;
+            letter-spacing: normal;
+            text-align: center;
+            padding: 3px 6px !important;
+          }
+          .print-keep-with-signatory { break-inside: avoid; page-break-inside: avoid; }
+        `,
       }),
     initialSettings: settings,
     company,
